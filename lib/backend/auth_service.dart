@@ -18,8 +18,8 @@ class AuthService {
   }
 
   // Login
-  Future<void> login(String email, String password) async {
-    await _firebase.auth.signInWithEmailAndPassword(
+  Future<UserCredential> login(String email, String password) async {
+    return _firebase.auth.signInWithEmailAndPassword(
       email: email,
       password: password,
     );
@@ -43,11 +43,14 @@ class AuthService {
 
   //É admin ou não
   bool isAdmin() {
-    final user = FirebaseAuth.instance.currentUser;
+    bool isAdmin() => isAdminEmail(FirebaseAuth.instance.currentUser?.email);
 
-    if (user == null || user.email == null) return false;
+    static bool isAdminEmail(String? email){
+      if(email == null) return false;
 
-    return user.email!.trim().endsWith("@teiker.ch");
+      return email.trim().endsWith("@teiker.ch");
+    }
+
   }
 
   Future<void> createTeiker({

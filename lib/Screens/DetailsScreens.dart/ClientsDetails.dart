@@ -397,7 +397,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   //Mapa(mostra morada)
   Widget _buildMapCard(String endereco) {
     final mapUrl =
-        'https://maps.googleapis.com/maps/api/staticmap?center=${Uri.encodeComponent(endereco)}&zoom=15&size=600x300&markers=color:red%7C${Uri.encodeComponent(endereco)}&key={YOURAPIKEY}';
+        'https://maps.googleapis.com/maps/api/staticmap?center=${Uri.encodeComponent(endereco)}&zoom=15&size=600x300&markers=color:red%7C${Uri.encodeComponent(endereco)}&key={APIKEY}';
 
     return Container(
       width: double.infinity,

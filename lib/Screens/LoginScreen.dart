@@ -4,19 +4,34 @@ import 'package:teiker_app/Screens/EcrasPrincipais/AdminScreen.dart';
 import 'package:teiker_app/Screens/EcrasPrincipais/TeikersMainScreen.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
-import '../../providers/auth_provider.dart'; // authProvider + AuthNotifier
+import 'package:teiker_app/auth/auth_notifier.dart';
+import 'package:teiker_app/auth/auth_state.dart';
 
-class LoginScreen extends ConsumerWidget {
+class LoginScreen extends ConsumerStatefulWidget {
   LoginScreen({super.key});
 
   final Color primaryColor = const Color.fromARGB(255, 4, 76, 32);
 
+  @override
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final emailCtrl = TextEditingController();
   final passCtrl = TextEditingController();
   final resetCtrl = TextEditingController();
+  bool obscurePassword = true;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void dispose() {
+    emailCtrl.dispose();
+    passCtrl.dispose();
+    resetCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
     final authNotifier = ref.read(authProvider.notifier);
 
@@ -50,7 +65,7 @@ class LoginScreen extends ConsumerWidget {
                       child: Text(
                         "Esqueci a password",
                         style: TextStyle(
-                          color: primaryColor,
+                          color: widget.primaryColor,
                           fontWeight: FontWeight.w600,
                           decoration: TextDecoration.underline,
                         ),
@@ -64,10 +79,9 @@ class LoginScreen extends ConsumerWidget {
                     text: authState.status == AuthStatus.loading
                         ? "A carregar..."
                         : "Login",
-                    color: primaryColor,
-                    onPressed: authState.status == AuthStatus.loading
-                        ? () {}
-                        : () => _login(context, ref),
+                    color: widget.primaryColor,
+                    enabled: authState.status != AuthStatus.loading,
+                    onPressed: () => _login(context),
                   ),
                 ],
               ),
@@ -88,7 +102,7 @@ class LoginScreen extends ConsumerWidget {
       width: double.infinity,
       height: h * 0.35,
       decoration: BoxDecoration(
-        color: primaryColor,
+        color: widget.primaryColor,
         borderRadius: const BorderRadius.only(
           bottomLeft: Radius.circular(36),
           bottomRight: Radius.circular(36),
@@ -131,33 +145,27 @@ class LoginScreen extends ConsumerWidget {
         labelText: label,
         filled: true,
         fillColor: Colors.white,
-        prefixIcon: Icon(icon, color: primaryColor),
+        prefixIcon: Icon(icon, color: widget.primaryColor),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
   Widget _inputPassword() {
-    return StatefulBuilder(
-      builder: (context, setState) {
-        bool obscure = true;
-
-        return TextFormField(
-          controller: passCtrl,
-          obscureText: obscure,
-          decoration: InputDecoration(
-            labelText: "Password",
-            filled: true,
-            fillColor: Colors.white,
-            prefixIcon: Icon(Icons.lock_outline, color: primaryColor),
-            suffixIcon: IconButton(
-              icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
-              onPressed: () => setState(() => obscure = !obscure),
-            ),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      },
+    return TextFormField(
+      controller: passCtrl,
+      obscureText: obscurePassword,
+      decoration: InputDecoration(
+        labelText: "Password",
+        filled: true,
+        fillColor: Colors.white,
+        prefixIcon: Icon(Icons.lock_outline, color: widget.primaryColor),
+        suffixIcon: IconButton(
+          icon: Icon(obscurePassword ? Icons.visibility_off : Icons.visibility),
+          onPressed: () => setState(() => obscurePassword = !obscurePassword),
+        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 
@@ -165,7 +173,7 @@ class LoginScreen extends ConsumerWidget {
   // LÓGICA DE AÇÕES
   // --------------------
 
-  Future<void> _login(BuildContext context, WidgetRef ref) async {
+  Future<void> _login(BuildContext context) async {
     final email = emailCtrl.text.trim();
     final password = passCtrl.text.trim();
     final authNotifier = ref.read(authProvider.notifier);
@@ -191,7 +199,7 @@ class LoginScreen extends ConsumerWidget {
     );
 
     // Admin -> email termina @teiker.ch
-    if (email.endsWith("@teiker.ch")) {
+    if (ref.read(authProvider).isAdmin) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => Adminscreen()),

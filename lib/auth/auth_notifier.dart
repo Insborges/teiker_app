@@ -9,7 +9,7 @@ final authStateProvider = StreamProvider<User?>((ref) {
   return FirebaseAuth.instance.authStateChanges();
 });
 
-final authServiceProvider = StreamProvider<User?> ((ref){
+final authServiceProvider = Provider<AuthService>((ref) {
   return AuthService();
 });
 
@@ -50,18 +50,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
       );
 
       return false;
-    }catch (e) {
-      state = state.copyWith(status: AuthStatus.error, errorMessage: e.toString());
+    } catch (e) {
+      state = state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: e.toString(),
+      );
 
       return false;
     }
   }
 
-  Future<void> resetPassword(String email) async{
+  Future<void> resetPassword(String email) async {
     await _authService.resetPassword(email);
   }
 
-  void reset(){
+  void reset() {
     state = const AuthState();
   }
 }

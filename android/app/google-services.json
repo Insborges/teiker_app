@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "34759246473",
+    "project_id": "teikerapp-45ae5",
+    "storage_bucket": "teikerapp-45ae5.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:34759246473:android:8f4a5611464a7634f6fc58",
+        "android_client_info": {
+          "package_name": "com.company.teikers"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDRUWaT04OOiYzicxAvv4EcYRN1ege1dec"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:34759246473:android:6f6d3936e98cf024f6fc58",
+        "android_client_info": {
+          "package_name": "com.example.teiker_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDRUWaT04OOiYzicxAvv4EcYRN1ege1dec"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

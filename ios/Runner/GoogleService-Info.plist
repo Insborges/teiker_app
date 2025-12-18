@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>AIzaSyDRqJuz4sMGc0nwGhJScqE90_UhClttiiI</string>
+	<key>GCM_SENDER_ID</key>
+	<string>34759246473</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.teikerApp</string>
+	<key>PROJECT_ID</key>
+	<string>teikerapp-45ae5</string>
+	<key>STORAGE_BUCKET</key>
+	<string>teikerapp-45ae5.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:34759246473:ios:a63f36fb6fa42f36f6fc58</string>
+</dict>
+</plist>

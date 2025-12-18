@@ -35,7 +35,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   void initState() {
     super.initState();
 
-    isAdmin = AuthService().isAdmin();
+    isAdmin = AuthService().isCurrentUserAdmin;
 
     _nameController = TextEditingController(text: widget.cliente.nameCliente);
     _moradaController = TextEditingController(

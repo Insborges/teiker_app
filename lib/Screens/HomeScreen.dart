@@ -8,7 +8,6 @@ import 'package:teiker_app/Widgets/curve_appbar_clipper.dart';
 import 'package:teiker_app/Widgets/modern_calendar.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/auth/auth_notifier.dart';
-import 'package:teiker_app/backend/auth_service.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -23,19 +22,17 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   final Color selectedColor = const Color.fromARGB(255, 4, 76, 32);
-  late final AuthService _authService;
 
   DateTime _dayKey(DateTime d) => DateTime.utc(d.year, d.month, d.day);
 
   @override
   void initState() {
     super.initState();
-    _authService = ref.read(authServiceProvider);
     _loadFerias();
   }
 
   Future<void> _loadFerias() async {
-    final feriasRaw = await _authService.getFeriasTeikers();
+    final feriasRaw = await ref.read(authServiceProvider).getFeriasTeikers();
 
     final List<Map<String, dynamic>> feriasProcessed = [];
 

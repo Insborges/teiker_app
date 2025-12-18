@@ -9,6 +9,10 @@ final authStateProvider = StreamProvider<User?>((ref) {
   return FirebaseAuth.instance.authStateChanges();
 });
 
+final authServiceProvider = StreamProvider<User?> ((ref){
+  return AuthService();
+});
+
 final isAdminProvider = Provider<bool>((ref) {
   final authState = ref.watch(authStateProvider);
 
@@ -19,7 +23,7 @@ final isAdminProvider = Provider<bool>((ref) {
 });
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier(AuthService());
+  return AuthNotifier(ref.read(authServiceProvider));
 });
 
 class AuthNotifier extends StateNotifier<AuthState> {

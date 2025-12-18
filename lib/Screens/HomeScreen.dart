@@ -1,38 +1,41 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/EventAddSheet.dart';
 import 'package:teiker_app/Widgets/EventItem.dart';
 import 'package:teiker_app/Widgets/curve_appbar_clipper.dart';
 import 'package:teiker_app/Widgets/modern_calendar.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
+import 'package:teiker_app/auth/auth_notifier.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  HomeScreenState createState() => HomeScreenState();
+  ConsumerState<HomeScreen> createState() => HomeScreenState();
 }
 
-class HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends ConsumerState<HomeScreen> {
   final Map<DateTime, List<Map<String, dynamic>>> _events = {};
   List<Map<String, dynamic>> teikersFerias = [];
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   final Color selectedColor = const Color.fromARGB(255, 4, 76, 32);
+  late final AuthService _authService;
 
   DateTime _dayKey(DateTime d) => DateTime.utc(d.year, d.month, d.day);
 
   @override
   void initState() {
     super.initState();
+    _authService = ref.read(authServiceProvider);
     _loadFerias();
   }
 
   Future<void> _loadFerias() async {
-    final feriasRaw = await AuthService().getFeriasTeikers();
+    final feriasRaw = await _authService.getFeriasTeikers();
 
     final List<Map<String, dynamic>> feriasProcessed = [];
 
@@ -54,6 +57,8 @@ class HomeScreenState extends State<HomeScreen> {
         'cor': corTeiker,
       });
     }
+
+    if(!mounted) return;
 
     setState(() => teikersFerias = feriasProcessed);
   }
@@ -79,6 +84,7 @@ class HomeScreenState extends State<HomeScreen> {
       _events[dayKey]?.remove(event);
       if ((_events[dayKey]?.isEmpty ?? true)) _events.remove(dayKey);
     });
+
     HapticFeedback.lightImpact();
   }
 
@@ -122,13 +128,15 @@ class HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authStateProvider);
+    final user = authState.asData?.value;
     final dayKey = _dayKey(_selectedDay);
     final normalEvents = _events[dayKey] ?? [];
 
     final feriasEvents = teikersFerias
         .where((t) => t['dias'].any((d) => _dayKey(d) == dayKey))
         .map((t) {
-          final bool isOwn = t['uid'] == FirebaseAuth.instance.currentUser!.uid;
+          final bool isOwn = user != null && t['uid'] == user.uid;
 
           return {
             'title': isOwn ? "Estou de férias!" : "${t['nome']} está de férias",

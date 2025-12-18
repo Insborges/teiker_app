@@ -8,7 +8,7 @@ import 'package:teiker_app/auth/auth_notifier.dart';
 import 'package:teiker_app/auth/auth_state.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
-  LoginScreen({super.key});
+  const LoginScreen({super.key});
 
   final Color primaryColor = const Color.fromARGB(255, 4, 76, 32);
 

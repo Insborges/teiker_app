@@ -42,15 +42,12 @@ class AuthService {
   }
 
   //É admin ou não
-  bool isAdmin() {
-    bool isAdmin() => isAdminEmail(FirebaseAuth.instance.currentUser?.email);
+  bool get isCurrentUserAdmin => isAdminEmail(_firebase.auth.currentUser?.email);
 
-    static bool isAdminEmail(String? email){
-      if(email == null) return false;
+  static bool isAdminEmail(String? email){
+    if(email == null) return false;
 
-      return email.trim().endsWith("@teiker.ch");
-    }
-
+    return email.trim().endsWith("@teiker.ch");
   }
 
   Future<void> createTeiker({
@@ -101,7 +98,7 @@ class AuthService {
 
   Future<List<Map<String, dynamic>>> getFeriasTeikers() async {
     final user = FirebaseAuth.instance.currentUser;
-    final admin = isAdmin();
+    final admin = isCurrentUserAdmin;
 
     final snapshot = await FirebaseFirestore.instance
         .collection('teikers')

@@ -7,6 +7,7 @@ import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/backend/auth_service.dart';
+import 'package:teiker_app/backend/work_session_service.dart';
 import '../../models/Clientes.dart';
 
 class Clientsdetails extends StatefulWidget {
@@ -26,10 +27,13 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   late TextEditingController _emailController;
   late TextEditingController _orcamentoController;
 
+  late double _horasCasa;
+
   List<Map<String, dynamic>> teikersList = [];
   List<String> selectedTeikers = [];
 
   bool? isAdmin;
+  final WorkSessionService _workSessionService = WorkSessionService();
 
   @override
   void initState() {
@@ -49,8 +53,12 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       text: widget.cliente.orcamento.toString(),
     );
 
+    _horasCasa = widget.cliente.hourasCasa;
+
     _loadTeikers();
     selectedTeikers = List<String>.from(widget.cliente.teikersIds);
+
+    _checkPendingSessionReminder();
   }
 
   Future<void> _loadTeikers() async {
@@ -72,8 +80,84 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     });
   }
 
+  Future<void> _checkPendingSessionReminder() async {
+    if (isAdmin == true) return;
+
+    final pending = await _workSessionService.findOpenSession(
+      widget.cliente.uid,
+    );
+
+    if (pending == null) return;
+
+    final timestamp = pending['startTime'] as Timestamp?;
+    final start = timestamp?.toDate();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AppSnackBar.show(
+        context,
+        message: "Existe um registo por terminar para esta casa.",
+        icon: Icons.notification_important,
+        background: Colors.orange.shade700,
+      );
+
+      _abrirDialogAdicionarHoras(
+        pendingSessionId: pending['id'] as String?,
+        presentStart: start != null ? TimeOfDay.fromDateTime(start) : null,
+        defaultDate: start,
+      );
+    });
+  }
+
+  Future<void> _guardarHoras(
+    DateTime inicio,
+    DateTime fim, {
+    String? pendingSessionId,
+  }) async {
+    try {
+      double total;
+      if (pendingSessionId != null) {
+        total = await _workSessionService.closePendingSession(
+          clienteId: widget.cliente.uid,
+          sessionId: pendingSessionId,
+          start: inicio,
+          end: fim,
+        );
+      } else {
+        total = await _workSessionService.addManualSession(
+          clienteId: widget.cliente.uid,
+          start: inicio,
+          end: fim,
+        );
+      }
+
+      setState(() {
+        _horasCasa = total;
+        widget.cliente.hourasCasa = total;
+      });
+
+      AppSnackBar.show(
+        context,
+        message: "Horas registadas. Total do mês: ${total.toStringAsFixed(2)}h",
+        icon: Icons.save,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      AppSnackBar.show(
+        context,
+        message: "Erro a guardar horas: $e",
+        icon: Icons.error,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
   //Dialog "Adicionar Horas"
-  void _abrirDialogAdicionarHoras() {
+  void _abrirDialogAdicionarHoras({
+    String? pendingSessionId,
+    TimeOfDay? presentStart,
+    TimeOfDay? presentEnd,
+    DateTime? defaultDate,
+  }) {
     TimeOfDay? startTime;
     TimeOfDay? endTime;
 
@@ -200,12 +284,52 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                               child: AppButton(
                                 text: "Guardar",
                                 color: const Color.fromARGB(255, 4, 76, 32),
-                                onPressed: () {
+                                onPressed: () async {
                                   if (startTime == null || endTime == null) {
+                                    AppSnackBar.show(
+                                      context,
+                                      message: "Preenche as duas horas.",
+                                      icon: Icons.info,
+                                      background: Colors.orange.shade700,
+                                    );
                                     return;
                                   }
-                                  // Aqui guardas startTime e endTime no Firestore
-                                  Navigator.pop(context, true);
+
+                                  final baseDate =
+                                      defaultDate ?? DateTime.now();
+                                  final startDate = DateTime(
+                                    baseDate.year,
+                                    baseDate.month,
+                                    baseDate.day,
+                                    startTime!.hour,
+                                    startTime.minute,
+                                  );
+                                  final endDate = DateTime(
+                                    baseDate.year,
+                                    baseDate.month,
+                                    baseDate.day,
+                                    endTime!.hour,
+                                    endTime.minute,
+                                  );
+
+                                  if (!endDate.isAfter(startDate)) {
+                                    AppSnackBar.show(
+                                      context,
+                                      message:
+                                          "A hora de fim deve ser posterior à hora de inicio. ",
+                                      icon: Icons.info,
+                                      background: Colors.orange.shade700,
+                                    );
+                                  }
+                                  await _guardarHoras(
+                                    startDate,
+                                    endDate,
+                                    pendingSessionId: pendingSessionId,
+                                  );
+
+                                  if (mounted) {
+                                    Navigator.pop(context, true);
+                                  }
                                 },
                               ),
                             ),
@@ -232,7 +356,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       telemovel: int.tryParse(_phoneController.text) ?? 0,
       email: _emailController.text,
       orcamento: double.tryParse(_orcamentoController.text) ?? 0,
-      hourasCasa: widget.cliente.hourasCasa,
+      hourasCasa: _horasCasa,
       teikersIds: selectedTeikers,
     );
 
@@ -345,7 +469,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
             SizedBox(height: 12),
             _buildTeikersSelector(),
             SizedBox(height: 16),
-            _buildHorasCard(widget.cliente.hourasCasa),
+            _buildHorasCard(_horasCasa),
             SizedBox(height: 8),
             _buildOrcamentoCard(widget.cliente.orcamento),
 

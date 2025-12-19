@@ -5,6 +5,7 @@ import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppCard.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/backend/auth_service.dart';
+import 'package:teiker_app/backend/work_session_service.dart';
 import '../models/Clientes.dart';
 
 class ClientesScreen extends StatefulWidget {
@@ -16,7 +17,9 @@ class ClientesScreen extends StatefulWidget {
 
 class _ClientesScreenState extends State<ClientesScreen> {
   // mapa para controlar estado dos botões
-  Map<int, bool> isWorking = {};
+  final Map<String, bool> isWorking = {};
+  final Map<String, String> _openSessionIds = {};
+  final WorkSessionService _workSessionService = WorkSessionService();
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +52,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
             itemCount: listaClientes.length,
             itemBuilder: (context, index) {
               final cliente = listaClientes[index];
-              final working = isWorking[index] ?? false;
+              final working = isWorking[cliente.uid] ?? false;
 
               return AppCard(
                 child: Column(
@@ -63,7 +66,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             builder: (ctx) => Clientsdetails(cliente: cliente),
                           ),
                         ).then((updated) {
-                          if(updated == true){
+                          if (updated == true) {
                             setState(() {});
                           }
                         });
@@ -112,12 +115,20 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             text: "Começar",
                             color: const Color.fromARGB(255, 4, 76, 32),
                             enabled: !working,
-                            onPressed: () {
-                              setState(() {
-                                isWorking[index] = true;
+                            onPressed: () async {
+                              try {
+                                final sessionId = await _workSessionService
+                                    .startSession(clienteId: cliente.uid);
+
+                                setState(() {
+                                  isWorking[cliente.uid] = true;
+                                  _openSessionIds[cliente.uid] = sessionId;
+                                });
+
                                 AppSnackBar.show(
                                   context,
-                                  message: "Começaste!",
+                                  message:
+                                      "Começaste às ${TimeOfDay.now().format(context)}!",
                                   icon: Icons.play_arrow,
                                   background: const Color.fromARGB(
                                     255,
@@ -126,7 +137,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                     32,
                                   ),
                                 );
-                              });
+                              } catch (e) {
+                                AppSnackBar.show(
+                                  context,
+                                  message: "Não foi possivel iniciar: $e",
+                                  icon: Icons.error,
+                                  background: Colors.red.shade700,
+                                );
+                              }
                             },
                           ),
                         ),
@@ -137,12 +155,23 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             outline: true,
                             color: const Color.fromARGB(255, 4, 76, 32),
                             enabled: working,
-                            onPressed: () {
-                              setState(() {
-                                isWorking[index] = false;
+                            onPressed: () async {
+                              try {
+                                final total = await _workSessionService
+                                    .finishSession(
+                                      clienteId: cliente.uid,
+                                      sessionId: _openSessionIds[cliente.uid],
+                                    );
+
+                                setState(() {
+                                  isWorking[cliente.uid] = false;
+                                  _openSessionIds.remove(cliente.uid);
+                                });
+
                                 AppSnackBar.show(
                                   context,
-                                  message: "Terminaste!",
+                                  message:
+                                      "Terminaste! Total do mês: ${total.toStringAsFixed(2)}h",
                                   icon: Icons.square,
                                   background: const Color.fromARGB(
                                     255,
@@ -151,7 +180,16 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                     82,
                                   ),
                                 );
-                              });
+
+                                setState(() {});
+                              } catch (e) {
+                                AppSnackBar.show(
+                                  context,
+                                  message: "Não foi possivel terminar: $e",
+                                  icon: Icons.error,
+                                  background: Colors.red.shade700,
+                                );
+                              }
                             },
                           ),
                         ),

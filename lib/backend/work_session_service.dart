@@ -35,22 +35,33 @@ class WorkSessionService {
       throw Exception("Utilizador não autenticado");
     }
 
-    final query = sessionId != null
-        ? _firestore.collection('workSessions').doc(sessionId).get()
-        : await _firestore
-              .collection('workSessions')
-              .where('clienteId', isEqualTo: clienteId)
-              .where('teikerId', isEqualTo: teikerId)
-              .where('endTime', isNull: true)
-              .limit(1)
-              .get();
-
     DocumentSnapshot<Map<String, dynamic>>? sessionDoc;
-    if (query is DocumentSnapshot<Map<String, dynamic>>) {
-      sessionDoc = query;
-    } else if (query is QuerySnapshot<Map<String, dynamic>> &&
-        query.docs.isNotEmpty) {
-      sessionDoc = query.docs.first;
+    if (sessionId != null) {
+      final doc = await _firestore
+          .collection('workSessions')
+          .doc(sessionId)
+          .get();
+
+      final data = doc.data();
+      final isOpen = data != null && data['endTime'] == null;
+
+      if (doc.exists && isOpen) {
+        sessionDoc = doc;
+      }
+    }
+
+    if (sessionDoc == null) {
+      final openSessions = await _firestore
+          .collection('workSessions')
+          .where('clienteId', isEqualTo: clienteId)
+          .where('teikerId', isEqualTo: teikerId)
+          .where('endTime', isNull: true)
+          .limit(1)
+          .get();
+
+      if(openSessions.docs.isNotEmpty){
+        sessionDoc = openSessions.docs.first;
+      }
     }
 
     if (sessionDoc == null || !sessionDoc.exists) {
@@ -58,7 +69,9 @@ class WorkSessionService {
     }
 
     final data = sessionDoc.data();
-    if(data == null){throw Exception("Sessão sem dados disponíveis");}
+    if (data == null) {
+      throw Exception("Sessão sem dados disponíveis");
+    }
     final Map<String, dynamic> nonNullData = data;
     final startTimestamp = nonNullData['startTime'] as Timestamp?;
     final start = startTimestamp?.toDate();
@@ -167,24 +180,26 @@ class WorkSessionService {
         .get();
 
     double totalHours = 0;
-    for(final doc in snapshot.docs){
+    for (final doc in snapshot.docs) {
       final data = doc.data();
       double? duration = (data['durationHours'] as num?)?.toDouble();
-      if(duration == null){
+      if (duration == null) {
         final start = (data['startTime'] as Timestamp?)?.toDate();
         final end = (data['endTime'] as Timestamp?)?.toDate();
 
-        if(start != null && end != null){
+        if (start != null && end != null) {
           duration = end.difference(start).inMinutes / 60.0;
         }
       }
 
-      if(duration != null){
+      if (duration != null) {
         totalHours += duration;
       }
     }
 
-    await _firestore.collection('clientes').doc(clienteId).update({'hourasCasa': totalHours});
+    await _firestore.collection('clientes').doc(clienteId).update({
+      'hourasCasa': totalHours,
+    });
 
     return totalHours;
   }

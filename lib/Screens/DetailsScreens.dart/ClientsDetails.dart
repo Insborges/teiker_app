@@ -71,7 +71,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
       return {
         "uid": d.id,
-        "name": m["name"] ?? m["nameTeiker"] ?? "Sem nome", // fallback seguro
+        "name": m["name"] ?? m["nameTeiker"] ?? "Sem nome",
       };
     }).toList();
 

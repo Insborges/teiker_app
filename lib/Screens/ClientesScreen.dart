@@ -6,6 +6,7 @@ import 'package:teiker_app/Widgets/AppCard.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
+import 'package:teiker_app/work_sessions/domain/work_session.dart';
 import '../models/Clientes.dart';
 
 class ClientesScreen extends StatefulWidget {
@@ -17,9 +18,31 @@ class ClientesScreen extends StatefulWidget {
 
 class _ClientesScreenState extends State<ClientesScreen> {
   // mapa para controlar estado dos botões
-  final Map<String, bool> isWorking = {};
-  final Map<String, String> _openSessionIds = {};
+
+  final Map<String, WorkSession?> _openSessions = {};
   final WorkSessionService _workSessionService = WorkSessionService();
+
+  Future<void> _ensureOpenSessions(List<Clientes> clientes) async {
+    final missing = clientes
+        .where((cliente) => !_openSessions.containsKey(cliente.uid))
+        .toList();
+
+    if (missing.isEmpty) return;
+
+    final results = await Future.wait(
+      missing.map(
+        (cliente) => _workSessionService.findOpenSession(cliente.uid),
+      ),
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      for (var i = 0; i < missing.length; i++) {
+        _openSessions[missing[i].uid] = results[i];
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,13 +69,15 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
         final listaClientes = snapshot.data!;
 
+        _ensureOpenSessions(listaClientes);
+
         return Scaffold(
           appBar: buildAppBar("Os Clientes Teiker"),
           body: ListView.builder(
             itemCount: listaClientes.length,
             itemBuilder: (context, index) {
               final cliente = listaClientes[index];
-              final working = isWorking[cliente.uid] ?? false;
+              final bool working = _openSessions[cliente.uid] != null;
 
               return AppCard(
                 child: Column(
@@ -117,12 +142,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             enabled: !working,
                             onPressed: () async {
                               try {
-                                final sessionId = await _workSessionService
+                                final session = await _workSessionService
                                     .startSession(clienteId: cliente.uid);
 
                                 setState(() {
-                                  isWorking[cliente.uid] = true;
-                                  _openSessionIds[cliente.uid] = sessionId;
+                                  _openSessions[cliente.uid] = session;
                                 });
 
                                 AppSnackBar.show(
@@ -157,15 +181,24 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             enabled: working,
                             onPressed: () async {
                               try {
+                                final session = _openSessions[cliente.uid];
+
+                                if (session == null) {
+                                  throw Exception(
+                                    'Sessão não encontrada localmente.',
+                                  );
+                                }
+
                                 final total = await _workSessionService
-                                    .finishSession(
+                                    .finishSessionById(
                                       clienteId: cliente.uid,
-                                      sessionId: _openSessionIds[cliente.uid],
+                                      sessionId: session.id,
+                                      startTime: session.startTime,
                                     );
 
                                 setState(() {
-                                  isWorking[cliente.uid] = false;
-                                  _openSessionIds.remove(cliente.uid);
+                                  _openSessions[cliente.uid] = null;
+                                  cliente.hourasCasa = total;
                                 });
 
                                 AppSnackBar.show(
@@ -181,7 +214,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                   ),
                                 );
 
-                                setState(() {});
+                                await _ensureOpenSessions([cliente]);
                               } catch (e) {
                                 AppSnackBar.show(
                                   context,

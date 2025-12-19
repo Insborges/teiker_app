@@ -1,95 +1,54 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:teiker_app/work_sessions/application/finish_work_session_use_case.dart';
+import 'package:teiker_app/work_sessions/domain/work_session.dart';
+import 'package:teiker_app/work_sessions/domain/work_session_repository.dart';
+import 'package:teiker_app/work_sessions/infrastructure/firestore_work_session_repository.dart';
 
 class WorkSessionService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  late final WorkSessionRepository _repository;
+  late final FinishWorkSessionUseCase _finishUseCase;
 
-  String? get _currentUserId => _auth.currentUser?.uid;
+  WorkSessionService({FirebaseFirestore? firestore})
+    : _firestore = firestore ?? FirebaseFirestore.instance {
+    _repository = FirestoreWorkSessionRepository(_firestore);
+    _finishUseCase = FinishWorkSessionUseCase(_repository);
+  }
 
-  Future<String> startSession({required String clienteId}) async {
-    final teikerId = _currentUserId;
-    if (teikerId == null) {
-      throw Exception("Utilizador não autenticado");
+  String _requireUser() {
+    final id = _auth.currentUser?.uid;
+    if (id == null) {
+      throw Exception('Utilizador não autenticado');
+    }
+    return id;
+  }
+
+  Future<WorkSession> startSession({required String clienteId}) async {
+    final teikerId = _requireUser();
+
+    final existing = await _repository.findOpenSession(
+      clienteId: clienteId,
+      teikerId: teikerId,
+    );
+
+    if (existing != null) {
+      throw Exception('Já existe uma sessão aberta para este cliente.');
     }
 
     final now = DateTime.now();
-
-    final doc = await _firestore.collection('workSessions').add({
-      'clienteId': clienteId,
-      'teikerId': teikerId,
-      'startTime': Timestamp.fromDate(now),
-      'endTime': null,
-      'durationHours': null,
-    });
-
-    return doc.id;
+    return _repository.startSession(
+      clienteId: clienteId,
+      teikerId: teikerId,
+      start: now,
+    );
   }
 
-  Future<double> finishSession({
-    required String clienteId,
-    String? sessionId,
-  }) async {
-    final teikerId = _currentUserId;
-    if (teikerId == null) {
-      throw Exception("Utilizador não autenticado");
-    }
+  Future<double> finishSession({required String clienteId}) async {
+    final teikerId = _requireUser();
 
-    DocumentSnapshot<Map<String, dynamic>>? sessionDoc;
-    if (sessionId != null) {
-      final doc = await _firestore
-          .collection('workSessions')
-          .doc(sessionId)
-          .get();
-
-      final data = doc.data();
-      final isOpen = data != null && data['endTime'] == null;
-
-      if (doc.exists && isOpen) {
-        sessionDoc = doc;
-      }
-    }
-
-    if (sessionDoc == null) {
-      final openSessions = await _firestore
-          .collection('workSessions')
-          .where('clienteId', isEqualTo: clienteId)
-          .where('teikerId', isEqualTo: teikerId)
-          .where('endTime', isNull: true)
-          .limit(1)
-          .get();
-
-      if (openSessions.docs.isNotEmpty) {
-        sessionDoc = openSessions.docs.first;
-      }
-    }
-
-    if (sessionDoc == null || !sessionDoc.exists) {
-      throw Exception("Não existe sessão iniciada para este cliente.");
-    }
-
-    final data = sessionDoc.data();
-    if (data == null) {
-      throw Exception("Sessão sem dados disponíveis");
-    }
-    final Map<String, dynamic> nonNullData = data;
-    final startTimestamp = nonNullData['startTime'] as Timestamp?;
-    final start = startTimestamp?.toDate();
-    if (start == null) {
-      throw Exception("Sessão sem hora de inicio válida.");
-    }
-
-    final end = DateTime.now();
-    final duration = end.difference(start).inMinutes / 60.0;
-
-    await sessionDoc.reference.update({
-      'endTime': Timestamp.fromDate(end),
-      'durationHours': duration,
-    });
-
-    final total = await _refreshMonthlyTotal(clienteId, referenceDate: start);
-
-    return total;
+    return _finishUseCase.execute(clienteId: clienteId, teikerId: teikerId);
   }
 
   Future<double> addManualSession({
@@ -97,106 +56,66 @@ class WorkSessionService {
     required DateTime start,
     required DateTime end,
   }) async {
-    final teikerId = _currentUserId;
+    final teikerId = _requireUser();
 
-    if (teikerId == null) {
-      throw Exception("Utilizador não autenticado");
-    }
+    await _repository.addManualSession(
+      clienteId: clienteId,
+      teikerId: teikerId,
+      start: start,
+      end: end,
+    );
 
-    final duration = end.difference(start).inMinutes / 60.0;
-
-    await _firestore.collection('workSessions').add({
-      'clienteId': clienteId,
-      'teikerId': teikerId,
-      'startTime': Timestamp.fromDate(start),
-      'endTime': Timestamp.fromDate(end),
-      'durationHours': duration,
-    });
-
-    final total = await _refreshMonthlyTotal(clienteId, referenceDate: start);
-
-    return total;
+    return _repository.calculateMonthlyTotal(
+      clienteId: clienteId,
+      referenceDate: start,
+    );
   }
 
   Future<double> closePendingSession({
     required String clienteId,
     required String sessionId,
-    required DateTime start,
     required DateTime end,
   }) async {
-    final teikerId = _currentUserId;
-    if (teikerId == null) {
-      throw Exception("Utilizador não autenticado");
+    final teikerId = _requireUser();
+
+    final session = await _repository.findOpenSession(
+      clienteId: clienteId,
+      teikerId: teikerId,
+    );
+
+    if (session == null || session.id != sessionId) {
+      throw Exception('Não existe sessão iniciada para este cliente.');
     }
 
-    final duration = end.difference(start).inMinutes / 60.0;
+    await _repository.closeSession(sessionId: sessionId, end: end);
 
-    await _firestore.collection('workSessions').doc(sessionId).update({
-      'endTime': Timestamp.fromDate(end),
-      'durationHours': duration,
-    });
-
-    final total = await _refreshMonthlyTotal(clienteId, referenceDate: start);
-    return total;
+    return _repository.calculateMonthlyTotal(
+      clienteId: clienteId,
+      referenceDate: session.startTime,
+    );
   }
 
-  Future<Map<String, dynamic>?> findOpenSession(String clienteId) async {
-    final teikerId = _currentUserId;
+  Future<WorkSession?> findOpenSession(String clienteId) async {
+    final teikerId = _auth.currentUser?.uid;
     if (teikerId == null) return null;
 
-    final snapshot = await _firestore
-        .collection('workSessions')
-        .where('clienteId', isEqualTo: clienteId)
-        .where('teikerId', isEqualTo: teikerId)
-        .where('endTime', isNull: true)
-        .limit(1)
-        .get();
-
-    if (snapshot.docs.isEmpty) return null;
-
-    return {'id': snapshot.docs.first.id, ...snapshot.docs.first.data()};
+    return _repository.findOpenSession(
+      clienteId: clienteId,
+      teikerId: teikerId,
+    );
   }
 
-  Future<double> _refreshMonthlyTotal(
-    String clienteId, {
-    DateTime? referenceDate,
+  Future<double> finishSessionById({
+    required String clienteId,
+    required String sessionId,
+    required DateTime startTime,
   }) async {
-    final date = referenceDate ?? DateTime.now();
-    final monthStart = DateTime(date.year, date.month, 1);
-    final nextMonth = DateTime(date.year, date.month + 1, 1);
+    await _repository.closeSession(sessionId: sessionId, end: DateTime.now());
 
-    final snapshot = await _firestore
-        .collection('workSessions')
-        .where('clienteId', isEqualTo: clienteId)
-        .where(
-          'startTime',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
-        )
-        .where('startTime', isLessThan: Timestamp.fromDate(nextMonth))
-        .get();
-
-    double totalHours = 0;
-    for (final doc in snapshot.docs) {
-      final data = doc.data();
-      double? duration = (data['durationHours'] as num?)?.toDouble();
-      if (duration == null) {
-        final start = (data['startTime'] as Timestamp?)?.toDate();
-        final end = (data['endTime'] as Timestamp?)?.toDate();
-
-        if (start != null && end != null) {
-          duration = end.difference(start).inMinutes / 60.0;
-        }
-      }
-
-      if (duration != null) {
-        totalHours += duration;
-      }
-    }
-
-    await _firestore.collection('clientes').doc(clienteId).update({
-      'hourasCasa': totalHours,
-    });
-
-    return totalHours;
+    return _repository.calculateMonthlyTotal(
+      clienteId: clienteId,
+      referenceDate: startTime,
+    );
   }
+
 }

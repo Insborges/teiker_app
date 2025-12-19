@@ -86,8 +86,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
     if (pending == null) return;
 
-    final timestamp = pending['startTime'] as Timestamp?;
-    final start = timestamp?.toDate();
+    final start = pending.startTime;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       AppSnackBar.show(
@@ -98,54 +97,31 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       );
 
       _abrirDialogAdicionarHoras(
-        pendingSessionId: pending['id'] as String?,
+        pendingSessionId: pending.id,
         presentStart: start != null ? TimeOfDay.fromDateTime(start) : null,
         defaultDate: start,
       );
     });
   }
 
-  Future<void> _guardarHoras(
+  Future<double> _guardarHoras(
     DateTime inicio,
     DateTime fim, {
     String? pendingSessionId,
   }) async {
-    try {
-      double total;
-      if (pendingSessionId != null) {
-        total = await _workSessionService.closePendingSession(
-          clienteId: widget.cliente.uid,
-          sessionId: pendingSessionId,
-          start: inicio,
-          end: fim,
-        );
-      } else {
-        total = await _workSessionService.addManualSession(
-          clienteId: widget.cliente.uid,
-          start: inicio,
-          end: fim,
-        );
-      }
-
-      setState(() {
-        _horasCasa = total;
-        widget.cliente.hourasCasa = total;
-      });
-
-      AppSnackBar.show(
-        context,
-        message: "Horas registadas. Total do mês: ${total.toStringAsFixed(2)}h",
-        icon: Icons.save,
-        background: Colors.green.shade700,
-      );
-    } catch (e) {
-      AppSnackBar.show(
-        context,
-        message: "Erro a guardar horas: $e",
-        icon: Icons.error,
-        background: Colors.red.shade700,
+    if (pendingSessionId != null) {
+      return _workSessionService.closePendingSession(
+        clienteId: widget.cliente.uid,
+        sessionId: pendingSessionId,
+        end: fim,
       );
     }
+
+    return _workSessionService.addManualSession(
+      clienteId: widget.cliente.uid,
+      start: inicio,
+      end: fim,
+    );
   }
 
   //Dialog "Adicionar Horas"
@@ -322,14 +298,35 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                     );
                                     return;
                                   }
-                                  await _guardarHoras(
-                                    startDate,
-                                    endDate,
-                                    pendingSessionId: pendingSessionId,
-                                  );
+                                  try {
+                                    final total = await _guardarHoras(
+                                      startDate,
+                                      endDate,
+                                      pendingSessionId: pendingSessionId,
+                                    );
+                                    setState(() {
+                                      _horasCasa = total;
+                                      widget.cliente.hourasCasa = total;
+                                    });
 
-                                  if (mounted) {
-                                    Navigator.pop(context, true);
+                                    AppSnackBar.show(
+                                      context,
+                                      message:
+                                          "Horas registadas. Total do mês: ${total.toStringAsFixed(2)}h",
+                                      icon: Icons.save,
+                                      background: Colors.green.shade700,
+                                    );
+
+                                    if (mounted) {
+                                      Navigator.pop(context, true);
+                                    }
+                                  } catch (e) {
+                                    AppSnackBar.show(
+                                      context,
+                                      message: "Erro a guardar horas: $e",
+                                      icon: Icons.error,
+                                      background: Colors.red.shade700,
+                                    );
                                   }
                                 },
                               ),
@@ -521,7 +518,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   //Mapa(mostra morada)
   Widget _buildMapCard(String endereco) {
-    const apiKey = 'APIKEY';
+    const apiKey = 'AIzaSyBGYYzIR73Sxk0GxxcK8dmWgxcxybMSRj0';
     debugPrint('API KEY = "$apiKey"');
 
     if (apiKey.isEmpty) {

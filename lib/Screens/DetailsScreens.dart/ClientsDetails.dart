@@ -69,10 +69,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     final data = snapshot.docs.map((d) {
       final m = d.data();
 
-      return {
-        "uid": d.id,
-        "name": m["name"] ?? m["nameTeiker"] ?? "Sem nome",
-      };
+      return {"uid": d.id, "name": m["name"] ?? m["nameTeiker"] ?? "Sem nome"};
     }).toList();
 
     setState(() {
@@ -524,9 +521,40 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   //Mapa(mostra morada)
   Widget _buildMapCard(String endereco) {
-    final mapUrl =
-        'https://maps.googleapis.com/maps/api/staticmap?center=${Uri.encodeComponent(endereco)}&zoom=15&size=600x300&markers=color:red%7C${Uri.encodeComponent(endereco)}&key={APIKEY}';
+    const apiKey = ' ';
+    debugPrint('API KEY = "$apiKey"');
 
+    if (apiKey.isEmpty) {
+      return _buildMapContainer(
+        _buildMapPlaceholderContent(
+          'Define GOOGLE_MAPS_API_KEY com --dart-define',
+        ),
+      );
+    }
+
+    final encodedAddress = Uri.encodeComponent(endereco);
+
+    final mapUrl =
+        'https://maps.googleapis.com/maps/api/staticmap'
+        '?center=$encodedAddress'
+        '&zoom=15'
+        '&size=600x300'
+        '&markers=color:red|$encodedAddress'
+        '&key=$apiKey';
+
+    return _buildMapContainer(
+      Image.network(
+        mapUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint('STATIC MAP ERROR: $error');
+          return _buildMapPlaceholderContent('Erro ao carregar mapa');
+        },
+      ),
+    );
+  }
+
+  Widget _buildMapContainer(Widget child) {
     return Container(
       width: double.infinity,
       height: 180,
@@ -539,13 +567,29 @@ class _ClientsdetailsState extends State<Clientsdetails> {
             color: Colors.grey.withValues(alpha: 0.5),
             spreadRadius: 5,
             blurRadius: 7,
-            offset: Offset(0, 3), // changes position of shadow
+            offset: Offset(0, 3),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.network(mapUrl, fit: BoxFit.cover),
+      child: ClipRRect(borderRadius: BorderRadius.circular(12), child: child),
+    );
+  }
+
+  Widget _buildMapPlaceholderContent(String message) {
+    return Container(
+      color: Colors.grey.shade200,
+      alignment: Alignment.center,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.map, color: Colors.grey, size: 32),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            style: const TextStyle(color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

@@ -58,7 +58,9 @@ class WorkSessionService {
     }
 
     final data = sessionDoc.data();
-    final startTimestamp = data['startTime'] as Timestamp?;
+    if(data == null){throw Exception("Sessão sem dados disponíveis");}
+    final Map<String, dynamic> nonNullData = data;
+    final startTimestamp = nonNullData['startTime'] as Timestamp?;
     final start = startTimestamp?.toDate();
     if (start == null) {
       throw Exception("Sessão sem hora de inicio válida.");

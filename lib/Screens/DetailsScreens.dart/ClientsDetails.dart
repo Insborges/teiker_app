@@ -158,8 +158,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     TimeOfDay? presentEnd,
     DateTime? defaultDate,
   }) {
-    TimeOfDay? startTime;
-    TimeOfDay? endTime;
+    TimeOfDay? startTime = presentStart;
+    TimeOfDay? endTime = presentEnd;
 
     void pickCupertinoTime(
       BuildContext context,
@@ -285,7 +285,10 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                 text: "Guardar",
                                 color: const Color.fromARGB(255, 4, 76, 32),
                                 onPressed: () async {
-                                  if (startTime == null || endTime == null) {
+                                  final startValue = startTime;
+                                  final endValue = endTime;
+
+                                  if (startValue == null || endValue == null) {
                                     AppSnackBar.show(
                                       context,
                                       message: "Preenche as duas horas.",
@@ -301,15 +304,15 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                     baseDate.year,
                                     baseDate.month,
                                     baseDate.day,
-                                    startTime!.hour,
-                                    startTime.minute,
+                                    startValue.hour,
+                                    startValue.minute,
                                   );
                                   final endDate = DateTime(
                                     baseDate.year,
                                     baseDate.month,
                                     baseDate.day,
-                                    endTime!.hour,
-                                    endTime.minute,
+                                    endValue.hour,
+                                    endValue.minute,
                                   );
 
                                   if (!endDate.isAfter(startDate)) {

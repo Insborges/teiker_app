@@ -59,7 +59,7 @@ class WorkSessionService {
           .limit(1)
           .get();
 
-      if(openSessions.docs.isNotEmpty){
+      if (openSessions.docs.isNotEmpty) {
         sessionDoc = openSessions.docs.first;
       }
     }
@@ -132,15 +132,11 @@ class WorkSessionService {
     final duration = end.difference(start).inMinutes / 60.0;
 
     await _firestore.collection('workSessions').doc(sessionId).update({
-      'clienteId': clienteId,
-      'teikerId': teikerId,
-      'startTime': Timestamp.fromDate(start),
       'endTime': Timestamp.fromDate(end),
       'durationHours': duration,
     });
 
     final total = await _refreshMonthlyTotal(clienteId, referenceDate: start);
-
     return total;
   }
 

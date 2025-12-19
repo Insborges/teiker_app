@@ -521,7 +521,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   //Mapa(mostra morada)
   Widget _buildMapCard(String endereco) {
-    const apiKey = ' ';
+    const apiKey = 'APIKEY';
     debugPrint('API KEY = "$apiKey"');
 
     if (apiKey.isEmpty) {

@@ -323,6 +323,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                       icon: Icons.info,
                                       background: Colors.orange.shade700,
                                     );
+                                    return;
                                   }
                                   await _guardarHoras(
                                     startDate,

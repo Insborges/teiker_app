@@ -12,8 +12,13 @@ import '../../models/Clientes.dart';
 
 class Clientsdetails extends StatefulWidget {
   final Clientes cliente;
+  final VoidCallback? onSessionClosed;
 
-  const Clientsdetails({super.key, required this.cliente});
+  const Clientsdetails({
+    super.key,
+    required this.cliente,
+    this.onSessionClosed,
+  });
 
   @override
   _ClientsdetailsState createState() => _ClientsdetailsState();
@@ -308,6 +313,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                       _horasCasa = total;
                                       widget.cliente.hourasCasa = total;
                                     });
+                                    widget.onSessionClosed?.call();
 
                                     AppSnackBar.show(
                                       context,
@@ -429,17 +435,28 @@ class _ClientsdetailsState extends State<Clientsdetails> {
         widget.cliente.nameCliente,
         seta: true,
         actions: [
-          TextButton(
-            onPressed: () {
-              atualizarDadosCliente();
-              Navigator.pop(context, true);
-            },
-            child: Row(
-              children: [
-                Icon(Icons.save, color: Colors.white),
-                SizedBox(width: 5),
-                Text('Guardar', style: TextStyle(color: Colors.white)),
-              ],
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.save_rounded, size: 18),
+              label: const Text(
+                'Guardar',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color.fromARGB(255, 4, 76, 32),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: () {
+                atualizarDadosCliente();
+                Navigator.pop(context, true);
+              },
             ),
           ),
         ],
@@ -705,41 +722,92 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   }
 
   Widget _buildTeikersSelector() {
+    final Color primary = const Color.fromARGB(255, 4, 76, 32);
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            "Teikers Associadas",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          Row(
+            children: [
+              const Text(
+                "Teikers Associadas",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: primary.withOpacity(.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  "${selectedTeikers.length}",
+                  style: TextStyle(
+                    color: primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
 
-          if (teikersList.isEmpty) const Text("Sem teikers."),
-          if (teikersList.isNotEmpty)
-            ...teikersList.map((t) {
-              final id = t['uid'];
+          if (teikersList.isEmpty)
+            const Text("Sem teikers.")
+          else
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: teikersList.map((t) {
+                final id = t['uid'];
+                final bool isSelected = selectedTeikers.contains(id);
 
-              return CheckboxListTile(
-                value: selectedTeikers.contains(id),
-                title: Text(t['name']),
-                activeColor: const Color.fromARGB(255, 4, 76, 32),
-                onChanged: (v) {
-                  setState(() {
-                    if (v == true) {
-                      selectedTeikers.add(id);
-                    } else {
-                      selectedTeikers.remove(id);
-                    }
-                  });
-                },
-              );
-            }),
+                return ChoiceChip(
+                  labelPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  label: Text(
+                    t['name'],
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: isSelected ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  avatar: Icon(
+                    isSelected ? Icons.check : Icons.person_outline,
+                    size: 18,
+                    color: isSelected ? Colors.white : primary,
+                  ),
+                  selected: isSelected,
+                  onSelected: (v) {
+                    setState(() {
+                      if (v && !selectedTeikers.contains(id)) {
+                        selectedTeikers.add(id);
+                      } else if (!v) {
+                        selectedTeikers.remove(id);
+                      }
+                    });
+                  },
+                  selectedColor: primary,
+                  backgroundColor: Colors.grey.shade100,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: isSelected
+                          ? primary
+                          : Colors.grey.shade300,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
         ],
       ),
     );

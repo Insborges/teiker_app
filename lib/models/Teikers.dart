@@ -15,6 +15,7 @@ class Teiker {
   final int telemovel;
   final double horas;
   final List<String> clientesIds;
+  final List<Consulta> consultas;
   final DateTime? feriasInicio;
   final DateTime? feriasFim;
   final Color corIdentificadora;
@@ -28,6 +29,7 @@ class Teiker {
     required this.telemovel,
     required this.horas,
     required this.clientesIds,
+    required this.consultas,
     required this.corIdentificadora,
     required this.isWorking,
     this.feriasInicio,
@@ -44,6 +46,9 @@ class Teiker {
       horas: (data['horas'] ?? 0).toDouble(),
       corIdentificadora: Color(data['cor'] ?? 0),
       clientesIds: List<String>.from(data['clientesIds'] ?? []),
+      consultas: (data['consultas'] as List<dynamic>? ?? [])
+          .map((c) => Consulta.fromMap(c as Map<String, dynamic>? ?? {}))
+          .toList(),
 
       feriasInicio: _parseDate(data['feriasInicio']),
       feriasFim: _parseDate(data['feriasFim']),
@@ -61,6 +66,7 @@ class Teiker {
       'horas': horas,
       'cor': corIdentificadora.value,
       'clientesIds': clientesIds,
+      'consultas': consultas.map((c) => c.toMap()).toList(),
       'feriasInicio': feriasInicio?.toIso8601String(),
       'feriasFim': feriasFim?.toIso8601String(),
       'isWorking': isWorking,
@@ -75,6 +81,7 @@ class Teiker {
     int? telemovel,
     double? horas,
     List<String>? clientesIds,
+    List<Consulta>? consultas,
     DateTime? feriasInicio,
     DateTime? feriasFim,
     Color? corIdentificadora,
@@ -88,11 +95,38 @@ class Teiker {
       telemovel: telemovel ?? this.telemovel,
       horas: horas ?? this.horas,
       clientesIds: clientesIds ?? this.clientesIds,
+      consultas: consultas ?? this.consultas,
       feriasInicio: feriasInicio ?? this.feriasInicio,
       feriasFim: feriasFim ?? this.feriasFim,
       corIdentificadora: corIdentificadora ?? this.corIdentificadora,
       isWorking: isWorking ?? this.isWorking,
       startTime: startTime ?? this.startTime,
     );
+  }
+}
+
+class Consulta {
+  final DateTime data;
+  final String descricao;
+
+  Consulta({required this.data, required this.descricao});
+
+  factory Consulta.fromMap(Map<String, dynamic> map) {
+    final rawDate = map['data'];
+    DateTime? parsed;
+    if (rawDate is Timestamp) parsed = rawDate.toDate();
+    if (rawDate is String) parsed = DateTime.tryParse(rawDate);
+
+    return Consulta(
+      data: parsed ?? DateTime.now(),
+      descricao: map['descricao'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'data': data.toIso8601String(),
+      'descricao': descricao,
+    };
   }
 }

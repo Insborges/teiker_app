@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:teiker_app/Screens/DetailsScreens.dart/ClientsDetails.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
@@ -21,6 +22,17 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
   final Map<String, WorkSession?> _openSessions = {};
   final WorkSessionService _workSessionService = WorkSessionService();
+  late Future<List<Clientes>> _clientesFuture;
+  late final bool _isAdmin;
+  String? _currentUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    _isAdmin = AuthService().isCurrentUserAdmin;
+    _currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    _clientesFuture = AuthService().getClientes();
+  }
 
   Future<void> _ensureOpenSessions(List<Clientes> clientes) async {
     final missing = clientes
@@ -44,14 +56,19 @@ class _ClientesScreenState extends State<ClientesScreen> {
     });
   }
 
+  Future<void> _refreshClientes() async {
+    if (!mounted) return;
+
+    setState(() {
+      _clientesFuture = AuthService().getClientes();
+      _openSessions.clear();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    Future<List<Clientes>> loadClientes() async {
-      return await AuthService().getClientes();
-    }
-
     return FutureBuilder<List<Clientes>>(
-      future: loadClientes(),
+      future: _clientesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Scaffold(
@@ -67,7 +84,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
           );
         }
 
-        final listaClientes = snapshot.data!;
+        var listaClientes = snapshot.data!;
+
+        if (!_isAdmin && _currentUserId != null) {
+          listaClientes = listaClientes
+              .where((c) => c.teikersIds.contains(_currentUserId))
+              .toList();
+        }
 
         _ensureOpenSessions(listaClientes);
 
@@ -88,11 +111,19 @@ class _ClientesScreenState extends State<ClientesScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (ctx) => Clientsdetails(cliente: cliente),
+                            builder: (ctx) => Clientsdetails(
+                              cliente: cliente,
+                              onSessionClosed: () {
+                                if (!mounted) return;
+                                setState(() {
+                                  _openSessions[cliente.uid] = null;
+                                });
+                              },
+                            ),
                           ),
                         ).then((updated) {
                           if (updated == true) {
-                            setState(() {});
+                            _refreshClientes();
                           }
                         });
                       },

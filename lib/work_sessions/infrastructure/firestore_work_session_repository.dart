@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import '../domain/work_session.dart';
 import '../domain/work_session_repository.dart';
 
@@ -12,14 +13,41 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     required String clienteId,
     required String teikerId,
   }) async {
-    // Try to find an open session tied to the current teikerId first.
-    var snapshot = await firestore
-        .collection('workSessions')
-        .where('clienteId', isEqualTo: clienteId)
-        .where('teikerId', isEqualTo: teikerId)
-        .where('endTime', isNull: true)
-        .limit(1)
-        .get();
+    QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      // Prefer the precise query (needs composite index in some projects)
+      snapshot = await firestore
+          .collection('workSessions')
+          .where('clienteId', isEqualTo: clienteId)
+          .where('teikerId', isEqualTo: teikerId)
+          .where('endTime', isNull: true)
+          .limit(1)
+          .get();
+    } on FirebaseException catch (e) {
+      if (e.code != 'failed-precondition') rethrow;
+
+      // Fallback without composite index: fetch by teikerId and filter locally.
+      final fallback = await firestore
+          .collection('workSessions')
+          .where('teikerId', isEqualTo: teikerId)
+          .get();
+
+      for (final doc in fallback.docs) {
+        final data = doc.data();
+        if (data['clienteId'] == clienteId && data['endTime'] == null) {
+          return WorkSession(
+            id: doc.id,
+            clienteId: data['clienteId'] as String,
+            teikerId: (data['teikerId'] as String?) ?? teikerId,
+            startTime: (data['startTime'] as Timestamp).toDate(),
+            endTime: null,
+            durationHours: (data['durationHours'] as num?)?.toDouble(),
+          );
+        }
+      }
+
+      return null;
+    }
 
     if (snapshot.docs.isEmpty) return null;
 
@@ -139,18 +167,38 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     final monthStart = DateTime(referenceDate.year, referenceDate.month, 1);
     final nextMonth = DateTime(referenceDate.year, referenceDate.month + 1, 1);
 
-    final snapshot = await firestore
-        .collection('workSessions')
-        .where('clienteId', isEqualTo: clienteId)
-        .where(
-          'startTime',
-          isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
-        )
-        .where('startTime', isLessThan: Timestamp.fromDate(nextMonth))
-        .get();
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+
+    try {
+      final snapshot = await firestore
+          .collection('workSessions')
+          .where('clienteId', isEqualTo: clienteId)
+          .where(
+            'startTime',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
+          )
+          .where('startTime', isLessThan: Timestamp.fromDate(nextMonth))
+          .get();
+      docs = snapshot.docs;
+    } on FirebaseException catch (e) {
+      if (e.code != 'failed-precondition') rethrow;
+
+      // Fallback: fetch all sessions for clienteId and filter by date locally.
+      final snapshot = await firestore
+          .collection('workSessions')
+          .where('clienteId', isEqualTo: clienteId)
+          .get();
+
+      docs = snapshot.docs.where((doc) {
+        final start = (doc.data()['startTime'] as Timestamp?)?.toDate();
+        return start != null &&
+            !start.isBefore(monthStart) &&
+            start.isBefore(nextMonth);
+      });
+    }
 
     double totalHours = 0;
-    for (final doc in snapshot.docs) {
+    for (final doc in docs) {
       final data = doc.data();
       double? duration = (data['durationHours'] as num?)?.toDouble();
       final start = (data['startTime'] as Timestamp?)?.toDate();

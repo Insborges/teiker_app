@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:teiker_app/Screens/DefinicoesScreens/TeikerHorasScreen.dart';
 import 'package:teiker_app/Screens/LoginScreen.dart';
 import 'package:teiker_app/Widgets/AppCardBounceCard.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
@@ -169,7 +170,14 @@ class _DefinicoesTeikersScreenState extends State<DefinicoesTeikersScreen> {
                 _buildOption(
                   icon: Icons.timer_outlined,
                   label: "Ver horas totais",
-                  onTap: () {},
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const TeikerHorasScreen(),
+                      ),
+                    );
+                  },
                 ),
                 _buildOption(
                   icon: Icons.logout,

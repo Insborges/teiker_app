@@ -8,7 +8,6 @@ import 'package:teiker_app/Screens/DefinicoesScreens/DefinicoesAdminScreen.dart'
 import 'package:teiker_app/Screens/HomeScreen.dart';
 import 'package:teiker_app/Screens/TeikersInfoScreen.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
-import 'package:teiker_app/Widgets/AppFAB.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
@@ -530,53 +529,76 @@ class _AdminscreenState extends State<Adminscreen> {
         ),
       ),
       floatingActionButton: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedSize(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: showOptions
-                    ? [
-                        AnimatedOpacity(
-                          duration: const Duration(milliseconds: 300),
-                          opacity: 1.0,
-                          child: AppFAB(
-                            tooltip: 'Adicionar Teiker',
-                            icon: Icons.person_add,
-                            onPressed: () {
-                              _teikerAdd();
-                            },
-                          ),
+        child: SizedBox(
+          width: 220,
+          height: 230,
+          child: Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              IgnorePointer(
+                ignoring: !showOptions,
+                child: AnimatedPositioned(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  right: 0,
+                  bottom: showOptions ? 72 : -150,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 200),
+                    opacity: showOptions ? 1 : 0,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        _fabAction(
+                          icon: Icons.person_add_alt_1,
+                          label: "Adicionar Teiker",
+                          onTap: _teikerAdd,
+                          color: selectedColor,
                         ),
-                        const SizedBox(height: 8),
-                        AnimatedOpacity(
-                          duration: const Duration(milliseconds: 300),
-                          opacity: 1.0,
-                          child: AppFAB(
-                            icon: Icons.note_add,
-                            tooltip: 'Adicionar Cliente',
-                            onPressed: () {
-                              _clienteAdd();
-                            },
-                          ),
+                        const SizedBox(height: 10),
+                        _fabAction(
+                          icon: Icons.home_work_outlined,
+                          label: "Adicionar Cliente",
+                          onTap: _clienteAdd,
+                          color: Colors.teal.shade700,
                         ),
-                        const SizedBox(height: 8),
-                      ]
-                    : [],
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            AppFAB(
-              icon: showOptions ? CupertinoIcons.xmark : CupertinoIcons.add,
-              tooltip: showOptions ? "Fechar opções" : "Abrir opções",
-              onPressed: () => setState(() => showOptions = !showOptions),
-            ),
-          ],
+              GestureDetector(
+                onTap: () => setState(() => showOptions = !showOptions),
+                child: Container(
+                  width: 62,
+                  height: 62,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      colors: [
+                        selectedColor,
+                        selectedColor.withOpacity(.85),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: selectedColor.withOpacity(.28),
+                        blurRadius: 16,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    showOptions ? CupertinoIcons.xmark : CupertinoIcons.add,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endDocked,
@@ -589,6 +611,54 @@ class _AdminscreenState extends State<Adminscreen> {
           ClientesScreen(),
           DefinicoesAdminScreen(),
         ],
+      ),
+    );
+  }
+
+  Widget _fabAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    Color? color,
+  }) {
+    final c = color ?? selectedColor;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: c.withOpacity(.12),
+                child: Icon(icon, color: c, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: TextStyle(
+                  color: c,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

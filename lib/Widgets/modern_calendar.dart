@@ -342,24 +342,38 @@ class _Tile extends StatelessWidget {
                 color: selected ? Colors.white : baseColor,
               ),
             ),
-            if (feriasColors.isNotEmpty)
+            if (feriasColors.isNotEmpty || hasEvents || isHoliday)
               Padding(
-                padding: const EdgeInsets.only(top: 3),
-                child: _FeriasIndicator(feriasColors: feriasColors),
-              ),
-            if (isHoliday)
-              Padding(
-                padding: const EdgeInsets.only(top: 3),
-                child: Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color.fromARGB(255, 222, 222, 122),
-                      width: 2,
-                    ),
-                  ),
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (feriasColors.isNotEmpty)
+                      _FeriasIndicator(feriasColors: feriasColors),
+                    if (hasEvents)
+                      Container(
+                        margin: const EdgeInsets.only(left: 4),
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: selected ? Colors.white : primary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    if (isHoliday)
+                      Container(
+                        margin: const EdgeInsets.only(left: 4),
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color.fromARGB(255, 222, 222, 122),
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
           ],

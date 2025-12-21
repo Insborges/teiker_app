@@ -70,6 +70,7 @@ class AuthService {
       telemovel: telemovel,
       horas: horas,
       clientesIds: clientesIds ?? [],
+      consultas: const [],
       corIdentificadora: cor ?? Colors.green,
       isWorking: false,
       startTime: null,
@@ -168,6 +169,53 @@ class AuthService {
     }
 
     return ferias;
+  }
+
+  Future<List<Map<String, dynamic>>> getConsultasTeikers() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final admin = isCurrentUserAdmin;
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('teikers')
+        .get();
+
+    final List<Map<String, dynamic>> consultas = [];
+
+    for (var doc in snapshot.docs) {
+      if (!admin && doc.id != user?.uid) continue;
+
+      final data = doc.data();
+      final corRaw = data['cor'];
+      final rawConsultas = data['consultas'] as List<dynamic>? ?? [];
+
+      Color cor;
+      if (corRaw is int) {
+        cor = Color(corRaw);
+      } else if (corRaw is String && corRaw.isNotEmpty) {
+        cor = Color(int.tryParse(corRaw) ?? Colors.green.value);
+      } else {
+        cor = Colors.green;
+      }
+
+      for (final c in rawConsultas) {
+        if (c is! Map<String, dynamic>) continue;
+
+        try {
+          final consulta = Consulta.fromMap(c);
+          consultas.add({
+            'uid': doc.id,
+            'nome': data['name'] ?? '',
+            'descricao': consulta.descricao,
+            'data': consulta.data,
+            'cor': cor,
+          });
+        } catch (_) {
+          continue;
+        }
+      }
+    }
+
+    return consultas;
   }
 
   Future<void> createCliente(Clientes cliente) async {

@@ -25,8 +25,13 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService().processPendingNavigation();
+    });
+
     return MaterialApp(
       title: 'Teiker App',
+      navigatorKey: NotificationService().navigatorKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color.fromARGB(255, 22, 40, 1),

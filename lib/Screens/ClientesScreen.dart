@@ -174,7 +174,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             onPressed: () async {
                               try {
                                 final session = await _workSessionService
-                                    .startSession(clienteId: cliente.uid);
+                                    .startSession(
+                                      clienteId: cliente.uid,
+                                      clienteName: cliente.nameCliente,
+                                    );
 
                                 setState(() {
                                   _openSessions[cliente.uid] = session;

@@ -4,12 +4,14 @@ import 'package:teiker_app/work_sessions/application/finish_work_session_use_cas
 import 'package:teiker_app/work_sessions/domain/work_session.dart';
 import 'package:teiker_app/work_sessions/domain/work_session_repository.dart';
 import 'package:teiker_app/work_sessions/infrastructure/firestore_work_session_repository.dart';
+import 'notification_service.dart';
 
 class WorkSessionService {
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   late final WorkSessionRepository _repository;
   late final FinishWorkSessionUseCase _finishUseCase;
+  final NotificationService _notificationService = NotificationService();
 
   WorkSessionService({FirebaseFirestore? firestore})
     : _firestore = firestore ?? FirebaseFirestore.instance {
@@ -25,7 +27,10 @@ class WorkSessionService {
     return id;
   }
 
-  Future<WorkSession> startSession({required String clienteId}) async {
+  Future<WorkSession> startSession({
+    required String clienteId,
+    required String clienteName,
+  }) async {
     final teikerId = _requireUser();
 
     final existing = await _repository.findOpenSession(
@@ -38,17 +43,37 @@ class WorkSessionService {
     }
 
     final now = DateTime.now();
-    return _repository.startSession(
+    final session = await _repository.startSession(
       clienteId: clienteId,
       teikerId: teikerId,
       start: now,
     );
+
+    await _notificationService.schedulePendingSessionReminder(
+      sessionId: session.id,
+      clienteId: clienteId,
+      clienteName: clienteName,
+      startTime: now,
+    );
+
+    return session;
   }
 
   Future<double> finishSession({required String clienteId}) async {
     final teikerId = _requireUser();
 
-    return _finishUseCase.execute(clienteId: clienteId, teikerId: teikerId);
+    final open = await _repository.findOpenSession(
+      clienteId: clienteId,
+      teikerId: teikerId,
+    );
+
+    final total =
+        await _finishUseCase.execute(clienteId: clienteId, teikerId: teikerId);
+
+    if (open != null) {
+      await _notificationService.cancelPendingSessionReminder(open.id);
+    }
+    return total;
   }
 
   Future<double> addManualSession({
@@ -89,6 +114,8 @@ class WorkSessionService {
 
     await _repository.closeSession(sessionId: sessionId, end: end);
 
+    await _notificationService.cancelPendingSessionReminder(sessionId);
+
     return _repository.calculateMonthlyTotal(
       clienteId: clienteId,
       referenceDate: session.startTime,
@@ -111,6 +138,8 @@ class WorkSessionService {
     required DateTime startTime,
   }) async {
     await _repository.closeSession(sessionId: sessionId, end: DateTime.now());
+
+    await _notificationService.cancelPendingSessionReminder(sessionId);
 
     return _repository.calculateMonthlyTotal(
       clienteId: clienteId,

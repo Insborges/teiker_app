@@ -2,9 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:teiker_app/Screens/LoginScreen.dart';
-import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppCardBounceCard.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
+import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
+import 'package:teiker_app/Widgets/ResetPasswordDialog.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 
 class DefinicoesAdminScreen extends StatefulWidget {
@@ -18,13 +19,6 @@ class _DefinicoesAdminScreenState extends State<DefinicoesAdminScreen> {
   File? _profileImage;
   final Color mainColor = const Color.fromARGB(255, 4, 76, 32);
   final AuthService _authService = AuthService();
-  final TextEditingController _resetCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _resetCtrl.dispose();
-    super.dispose();
-  }
 
   Future<void> _pickImage() async {
     final ImagePicker picker = ImagePicker();
@@ -81,7 +75,7 @@ class _DefinicoesAdminScreenState extends State<DefinicoesAdminScreen> {
         children: [
           // --- AppBar Curva ---
           ClipPath(
-            clipper: _CurveAppBarClipper(),
+            clipper: CurveAppBarClipper(),
             child: Container(
               width: double.infinity,
               height: appBarHeight,
@@ -192,93 +186,10 @@ class _DefinicoesAdminScreenState extends State<DefinicoesAdminScreen> {
   }
 
   void _openResetDialog() {
-    showDialog(
+    showResetPasswordDialog(
       context: context,
-      builder: (_) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  "Redefinir Palavra-passe",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  "Será enviado um email com instruções.",
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _resetCtrl,
-                  decoration: InputDecoration(
-                    labelText: "Email",
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppButton(
-                        text: "Cancelar",
-                        outline: true,
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: AppButton(
-                        text: "Enviar",
-                        onPressed: () async {
-                          await _authService.resetPassword(
-                            _resetCtrl.text.trim(),
-                          );
-                          if (mounted) Navigator.pop(context);
-                          AppSnackBar.show(
-                            context,
-                            message: "Email enviado!",
-                            icon: Icons.email,
-                            background: Colors.green.shade700,
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      onSubmit: (email) => _authService.resetPassword(email),
+      accentColor: mainColor,
     );
   }
-}
-
-// --- CLIPPER da AppBar Curva ---
-class _CurveAppBarClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    Path path = Path();
-    path.lineTo(0, size.height - 60);
-    path.quadraticBezierTo(
-      size.width / 2,
-      size.height,
-      size.width,
-      size.height - 60,
-    );
-    path.lineTo(size.width, 0);
-    path.close();
-    return path;
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }

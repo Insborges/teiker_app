@@ -486,11 +486,18 @@ class _ClientsdetailsState extends State<Clientsdetails> {
             SizedBox(height: 16),
             _buildHorasCard(_horasCasa),
             SizedBox(height: 8),
+            AppButton(
+              text: "Adicionar Horas",
+              icon: Icons.timer,
+              color: const Color.fromARGB(255, 4, 76, 32),
+              onPressed: () => _abrirDialogAdicionarHoras(),
+            ),
+            SizedBox(height: 12),
             _buildOrcamentoCard(widget.cliente.orcamento),
 
             SizedBox(height: 16),
 
-            // BOTÃO PARA ADICIONAR HORAS
+            // Emitir faturas
             AppButton(
               text: "Emitir Faturas",
               icon: Icons.file_copy,

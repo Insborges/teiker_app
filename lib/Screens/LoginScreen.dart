@@ -4,6 +4,7 @@ import 'package:teiker_app/Screens/EcrasPrincipais/AdminScreen.dart';
 import 'package:teiker_app/Screens/EcrasPrincipais/TeikersMainScreen.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
+import 'package:teiker_app/Widgets/ResetPasswordDialog.dart';
 import 'package:teiker_app/auth/auth_notifier.dart';
 import 'package:teiker_app/auth/auth_state.dart';
 
@@ -19,14 +20,12 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final emailCtrl = TextEditingController();
   final passCtrl = TextEditingController();
-  final resetCtrl = TextEditingController();
   bool obscurePassword = true;
 
   @override
   void dispose() {
     emailCtrl.dispose();
     passCtrl.dispose();
-    resetCtrl.dispose();
     super.dispose();
   }
 
@@ -213,72 +212,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   void _openResetDialog(BuildContext context, dynamic authNotifier) {
-    showDialog(
+    showResetPasswordDialog(
       context: context,
-      builder: (_) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  "Redefinir Palavra-passe",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  "Será enviado um email com instruções.",
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: resetCtrl,
-                  decoration: InputDecoration(
-                    labelText: "Email",
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: AppButton(
-                        text: "Cancelar",
-                        outline: true,
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: AppButton(
-                        text: "Enviar",
-                        onPressed: () async {
-                          await authNotifier.resetPassword(
-                            resetCtrl.text.trim(),
-                          );
-                          Navigator.pop(context);
-                          AppSnackBar.show(
-                            context,
-                            message: "Email enviado!",
-                            icon: Icons.email,
-                            background: Colors.green.shade700,
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      onSubmit: (email) => authNotifier.resetPassword(email),
+      initialEmail: emailCtrl.text.trim(),
+      accentColor: widget.primaryColor,
     );
   }
 }

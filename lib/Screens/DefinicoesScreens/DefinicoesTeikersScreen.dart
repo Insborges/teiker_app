@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:teiker_app/Screens/DefinicoesScreens/TeikerHorasScreen.dart';
 import 'package:teiker_app/Screens/LoginScreen.dart';
+import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppCardBounceCard.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/backend/auth_service.dart';
@@ -21,6 +22,7 @@ class _DefinicoesTeikersScreenState extends State<DefinicoesTeikersScreen> {
   File? _profileImage;
   final Color mainColor = const Color.fromARGB(255, 4, 76, 32);
   final AuthService _authService = AuthService();
+  final TextEditingController _resetCtrl = TextEditingController();
 
   String teikerName = "";
   String teikerEmail = "";
@@ -29,6 +31,12 @@ class _DefinicoesTeikersScreenState extends State<DefinicoesTeikersScreen> {
   void initState() {
     super.initState();
     _loadUserData();
+  }
+
+  @override
+  void dispose() {
+    _resetCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUserData() async {
@@ -43,12 +51,16 @@ class _DefinicoesTeikersScreenState extends State<DefinicoesTeikersScreen> {
         .doc(uid)
         .get();
 
+    final email = doc.data()?['email'] ?? user.email ?? "";
+
     if (!mounted) return;
     setState(() {
       teikerName =
           doc.data()?['name'] ?? user.displayName ?? "Teiker Profissional";
-      teikerEmail = doc.data()?['email'] ?? user.email ?? "";
+      teikerEmail = email;
     });
+
+    _resetCtrl.text = email;
   }
 
   Future<void> _pickImage() async {
@@ -165,7 +177,7 @@ class _DefinicoesTeikersScreenState extends State<DefinicoesTeikersScreen> {
                 _buildOption(
                   icon: Icons.lock_outline,
                   label: "Recompor palavra-passe",
-                  onTap: () {},
+                  onTap: _openResetDialog,
                 ),
                 _buildOption(
                   icon: Icons.timer_outlined,
@@ -223,6 +235,76 @@ class _DefinicoesTeikersScreenState extends State<DefinicoesTeikersScreen> {
         whiteText: true,
         onTap: onTap,
       ),
+    );
+  }
+
+  void _openResetDialog() {
+    showDialog(
+      context: context,
+      builder: (_) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  "Redefinir Palavra-passe",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "Será enviado um email com instruções.",
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _resetCtrl,
+                  decoration: InputDecoration(
+                    labelText: "Email",
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppButton(
+                        text: "Cancelar",
+                        outline: true,
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: AppButton(
+                        text: "Enviar",
+                        onPressed: () async {
+                          await _authService.resetPassword(
+                            _resetCtrl.text.trim(),
+                          );
+                          if (mounted) Navigator.pop(context);
+                          AppSnackBar.show(
+                            context,
+                            message: "Email enviado!",
+                            icon: Icons.email,
+                            background: Colors.green.shade700,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

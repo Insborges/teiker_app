@@ -60,8 +60,12 @@ class AuthService {
     Color? cor,
   }) async {
     // Cria user no Auth
-    final userCredential = await FirebaseAuth.instance
-        .createUserWithEmailAndPassword(email: email, password: password);
+    final creatorAuth = await _firebase.secondaryAuth;
+    final userCredential = await creatorAuth.createUserWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+    await creatorAuth.signOut();
 
     final teiker = Teiker(
       uid: userCredential.user!.uid,

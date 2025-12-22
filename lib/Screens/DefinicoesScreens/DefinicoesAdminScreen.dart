@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:teiker_app/Screens/LoginScreen.dart';
+import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppCardBounceCard.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/backend/auth_service.dart';
@@ -17,6 +18,13 @@ class _DefinicoesAdminScreenState extends State<DefinicoesAdminScreen> {
   File? _profileImage;
   final Color mainColor = const Color.fromARGB(255, 4, 76, 32);
   final AuthService _authService = AuthService();
+  final TextEditingController _resetCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _resetCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _pickImage() async {
     final ImagePicker picker = ImagePicker();
@@ -129,7 +137,7 @@ class _DefinicoesAdminScreenState extends State<DefinicoesAdminScreen> {
                 _buildOption(
                   icon: Icons.lock_outline,
                   label: "Recompor palavra-passe",
-                  onTap: () {},
+                  onTap: _openResetDialog,
                 ),
                 _buildOption(
                   icon: Icons.receipt_long_outlined,
@@ -172,7 +180,7 @@ class _DefinicoesAdminScreenState extends State<DefinicoesAdminScreen> {
     bool forceWhiteText = true,
   }) {
     return Padding(
-      padding: EdgeInsetsGeometry.all(10),
+      padding: const EdgeInsets.all(10),
       child: AppCardBounceCard(
         icon: icon,
         title: label,
@@ -180,6 +188,76 @@ class _DefinicoesAdminScreenState extends State<DefinicoesAdminScreen> {
         whiteText: true,
         onTap: onTap,
       ),
+    );
+  }
+
+  void _openResetDialog() {
+    showDialog(
+      context: context,
+      builder: (_) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  "Redefinir Palavra-passe",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "Será enviado um email com instruções.",
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _resetCtrl,
+                  decoration: InputDecoration(
+                    labelText: "Email",
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppButton(
+                        text: "Cancelar",
+                        outline: true,
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: AppButton(
+                        text: "Enviar",
+                        onPressed: () async {
+                          await _authService.resetPassword(
+                            _resetCtrl.text.trim(),
+                          );
+                          if (mounted) Navigator.pop(context);
+                          AppSnackBar.show(
+                            context,
+                            message: "Email enviado!",
+                            icon: Icons.email,
+                            background: Colors.green.shade700,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

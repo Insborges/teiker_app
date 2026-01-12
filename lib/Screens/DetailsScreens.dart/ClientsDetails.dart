@@ -542,8 +542,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   //Mapa(mostra morada)
   Widget _buildMapCard(String endereco) {
-    const apiKey = 'AIzaSyBGYYzIR73Sxk0GxxcK8dmWgxcxybMSRj0';
-    debugPrint('API KEY = "$apiKey"');
+    const apiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
 
     if (apiKey.isEmpty) {
       return _buildMapContainer(

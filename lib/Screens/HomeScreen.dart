@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/EventAddSheet.dart';
 import 'package:teiker_app/Widgets/EventItem.dart';
-import 'package:teiker_app/Widgets/curve_appbar_clipper.dart';
+import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
 import 'package:teiker_app/Widgets/modern_calendar.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/auth/auth_notifier.dart';

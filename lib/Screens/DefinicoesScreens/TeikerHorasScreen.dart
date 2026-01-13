@@ -16,15 +16,26 @@ class TeikerHorasScreen extends StatefulWidget {
 class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
   final Color _primary = const Color.fromARGB(255, 4, 76, 32);
   bool _loading = true;
-  bool _collapsed = false;
   Map<DateTime, Map<String, double>> _hoursByDay = {};
+  Map<DateTime, Map<DateTime, Map<String, double>>> _hoursByMonth = {};
+  Map<DateTime, double> _totalsByMonth = {};
+  List<DateTime> _months = [];
+  DateTime? _selectedMonth;
   double _totalMes = 0;
-  String _monthLabel = '';
+  double _targetHoras = 0;
+  late final PageController _pageController;
 
   @override
   void initState() {
     super.initState();
+    _pageController = PageController();
     _loadHoras();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHoras() async {
@@ -38,25 +49,24 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     final Map<String, Clientes> clientesMap = {
       for (final c in clientes) c.uid: c
     };
-
-    final now = DateTime.now();
-    final inicioMes = DateTime(now.year, now.month, 1);
-    final proximoMes = DateTime(now.year, now.month + 1, 1);
-    _monthLabel = DateFormat('MMMM yyyy', 'pt_PT').format(inicioMes);
-
-    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+    double targetHoras = 0;
+    try {
+      final teikerDoc = await FirebaseFirestore.instance
+          .collection('teikers')
+          .doc(user.uid)
+          .get();
+      final data = teikerDoc.data();
+      if (data != null) {
+        targetHoras = (data['horas'] ?? 0).toDouble();
+      }
+    } catch (_) {}
 
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('workSessions')
           .where('teikerId', isEqualTo: user.uid)
-          .where(
-            'startTime',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(inicioMes),
-          )
-          .where('startTime', isLessThan: Timestamp.fromDate(proximoMes))
           .get();
-      docs = snapshot.docs;
+      _buildMonthlyData(snapshot.docs, clientesMap, targetHoras);
     } on FirebaseException catch (e) {
       if (e.code != 'failed-precondition') rethrow;
 
@@ -64,17 +74,18 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
           .collection('workSessions')
           .where('teikerId', isEqualTo: user.uid)
           .get();
-
-      docs = snapshot.docs.where((doc) {
-        final start = (doc.data()['startTime'] as Timestamp?)?.toDate();
-        return start != null &&
-            !start.isBefore(inicioMes) &&
-            start.isBefore(proximoMes);
-      });
+      _buildMonthlyData(snapshot.docs, clientesMap, targetHoras);
     }
+  }
 
-    final Map<DateTime, Map<String, double>> grouped = {};
-    double total = 0;
+  void _buildMonthlyData(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+    Map<String, Clientes> clientesMap,
+    double targetHoras,
+  ) {
+    final Map<DateTime, Map<DateTime, Map<String, double>>> grouped = {};
+    final Map<DateTime, double> totals = {};
+    DateTime? earliestMonth;
 
     for (final doc in docs) {
       final data = doc.data();
@@ -87,35 +98,66 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
           : null;
 
       if (duration == null || start == null) continue;
-      final double dur = duration;
-
-      final key = DateTime(start.year, start.month, start.day);
+      final dur = duration;
+      final monthKey = DateTime(start.year, start.month);
+      final dayKey = DateTime(start.year, start.month, start.day);
       final clienteName = clienteId != null
           ? clientesMap[clienteId]?.nameCliente ?? clienteId
           : "Cliente";
 
-      grouped.putIfAbsent(key, () => {});
-      grouped[key]!.update(
+      grouped.putIfAbsent(monthKey, () => {});
+      grouped[monthKey]!.putIfAbsent(dayKey, () => {});
+      grouped[monthKey]![dayKey]!.update(
         clienteName,
         (v) => v + dur,
         ifAbsent: () => dur,
       );
 
-      total += dur;
+      totals.update(monthKey, (v) => v + dur, ifAbsent: () => dur);
+      earliestMonth ??= monthKey;
+      if (monthKey.isBefore(earliestMonth!)) {
+        earliestMonth = monthKey;
+      }
     }
+
+    final now = DateTime.now();
+    final currentMonth = DateTime(now.year, now.month);
+    final DateTime firstMonth = earliestMonth ?? currentMonth;
+    final List<DateTime> months = [];
+    DateTime cursor = DateTime(firstMonth.year, firstMonth.month);
+    while (!cursor.isAfter(currentMonth)) {
+      months.add(cursor);
+      cursor = DateTime(cursor.year, cursor.month + 1);
+    }
+
+    for (final month in months) {
+      grouped.putIfAbsent(month, () => {});
+      totals.putIfAbsent(month, () => 0);
+    }
+
+    final initialIndex = months.indexOf(currentMonth);
+    final selectedMonth = initialIndex >= 0 ? months[initialIndex] : currentMonth;
 
     if (!mounted) return;
     setState(() {
-      _hoursByDay = grouped;
-      _totalMes = total;
+      _hoursByMonth = grouped;
+      _totalsByMonth = totals;
+      _months = months;
+      _selectedMonth = selectedMonth;
+      _hoursByDay = grouped[selectedMonth] ?? {};
+      _totalMes = totals[selectedMonth] ?? 0;
+      _targetHoras = targetHoras;
       _loading = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_pageController.hasClients && initialIndex >= 0) {
+        _pageController.jumpToPage(initialIndex);
+      }
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final isPositive = _totalMes >= 0;
-
     return Scaffold(
       appBar: buildAppBar("Horas do mês", seta: true),
       body: _loading
@@ -124,61 +166,141 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  _summaryCard(isPositive),
+                  if (_months.isNotEmpty)
+                    SizedBox(
+                      height: 86,
+                      child: PageView.builder(
+                        controller: _pageController,
+                        itemCount: _months.length,
+                        onPageChanged: _onMonthChanged,
+                        itemBuilder: (context, index) {
+                          final month = _months[index];
+                          final total = _totalsByMonth[month] ?? 0;
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: _summaryCard(
+                              DateFormat('MMMM yyyy', 'pt_PT').format(month),
+                              total,
+                              _isAboveTarget(total),
+                            ),
+                          );
+                        },
+                      ),
+                    )
+                  else
+                    _summaryCard("Sem registos", 0, true),
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      if (!_collapsed)
+                      if (_months.isNotEmpty)
                         OutlinedButton.icon(
-                          icon: const Icon(Icons.check_circle_outline),
-                          label: const Text("Fechar mês"),
+                          icon: const Icon(Icons.calendar_month),
+                          label: const Text("Selecionar mês"),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: _primary,
                             side: BorderSide(color: _primary),
                           ),
-                          onPressed: () => setState(() => _collapsed = true),
-                        ),
-                      if (_collapsed)
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.visibility),
-                          label: const Text("Ver detalhes"),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _primary,
-                            side: BorderSide(color: _primary),
-                          ),
-                          onPressed: () => setState(() => _collapsed = false),
+                          onPressed: _openMonthPicker,
                         ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  if (!_collapsed)
-                    Expanded(
-                      child: _hoursByDay.isEmpty
-                          ? Center(
-                              child: Text(
-                                "Ainda sem registos este mês.",
-                                style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                  Expanded(
+                    child: _hoursByDay.isEmpty
+                        ? Center(
+                            child: Text(
+                              "Ainda sem registos este mês.",
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontWeight: FontWeight.w600,
                               ),
-                            )
-                          : ListView(
-                              children: (_hoursByDay.entries.toList()
-                                    ..sort(
-                                      (a, b) => b.key.compareTo(a.key),
-                                    ))
-                                  .map((e) => _dayCard(e.key, e.value))
-                                  .toList(),
                             ),
-                    ),
+                          )
+                        : ListView(
+                            children: (_hoursByDay.entries.toList()
+                                  ..sort(
+                                    (a, b) => b.key.compareTo(a.key),
+                                  ))
+                                .map((e) => _dayCard(e.key, e.value))
+                                .toList(),
+                          ),
+                  ),
                 ],
               ),
             ),
     );
   }
 
-  Widget _summaryCard(bool isPositive) {
+  bool _isAboveTarget(double total) {
+    if (_targetHoras <= 0) return total >= 0;
+    return total >= _targetHoras;
+  }
+
+  void _onMonthChanged(int index) {
+    if (index < 0 || index >= _months.length) return;
+    final month = _months[index];
+    setState(() {
+      _selectedMonth = month;
+      _hoursByDay = _hoursByMonth[month] ?? {};
+      _totalMes = _totalsByMonth[month] ?? 0;
+    });
+  }
+
+  void _openMonthPicker() {
+    if (_months.isEmpty) return;
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        final monthsDesc = _months.reversed.toList();
+        return SafeArea(
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: monthsDesc.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final month = monthsDesc[index];
+              final label =
+                  DateFormat('MMMM yyyy', 'pt_PT').format(month);
+              final total = _totalsByMonth[month] ?? 0;
+              final isSelected = month == _selectedMonth;
+              return ListTile(
+                title: Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                  ),
+                ),
+                trailing: Text(
+                  "${total.toStringAsFixed(1)} h",
+                  style: TextStyle(
+                    color: _primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  final monthIndex = _months.indexOf(month);
+                  if (monthIndex >= 0 && _pageController.hasClients) {
+                    _pageController.animateToPage(
+                      monthIndex,
+                      duration: const Duration(milliseconds: 280),
+                      curve: Curves.easeOut,
+                    );
+                  }
+                  _onMonthChanged(monthIndex);
+                },
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _summaryCard(String label, double total, bool isPositive) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -205,7 +327,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _monthLabel,
+                  label,
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
@@ -213,7 +335,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "Total: ${_totalMes.toStringAsFixed(1)} h",
+                  "Total: ${total.toStringAsFixed(1)} h",
                   style: TextStyle(
                     color:
                         isPositive ? Colors.green.shade700 : Colors.red.shade700,

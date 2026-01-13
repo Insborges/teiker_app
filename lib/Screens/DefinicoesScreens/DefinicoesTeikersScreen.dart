@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:teiker_app/Screens/DefinicoesScreens/TeikerHorasScreen.dart';
@@ -21,6 +24,8 @@ class DefinicoesTeikersScreen extends StatefulWidget {
 
 class _DefinicoesTeikersScreenState extends State<DefinicoesTeikersScreen> {
   File? _profileImage;
+  Uint8List? _profileImageBytes;
+  String? _profileImageUrl;
   final Color mainColor = const Color.fromARGB(255, 4, 76, 32);
   final AuthService _authService = AuthService();
 
@@ -46,17 +51,95 @@ class _DefinicoesTeikersScreenState extends State<DefinicoesTeikersScreen> {
         .get();
 
     final email = doc.data()?['email'] ?? user.email ?? "";
+    final photoUrl = doc.data()?['photoUrl'] as String?;
+    final photoBase64 = doc.data()?['photoBase64'] as String?;
+    Uint8List? bytes;
+    if (photoBase64 != null && photoBase64.isNotEmpty) {
+      try {
+        bytes = base64Decode(photoBase64);
+      } catch (_) {}
+    }
 
     if (!mounted) return;
     setState(() {
       teikerName =
           doc.data()?['name'] ?? user.displayName ?? "Teiker Profissional";
       teikerEmail = email;
+      _profileImageBytes = bytes;
+      _profileImageUrl = photoUrl;
     });
   }
 
-  Future<void> _pickImage() async {
+  Future<void> _saveProfileImage(File file) async {
+    final user = FirebaseService().currentUser;
+    if (user == null) return;
+
+    try {
+      final bytes = await file.readAsBytes();
+      final base64 = base64Encode(bytes);
+      await FirebaseFirestore.instance
+          .collection('teikers')
+          .doc(user.uid)
+          .set({'photoBase64': base64}, SetOptions(merge: true));
+      if (!mounted) return;
+      setState(() => _profileImageBytes = bytes);
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: "Erro a guardar a foto: $e",
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  Future<void> _handlePick(ImageSource source) async {
     final ImagePicker picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      imageQuality: 70,
+      maxWidth: 512,
+      maxHeight: 512,
+    );
+    if (picked == null) return;
+    final file = File(picked.path);
+    setState(() => _profileImage = file);
+    await _saveProfileImage(file);
+  }
+
+  Future<void> _pickImage() async {
+    if (Platform.isIOS) {
+      showCupertinoModalPopup(
+        context: context,
+        builder: (context) {
+          return CupertinoActionSheet(
+            title: const Text('Escolher foto'),
+            actions: [
+              CupertinoActionSheetAction(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _handlePick(ImageSource.camera);
+                },
+                child: const Text('Tirar Foto'),
+              ),
+              CupertinoActionSheetAction(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _handlePick(ImageSource.gallery);
+                },
+                child: const Text('Escolher da Galeria'),
+              ),
+            ],
+            cancelButton: CupertinoActionSheetAction(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+          );
+        },
+      );
+      return;
+    }
 
     showModalBottomSheet(
       context: context,
@@ -70,27 +153,17 @@ class _DefinicoesTeikersScreenState extends State<DefinicoesTeikersScreen> {
               ListTile(
                 leading: const Icon(Icons.camera_alt),
                 title: const Text('Tirar Foto'),
-                onTap: () async {
+                onTap: () {
                   Navigator.pop(context);
-                  final picked = await picker.pickImage(
-                    source: ImageSource.camera,
-                  );
-                  if (picked != null) {
-                    setState(() => _profileImage = File(picked.path));
-                  }
+                  _handlePick(ImageSource.camera);
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.photo_library),
                 title: const Text('Escolher da Galeria'),
-                onTap: () async {
+                onTap: () {
                   Navigator.pop(context);
-                  final picked = await picker.pickImage(
-                    source: ImageSource.gallery,
-                  );
-                  if (picked != null) {
-                    setState(() => _profileImage = File(picked.path));
-                  }
+                  _handlePick(ImageSource.gallery);
                 },
               ),
             ],
@@ -126,8 +199,14 @@ class _DefinicoesTeikersScreenState extends State<DefinicoesTeikersScreen> {
                         backgroundColor: Colors.white,
                         backgroundImage: _profileImage != null
                             ? FileImage(_profileImage!)
+                            : _profileImageBytes != null
+                                ? MemoryImage(_profileImageBytes!)
+                                : _profileImageUrl != null
+                                ? NetworkImage(_profileImageUrl!)
                             : null,
                         child: _profileImage == null
+                            && _profileImageBytes == null
+                            && _profileImageUrl == null
                             ? const Icon(
                                 Icons.camera_alt,
                                 size: 40,

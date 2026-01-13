@@ -29,8 +29,10 @@ class NotificationService {
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosInit = DarwinInitializationSettings();
-    const initSettings =
-        InitializationSettings(android: androidInit, iOS: iosInit);
+    const initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: iosInit,
+    );
 
     final launchDetails = await _local.getNotificationAppLaunchDetails();
 
@@ -128,8 +130,9 @@ class NotificationService {
       final sessionId = data['sessionId'] as String?;
       final startIso = data['startTime'] as String?;
 
-      DateTime? startTime =
-          startIso != null ? DateTime.tryParse(startIso) : null;
+      DateTime? startTime = startIso != null
+          ? DateTime.tryParse(startIso)
+          : null;
 
       final doc = await FirebaseFirestore.instance
           .collection('clientes')
@@ -141,10 +144,7 @@ class NotificationService {
       final Map<String, dynamic>? clienteData = doc.data();
       if (clienteData == null) return;
 
-      final cliente = Clientes.fromMap({
-        ...clienteData,
-        'uid': doc.id,
-      });
+      final cliente = Clientes.fromMap({...clienteData, 'uid': doc.id});
 
       nav.push(
         MaterialPageRoute(

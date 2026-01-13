@@ -525,7 +525,7 @@ class _AdminscreenState extends State<Adminscreen> {
                     ),
                     const SizedBox(height: 10),
                     _formInput(
-                      "Orçamento (€)",
+                      "Preço/Hora (€)",
                       orcamentoController,
                       keyboard: TextInputType.number,
                     ),

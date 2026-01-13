@@ -119,6 +119,8 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   Future<void> _loadConsultas() async {
     final consultasRaw =
         await ref.read(authServiceProvider).getConsultasTeikers();
+    final userId = ref.read(authStateProvider).asData?.value?.uid;
+    final isAdmin = ref.read(isAdminProvider);
 
     final Map<DateTime, List<Map<String, dynamic>>> grouped = {};
 
@@ -126,10 +128,15 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       final date = c['data'] as DateTime?;
       if (date == null) continue;
 
+      final isOwn = userId != null && c['uid'] == userId;
+      final title = (!isAdmin && isOwn)
+          ? "Tenho consulta!"
+          : (isOwn ? "Tenho consulta!" : "${c['nome']} tem consulta");
+
       final key = _dayKey(date);
       grouped.putIfAbsent(key, () => []);
       grouped[key]!.add({
-        'title': "${c['nome']} tem consulta",
+        'title': title,
         'descricao': c['descricao'],
         'date': date,
         'start': DateFormat('HH:mm', 'pt_PT').format(date),

@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/DatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/SingleTimePickerBottomSheet.dart';
 import '../../models/Clientes.dart';
 import '../../models/Teikers.dart';
 import '../../Widgets/AppBar.dart';
@@ -217,202 +219,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        DateTime selectedDate = consulta?.data ?? DateTime.now();
-        TimeOfDay selectedHour =
-            TimeOfDay.fromDateTime(consulta?.data ?? DateTime.now());
-        final descricaoCtrl = TextEditingController(
-          text: consulta?.descricao ?? '',
-        );
-
-        Future<void> pickDate(StateSetter setSheetState) async {
-          final picked = await showDatePicker(
-            context: ctx,
-            initialDate: selectedDate,
-            firstDate: DateTime(2020),
-            lastDate: DateTime(2035),
-            builder: (context, child) {
-              return Theme(
-                data: Theme.of(context).copyWith(
-                  colorScheme: ColorScheme.light(
-                    primary: _primaryColor,
-                    onPrimary: Colors.white,
-                    onSurface: Colors.black87,
-                  ),
-                ),
-                child: child!,
-              );
-            },
-          );
-          if (picked != null) {
-            setSheetState(() => selectedDate = picked);
-          }
-        }
-
-        Future<void> pickTime(StateSetter setSheetState) async {
-          final picked = await showTimePicker(
-            context: ctx,
-            initialTime: selectedHour,
-            builder: (context, child) {
-              return Theme(
-                data: Theme.of(context).copyWith(
-                  colorScheme: ColorScheme.light(
-                    primary: _primaryColor,
-                    onPrimary: Colors.white,
-                    onSurface: Colors.black87,
-                  ),
-                ),
-                child: child!,
-              );
-            },
-          );
-          if (picked != null) {
-            setSheetState(() => selectedHour = picked);
-          }
-        }
-
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final dateLabel =
-                DateFormat("dd MMM yyyy", 'pt_PT').format(selectedDate);
-            final timeLabel = selectedHour.format(context);
-
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                left: 16,
-                right: 16,
-                top: 8,
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 18,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          consulta == null
-                              ? "Adicionar consulta"
-                              : "Editar consulta",
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close),
-                          color: Colors.grey.shade600,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: descricaoCtrl,
-                      decoration: InputDecoration(
-                        labelText: "Descrição",
-                        filled: true,
-                        fillColor: Colors.grey.shade100,
-                        prefixIcon:
-                            Icon(Icons.note_alt_outlined, color: _primaryColor),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(color: _primaryColor),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(
-                            color: _primaryColor,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _consultaChip(
-                            icon: Icons.calendar_today,
-                            label: dateLabel,
-                            onTap: () => pickDate(setSheetState),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _consultaChip(
-                            icon: Icons.access_time,
-                            label: timeLabel,
-                            onTap: () => pickTime(setSheetState),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.check),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryColor,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          elevation: 3,
-                        ),
-                        onPressed: () {
-                          final descricao = descricaoCtrl.text.trim();
-                          if (descricao.isEmpty) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                content:
-                                    Text("Adiciona uma breve descrição."),
-                              ),
-                            );
-                            return;
-                          }
-
-                          final date = DateTime(
-                            selectedDate.year,
-                            selectedDate.month,
-                            selectedDate.day,
-                            selectedHour.hour,
-                            selectedHour.minute,
-                          );
-
-                          Navigator.pop(
-                            context,
-                            Consulta(data: date, descricao: descricao),
-                          );
-                        },
-                        label: Text(
-                          consulta == null ? "Guardar consulta" : "Guardar",
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
+        return _ConsultaSheet(
+          consulta: consulta,
+          primaryColor: _primaryColor,
         );
       },
     );
@@ -901,6 +710,240 @@ class _TeikersDetailsState extends State<TeikersDetails> {
               style: TextStyle(
                 color: color,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ConsultaSheet extends StatefulWidget {
+  final Consulta? consulta;
+  final Color primaryColor;
+
+  const _ConsultaSheet({this.consulta, required this.primaryColor});
+
+  @override
+  State<_ConsultaSheet> createState() => _ConsultaSheetState();
+}
+
+class _ConsultaSheetState extends State<_ConsultaSheet> {
+  late DateTime selectedDate;
+  late TimeOfDay selectedHour;
+  late TextEditingController descricaoCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    final baseDate = widget.consulta?.data ?? DateTime.now();
+    selectedDate = DateTime(baseDate.year, baseDate.month, baseDate.day);
+    selectedHour = TimeOfDay.fromDateTime(baseDate);
+    descricaoCtrl = TextEditingController(text: widget.consulta?.descricao ?? '');
+  }
+
+  @override
+  void dispose() {
+    descricaoCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await SingleDatePickerBottomSheet.show(
+      context,
+      initialDate: selectedDate,
+      title: 'Selecionar data',
+      subtitle: 'Escolhe o dia',
+      confirmLabel: 'Confirmar',
+    );
+    if (picked != null) {
+      setState(() {
+        selectedDate = DateTime(picked.year, picked.month, picked.day);
+      });
+    }
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await SingleTimePickerBottomSheet.show(
+      context,
+      initialTime: selectedHour,
+      title: 'Selecionar hora',
+      subtitle: 'Escolhe a hora',
+      confirmLabel: 'Confirmar',
+    );
+    if (picked != null) {
+      setState(() => selectedHour = picked);
+    }
+  }
+
+  void _save() {
+    final descricao = descricaoCtrl.text.trim();
+    if (descricao.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Adiciona uma breve descricao.')),
+      );
+      return;
+    }
+
+    final date = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      selectedHour.hour,
+      selectedHour.minute,
+    );
+
+    Navigator.pop(
+      context,
+      Consulta(data: date, descricao: descricao),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dateLabel = DateFormat("dd MMM yyyy", 'pt_PT').format(selectedDate);
+    final timeLabel = selectedHour.format(context);
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        left: 16,
+        right: 16,
+        top: 8,
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  widget.consulta == null
+                      ? "Adicionar consulta"
+                      : "Editar consulta",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                  color: Colors.grey.shade600,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: descricaoCtrl,
+              decoration: InputDecoration(
+                labelText: "Descricao",
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                prefixIcon: Icon(
+                  Icons.note_alt_outlined,
+                  color: widget.primaryColor,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: widget.primaryColor),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: widget.primaryColor,
+                    width: 2,
+                  ),
+                ),
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _consultaChip(
+                    icon: Icons.calendar_today,
+                    label: dateLabel,
+                    onTap: _pickDate,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _consultaChip(
+                    icon: Icons.access_time,
+                    label: timeLabel,
+                    onTap: _pickTime,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.check),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: widget.primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 3,
+                ),
+                onPressed: _save,
+                label: Text(
+                  widget.consulta == null ? "Guardar consulta" : "Guardar",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _consultaChip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: widget.primaryColor.withOpacity(.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: widget.primaryColor),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

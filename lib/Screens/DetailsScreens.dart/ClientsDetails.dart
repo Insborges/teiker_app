@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
+import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
 import '../../models/Clientes.dart';
@@ -410,7 +411,18 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     }
   }
 
-  void emitirFaturas() {
+  Future<void> emitirFaturas() async {
+    final today = DateTime.now();
+    final selectedDate = await SingleDatePickerBottomSheet.show(
+      context,
+      initialDate: DateTime(today.year, today.month, today.day),
+      title: 'Qual e a data de emissao da fatura?',
+      subtitle: 'Escolhe o dia',
+      confirmLabel: 'Emitir',
+    );
+
+    if (selectedDate == null) return;
+
     AppSnackBar.show(
       context,
       message: "Fatura Emitida(ainda em desenvolvimento)",
@@ -482,6 +494,12 @@ class _ClientsdetailsState extends State<Clientsdetails> {
               keyboard: TextInputType.emailAddress,
             ),
             SizedBox(height: 12),
+            _buildTextField(
+              'Preço/Hora',
+              _orcamentoController,
+              keyboard: TextInputType.number,
+            ),
+            SizedBox(height: 12),
             _buildTeikersSelector(),
             SizedBox(height: 16),
             _buildHorasCard(_horasCasa),
@@ -493,7 +511,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
               onPressed: () => _abrirDialogAdicionarHoras(),
             ),
             SizedBox(height: 12),
-            _buildOrcamentoCard(widget.cliente.orcamento),
+            _buildOrcamentoCard(widget.cliente.orcamento, _horasCasa),
 
             SizedBox(height: 16),
 
@@ -698,8 +716,9 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   }
 
   //Card Orçamento
-  Widget _buildOrcamentoCard(double? orcamento /*String? tipo*/) {
+  Widget _buildOrcamentoCard(double? orcamento, double horas) {
     if (orcamento == null) return const SizedBox.shrink();
+    final total = horas * orcamento;
 
     return Container(
       width: double.infinity,
@@ -713,13 +732,28 @@ class _ClientsdetailsState extends State<Clientsdetails> {
         children: [
           Icon(Icons.payments_outlined, color: Colors.green.shade700, size: 28),
           const SizedBox(width: 12),
-          Text(
-            'Orçamento: ${orcamento.toStringAsFixed(2)} CHF',
-            /*${tipo ?? ""}*/
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.green.shade700,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Preço/Hora: ${orcamento.toStringAsFixed(2)} CHF',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Total (${horas.toStringAsFixed(1)}h): ${total.toStringAsFixed(2)} CHF',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green.shade900,
+                  ),
+                ),
+              ],
             ),
           ),
         ],

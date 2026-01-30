@@ -96,6 +96,18 @@ class WorkSessionService {
     );
   }
 
+  Future<double> calculateMonthlyTotalForCurrentUser({
+    required String clienteId,
+    required DateTime referenceDate,
+  }) async {
+    final teikerId = _requireUser();
+    return _repository.calculateMonthlyTotalForTeiker(
+      clienteId: clienteId,
+      teikerId: teikerId,
+      referenceDate: referenceDate,
+    );
+  }
+
   Future<double> closePendingSession({
     required String clienteId,
     required String sessionId,
@@ -146,5 +158,4 @@ class WorkSessionService {
       referenceDate: startTime,
     );
   }
-
 }

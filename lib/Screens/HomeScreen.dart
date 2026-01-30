@@ -11,6 +11,7 @@ import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
 import 'package:teiker_app/Widgets/modern_calendar.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/auth/auth_notifier.dart';
+import 'package:teiker_app/models/Clientes.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -23,12 +24,16 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   final Map<DateTime, List<Map<String, dynamic>>> _events = {};
   final Map<DateTime, List<Map<String, dynamic>>> _consultas = {};
   List<Map<String, dynamic>> teikersFerias = [];
+  List<Clientes> _clientes = [];
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   final Color selectedColor = const Color.fromARGB(255, 4, 76, 32);
   String? _loadedUserId;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
       _teikerSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+      _adminRemindersSubscription;
+  bool _adminRemindersListening = false;
 
   DateTime _dayKey(DateTime d) => DateTime.utc(d.year, d.month, d.day);
 
@@ -37,6 +42,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     _loadFerias();
     _loadConsultas();
+    _loadClientes();
     _startTeikerListener();
   }
 
@@ -49,10 +55,14 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
 
     final Map<DateTime, List<Map<String, dynamic>>> loaded = {};
 
+    final isAdmin = ref.read(isAdminProvider);
+
     for (final doc in snapshot.docs) {
       final data = doc.data();
       final date = (data['date'] as Timestamp?)?.toDate();
       if (date == null) continue;
+      final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+      final clienteName = data['clienteName'] as String?;
 
       final key = _dayKey(date);
       loaded.putIfAbsent(key, () => []);
@@ -64,7 +74,50 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         'end': data['end'],
         'isFerias': false,
         'date': date,
+        'clienteId': data['clienteId'],
+        'clienteName': clienteName,
+        'createdAt': createdAt,
+        'subtitle': isAdmin && clienteName != null && createdAt != null
+            ? 'Cliente: $clienteName • Adicionado: ${DateFormat('HH:mm').format(createdAt)}'
+            : null,
+        'adminReminderId': data['adminReminderId'],
+        'adminSource': false,
       });
+    }
+
+    if (isAdmin) {
+      final adminSnapshot = await FirebaseFirestore.instance
+          .collection('admin_reminders')
+          .get();
+
+      for (final doc in adminSnapshot.docs) {
+        final data = doc.data();
+        final date = (data['date'] as Timestamp?)?.toDate();
+        if (date == null) continue;
+        final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
+        final clienteName = data['clienteName'] as String?;
+        final key = _dayKey(date);
+        loaded.putIfAbsent(key, () => []);
+        loaded[key]!.add({
+          'id': doc.id,
+          'title': data['title'],
+          'done': data['done'] ?? false,
+          'start': data['start'],
+          'end': data['end'],
+          'isFerias': false,
+          'date': date,
+          'clienteId': data['clienteId'],
+          'clienteName': clienteName,
+          'createdAt': createdAt,
+          'subtitle': clienteName != null && createdAt != null
+              ? 'Cliente: $clienteName • Adicionado: ${DateFormat('HH:mm').format(createdAt)}'
+              : null,
+          'tag': 'Lembrete Teiker',
+          'sourceUserId': data['sourceUserId'],
+          'sourceReminderId': data['sourceReminderId'],
+          'adminSource': true,
+        });
+      }
     }
 
     if (!mounted) return;
@@ -74,6 +127,10 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         ..addAll(loaded);
       _loadedUserId = userId;
     });
+
+    if (isAdmin && !_adminRemindersListening) {
+      _startAdminRemindersListener(userId);
+    }
   }
 
   Future<void> _loadFerias() async {
@@ -105,6 +162,12 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => teikersFerias = feriasProcessed);
   }
 
+  Future<void> _loadClientes() async {
+    final clientes = await ref.read(authServiceProvider).getClientes();
+    if (!mounted) return;
+    setState(() => _clientes = clientes);
+  }
+
   void _startTeikerListener() {
     _teikerSubscription?.cancel();
     _teikerSubscription = FirebaseFirestore.instance
@@ -113,6 +176,18 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         .listen((_) {
       _loadFerias();
       _loadConsultas();
+      _loadClientes();
+    });
+  }
+
+  void _startAdminRemindersListener(String userId) {
+    _adminRemindersSubscription?.cancel();
+    _adminRemindersListening = true;
+    _adminRemindersSubscription = FirebaseFirestore.instance
+        .collection('admin_reminders')
+        .snapshots()
+        .listen((_) {
+      _loadReminders(userId);
     });
   }
 
@@ -154,8 +229,12 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
-  void _addEvent(Map<String, dynamic> event) {
+  Future<void> _addEvent(Map<String, dynamic> event) async {
     final key = _dayKey(event['date']);
+    final isAdmin = ref.read(isAdminProvider);
+    final createdAt = event['createdAt'] as DateTime?;
+    final clienteName = event['clienteName'] as String?;
+
     final newEvent = {
       'title': event['title'],
       'done': false,
@@ -163,6 +242,13 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       'end': event['end'],
       'isFerias': false,
       'date': event['date'],
+      'clienteId': event['clienteId'],
+      'clienteName': event['clienteName'],
+      'createdAt': event['createdAt'],
+      'subtitle': isAdmin && clienteName != null && createdAt != null
+          ? 'Cliente: $clienteName • Adicionado: ${DateFormat('HH:mm').format(createdAt)}'
+          : null,
+      'adminReminderId': null,
     };
 
     final userId = _loadedUserId;
@@ -179,32 +265,105 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         'start': newEvent['start'],
         'end': newEvent['end'],
         'done': newEvent['done'],
+        'clienteId': newEvent['clienteId'],
+        'clienteName': newEvent['clienteName'],
+        'createdAt': newEvent['createdAt'] != null
+            ? Timestamp.fromDate(newEvent['createdAt'])
+            : Timestamp.now(),
+        'adminReminderId': null,
       });
       return doc.id;
     }
 
-    saveToDb().then((id) {
-      if (id != null) newEvent['id'] = id;
-      if (!mounted) return;
-      setState(() {
-        _events.putIfAbsent(key, () => []);
-        _events[key]!.add(newEvent);
-        _selectedDay = event['date'];
-        _focusedDay = event['date'];
-      });
+    final id = await saveToDb();
+    if (id != null) newEvent['id'] = id;
+
+    final adminId = await _notifyAdminsIfNeeded(
+      newEvent,
+      sourceUserId: userId,
+      sourceReminderId: id,
+    );
+    if (adminId != null && userId != null && id != null) {
+      newEvent['adminReminderId'] = adminId;
+      await FirebaseFirestore.instance
+          .collection('reminders')
+          .doc(userId)
+          .collection('items')
+          .doc(id)
+          .update({'adminReminderId': adminId});
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _events.putIfAbsent(key, () => []);
+      _events[key]!.add(newEvent);
+      _selectedDay = event['date'];
+      _focusedDay = event['date'];
     });
+  }
+
+  Future<String?> _notifyAdminsIfNeeded(
+    Map<String, dynamic> event, {
+    required String? sourceUserId,
+    required String? sourceReminderId,
+  }) async {
+    final isAdmin = ref.read(isAdminProvider);
+    if (isAdmin) return null;
+    final createdAt = event['createdAt'] as DateTime? ?? DateTime.now();
+    final payload = {
+      'title': event['title'],
+      'date': Timestamp.fromDate(event['date'] as DateTime),
+      'start': event['start'],
+      'end': event['end'],
+      'done': false,
+      'clienteId': event['clienteId'],
+      'clienteName': event['clienteName'],
+      'createdAt': Timestamp.fromDate(createdAt),
+      'createdById': _loadedUserId,
+      'sourceUserId': sourceUserId,
+      'sourceReminderId': sourceReminderId,
+    };
+
+    final doc = await FirebaseFirestore.instance
+        .collection('admin_reminders')
+        .add(payload);
+    return doc.id;
   }
 
   void _deleteEvent(DateTime dayKey, Map<String, dynamic> event) {
     final userId = _loadedUserId;
     final eventId = event['id'] as String?;
-    if (userId != null && eventId != null) {
-      FirebaseFirestore.instance
-          .collection('reminders')
-          .doc(userId)
-          .collection('items')
-          .doc(eventId)
-          .delete();
+    if (eventId != null) {
+      if (event['adminSource'] == true) {
+        FirebaseFirestore.instance
+            .collection('admin_reminders')
+            .doc(eventId)
+            .delete();
+        final sourceUserId = event['sourceUserId'] as String?;
+        final sourceReminderId = event['sourceReminderId'] as String?;
+        if (sourceUserId != null && sourceReminderId != null) {
+          FirebaseFirestore.instance
+              .collection('reminders')
+              .doc(sourceUserId)
+              .collection('items')
+              .doc(sourceReminderId)
+              .delete();
+        }
+      } else if (userId != null) {
+        FirebaseFirestore.instance
+            .collection('reminders')
+            .doc(userId)
+            .collection('items')
+            .doc(eventId)
+            .delete();
+        final adminReminderId = event['adminReminderId'] as String?;
+        if (adminReminderId != null) {
+          FirebaseFirestore.instance
+              .collection('admin_reminders')
+              .doc(adminReminderId)
+              .delete();
+        }
+      }
     }
 
     setState(() {
@@ -221,13 +380,37 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
 
     final userId = _loadedUserId;
     final eventId = event['id'] as String?;
-    if (userId != null && eventId != null) {
-      FirebaseFirestore.instance
-          .collection('reminders')
-          .doc(userId)
-          .collection('items')
-          .doc(eventId)
-          .update({'done': event['done']});
+    if (eventId != null) {
+      if (event['adminSource'] == true) {
+        FirebaseFirestore.instance
+            .collection('admin_reminders')
+            .doc(eventId)
+            .update({'done': event['done']});
+        final sourceUserId = event['sourceUserId'] as String?;
+        final sourceReminderId = event['sourceReminderId'] as String?;
+        if (sourceUserId != null && sourceReminderId != null) {
+          FirebaseFirestore.instance
+              .collection('reminders')
+              .doc(sourceUserId)
+              .collection('items')
+              .doc(sourceReminderId)
+              .update({'done': event['done']});
+        }
+      } else if (userId != null) {
+        FirebaseFirestore.instance
+            .collection('reminders')
+            .doc(userId)
+            .collection('items')
+            .doc(eventId)
+            .update({'done': event['done']});
+        final adminReminderId = event['adminReminderId'] as String?;
+        if (adminReminderId != null) {
+          FirebaseFirestore.instance
+              .collection('admin_reminders')
+              .doc(adminReminderId)
+              .update({'done': event['done']});
+        }
+      }
     }
   }
 
@@ -260,6 +443,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         initialDate: _selectedDay,
         primaryColor: selectedColor,
         onAddEvent: _addEvent,
+        clientes: _clientes,
       ),
     );
   }
@@ -267,6 +451,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void dispose() {
     _teikerSubscription?.cancel();
+    _adminRemindersSubscription?.cancel();
     super.dispose();
   }
 

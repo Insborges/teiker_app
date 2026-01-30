@@ -79,6 +79,15 @@ class EventItem extends StatelessWidget {
                 ),
                 if (showHours) ...[
                   const SizedBox(height: 3),
+                  if (event['subtitle'] != null)
+                    Text(
+                      event['subtitle'],
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  if (event['subtitle'] != null) const SizedBox(height: 2),
                   Text(
                     "${event['start'] ?? ''}${(event['start'] != null && (event['end'] ?? '') != '') ? ' — ' : ''}${event['end'] ?? ''}",
                     style: TextStyle(

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:teiker_app/Screens/DetailsScreens.dart/ClientsDetails.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
@@ -24,14 +23,33 @@ class _ClientesScreenState extends State<ClientesScreen> {
   final WorkSessionService _workSessionService = WorkSessionService();
   late Future<List<Clientes>> _clientesFuture;
   late final bool _isAdmin;
-  String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
     _isAdmin = AuthService().isCurrentUserAdmin;
-    _currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    _clientesFuture = AuthService().getClientes();
+    _clientesFuture = _loadClientes();
+  }
+
+  Future<List<Clientes>> _loadClientes() async {
+    final clientes = await AuthService().getClientes();
+    if (_isAdmin) return clientes;
+
+    final now = DateTime.now();
+    final totals = await Future.wait(
+      clientes.map(
+        (cliente) => _workSessionService.calculateMonthlyTotalForCurrentUser(
+          clienteId: cliente.uid,
+          referenceDate: now,
+        ),
+      ),
+    );
+
+    for (var i = 0; i < clientes.length; i++) {
+      clientes[i].hourasCasa = totals[i];
+    }
+
+    return clientes;
   }
 
   Future<void> _ensureOpenSessions(List<Clientes> clientes) async {
@@ -56,11 +74,26 @@ class _ClientesScreenState extends State<ClientesScreen> {
     });
   }
 
+  Future<void> _updateClienteHours(Clientes cliente) async {
+    if (!_isAdmin) {
+      final total = await _workSessionService.calculateMonthlyTotalForCurrentUser(
+        clienteId: cliente.uid,
+        referenceDate: DateTime.now(),
+      );
+      if (!mounted) return;
+      setState(() => cliente.hourasCasa = total);
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {});
+  }
+
   Future<void> _refreshClientes() async {
     if (!mounted) return;
 
     setState(() {
-      _clientesFuture = AuthService().getClientes();
+      _clientesFuture = _loadClientes();
       _openSessions.clear();
     });
   }
@@ -85,12 +118,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
         }
 
         var listaClientes = snapshot.data!;
-
-        if (!_isAdmin && _currentUserId != null) {
-          listaClientes = listaClientes
-              .where((c) => c.teikersIds.contains(_currentUserId))
-              .toList();
-        }
 
         _ensureOpenSessions(listaClientes);
 
@@ -118,6 +145,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                 setState(() {
                                   _openSessions[cliente.uid] = null;
                                 });
+                                _updateClienteHours(cliente);
                               },
                             ),
                           ),
@@ -230,15 +258,23 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                       startTime: session.startTime,
                                     );
 
+                                final displayTotal = _isAdmin
+                                    ? total
+                                    : await _workSessionService
+                                        .calculateMonthlyTotalForCurrentUser(
+                                          clienteId: cliente.uid,
+                                          referenceDate: session.startTime,
+                                        );
+
                                 setState(() {
                                   _openSessions[cliente.uid] = null;
-                                  cliente.hourasCasa = total;
+                                  cliente.hourasCasa = displayTotal;
                                 });
 
                                 AppSnackBar.show(
                                   context,
                                   message:
-                                      "Terminaste! Total do mês: ${total.toStringAsFixed(2)}h",
+                                      "Terminaste! Total do mês: ${displayTotal.toStringAsFixed(2)}h",
                                   icon: Icons.square,
                                   background: const Color.fromARGB(
                                     255,

@@ -168,7 +168,7 @@ class _AdminscreenState extends State<Adminscreen> {
     );
   }
 
-  // ---------------- FORMS (MANTIDOS) ----------------
+  // ---------------- FORMS ----------------
 
   void _teikerAdd() {
     Color selectedCor = Colors.green;
@@ -447,6 +447,7 @@ class _AdminscreenState extends State<Adminscreen> {
   void _clienteAdd() {
     final nameController = TextEditingController();
     final moradaController = TextEditingController();
+    final codigoPostalController = TextEditingController();
     final telemovelController = TextEditingController();
     final emailController = TextEditingController();
     final orcamentoController = TextEditingController();
@@ -512,6 +513,8 @@ class _AdminscreenState extends State<Adminscreen> {
                     const SizedBox(height: 10),
                     _formInput("Morada", moradaController),
                     const SizedBox(height: 10),
+                    _formInput("Código Postal", codigoPostalController),
+                    const SizedBox(height: 10),
                     _formInput(
                       "Telemóvel",
                       telemovelController,
@@ -562,6 +565,8 @@ class _AdminscreenState extends State<Adminscreen> {
                             onPressed: () async {
                               final name = nameController.text.trim();
                               final morada = moradaController.text.trim();
+                              final codigoPostal =
+                                  codigoPostalController.text.trim();
                               final telemovel = telemovelController.text.trim();
                               final email = emailController.text.trim();
                               final orcamento = orcamentoController.text.trim();
@@ -569,6 +574,7 @@ class _AdminscreenState extends State<Adminscreen> {
                               if ([
                                 name,
                                 morada,
+                                codigoPostal,
                                 telemovel,
                                 email,
                                 orcamento,
@@ -613,6 +619,7 @@ class _AdminscreenState extends State<Adminscreen> {
                                       .id,
                                   nameCliente: name,
                                   moradaCliente: morada,
+                                  codigoPostal: codigoPostal,
                                   telemovel: int.parse(telemovel),
                                   email: email,
                                   orcamento: orc,

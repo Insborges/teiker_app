@@ -28,4 +28,10 @@ abstract class WorkSessionRepository {
     required String clienteId,
     required DateTime referenceDate,
   });
+
+  Future<double> calculateMonthlyTotalForTeiker({
+    required String clienteId,
+    required String teikerId,
+    required DateTime referenceDate,
+  });
 }

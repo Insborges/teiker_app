@@ -219,4 +219,64 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
 
     return totalHours;
   }
+
+  @override
+  Future<double> calculateMonthlyTotalForTeiker({
+    required String clienteId,
+    required String teikerId,
+    required DateTime referenceDate,
+  }) async {
+    final monthStart = DateTime(referenceDate.year, referenceDate.month, 1);
+    final nextMonth = DateTime(referenceDate.year, referenceDate.month + 1, 1);
+
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+
+    try {
+      final snapshot = await firestore
+          .collection('workSessions')
+          .where('clienteId', isEqualTo: clienteId)
+          .where('teikerId', isEqualTo: teikerId)
+          .where(
+            'startTime',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
+          )
+          .where('startTime', isLessThan: Timestamp.fromDate(nextMonth))
+          .get();
+      docs = snapshot.docs;
+    } on FirebaseException catch (e) {
+      if (e.code != 'failed-precondition') rethrow;
+
+      final snapshot = await firestore
+          .collection('workSessions')
+          .where('teikerId', isEqualTo: teikerId)
+          .get();
+
+      docs = snapshot.docs.where((doc) {
+        final data = doc.data();
+        if (data['clienteId'] != clienteId) return false;
+        final start = (data['startTime'] as Timestamp?)?.toDate();
+        return start != null &&
+            !start.isBefore(monthStart) &&
+            start.isBefore(nextMonth);
+      });
+    }
+
+    double totalHours = 0;
+    for (final doc in docs) {
+      final data = doc.data();
+      double? duration = (data['durationHours'] as num?)?.toDouble();
+      final start = (data['startTime'] as Timestamp?)?.toDate();
+      final end = (data['endTime'] as Timestamp?)?.toDate();
+
+      duration ??= (start != null && end != null)
+          ? end.difference(start).inMinutes / 60.0
+          : null;
+
+      if (duration != null) {
+        totalHours += duration;
+      }
+    }
+
+    return totalHours;
+  }
 }

@@ -1,11 +1,11 @@
 import 'dart:ui';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
+import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
 import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
@@ -29,14 +29,12 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   // Controllers
   late TextEditingController _nameController;
   late TextEditingController _moradaController;
+  late TextEditingController _codigoPostalController;
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
   late TextEditingController _orcamentoController;
 
   late double _horasCasa;
-
-  List<Map<String, dynamic>> teikersList = [];
-  List<String> selectedTeikers = [];
 
   bool? isAdmin;
   final WorkSessionService _workSessionService = WorkSessionService();
@@ -51,6 +49,9 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     _moradaController = TextEditingController(
       text: widget.cliente.moradaCliente,
     );
+    _codigoPostalController = TextEditingController(
+      text: widget.cliente.codigoPostal,
+    );
     _phoneController = TextEditingController(
       text: widget.cliente.telemovel.toString(),
     );
@@ -61,26 +62,18 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
     _horasCasa = widget.cliente.hourasCasa;
 
-    _loadTeikers();
-    selectedTeikers = List<String>.from(widget.cliente.teikersIds);
-
     _checkPendingSessionReminder();
+    _loadHorasParaTeiker();
   }
 
-  Future<void> _loadTeikers() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('teikers')
-        .get();
-
-    final data = snapshot.docs.map((d) {
-      final m = d.data();
-
-      return {"uid": d.id, "name": m["name"] ?? m["nameTeiker"] ?? "Sem nome"};
-    }).toList();
-
-    setState(() {
-      teikersList = data;
-    });
+  Future<void> _loadHorasParaTeiker() async {
+    if (isAdmin == true) return;
+    final total = await _workSessionService.calculateMonthlyTotalForCurrentUser(
+      clienteId: widget.cliente.uid,
+      referenceDate: DateTime.now(),
+    );
+    if (!mounted) return;
+    setState(() => _horasCasa = total);
   }
 
   Future<void> _checkPendingSessionReminder() async {
@@ -310,16 +303,25 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                       endDate,
                                       pendingSessionId: pendingSessionId,
                                     );
+                                    final displayTotal = isAdmin == true
+                                        ? total
+                                        : await _workSessionService
+                                            .calculateMonthlyTotalForCurrentUser(
+                                              clienteId: widget.cliente.uid,
+                                              referenceDate: startDate,
+                                            );
                                     setState(() {
-                                      _horasCasa = total;
-                                      widget.cliente.hourasCasa = total;
+                                      _horasCasa = displayTotal;
+                                      if (isAdmin == true) {
+                                        widget.cliente.hourasCasa = total;
+                                      }
                                     });
                                     widget.onSessionClosed?.call();
 
                                     AppSnackBar.show(
                                       context,
                                       message:
-                                          "Horas registadas. Total do mês: ${total.toStringAsFixed(2)}h",
+                                          "Horas registadas. Total do mês: ${displayTotal.toStringAsFixed(2)}h",
                                       icon: Icons.save,
                                       background: Colors.green.shade700,
                                     );
@@ -358,36 +360,17 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       uid: widget.cliente.uid,
       nameCliente: _nameController.text,
       moradaCliente: _moradaController.text,
+      codigoPostal: _codigoPostalController.text,
       telemovel: int.tryParse(_phoneController.text) ?? 0,
       email: _emailController.text,
       orcamento: double.tryParse(_orcamentoController.text) ?? 0,
       hourasCasa: _horasCasa,
-      teikersIds: selectedTeikers,
+      teikersIds: widget.cliente.teikersIds,
     );
 
     try {
       // 1️⃣ Atualiza o cliente
       await AuthService().updateCliente(updated);
-
-      final teikersRef = FirebaseFirestore.instance.collection('teikers');
-
-      // 2️⃣ Adiciona cliente às Teikers selecionadas
-      for (String teikerId in selectedTeikers) {
-        await teikersRef.doc(teikerId).update({
-          'clientesIds': FieldValue.arrayUnion([updated.uid]),
-        });
-      }
-
-      // 3️⃣ Remove cliente das Teikers desmarcadas
-      final desmarcadas = widget.cliente.teikersIds
-          .where((id) => !selectedTeikers.contains(id))
-          .toList();
-
-      for (String teikerId in desmarcadas) {
-        await teikersRef.doc(teikerId).update({
-          'clientesIds': FieldValue.arrayRemove([updated.uid]),
-        });
-      }
 
       // 4️⃣ Feedback ao utilizador
       AppSnackBar.show(
@@ -399,7 +382,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
       // 5️⃣ Atualiza estado local do cliente para manter sincronia
       setState(() {
-        widget.cliente.teikersIds = List.from(selectedTeikers);
+        widget.cliente.teikersIds = List.from(widget.cliente.teikersIds);
       });
     } catch (e) {
       AppSnackBar.show(
@@ -459,8 +442,10 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                 backgroundColor: const Color.fromARGB(255, 4, 76, 32),
                 foregroundColor: Colors.white,
                 elevation: 0,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -482,6 +467,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
             SizedBox(height: 12),
             _buildTextField('Morada', _moradaController),
             SizedBox(height: 12),
+            _buildTextField('Código Postal', _codigoPostalController),
+            SizedBox(height: 12),
             _buildTextField(
               'Telefone',
               _phoneController,
@@ -500,8 +487,6 @@ class _ClientsdetailsState extends State<Clientsdetails> {
               keyboard: TextInputType.number,
             ),
             SizedBox(height: 12),
-            _buildTeikersSelector(),
-            SizedBox(height: 16),
             _buildHorasCard(_horasCasa),
             SizedBox(height: 8),
             AppButton(
@@ -530,104 +515,94 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   //Layout Teiker
   Widget _buildTeikerLayout() {
+    final primary = const Color.fromARGB(255, 4, 76, 32);
+    final fieldBorder = Colors.green.shade200;
+    final fieldLabel = Colors.green.shade200;
+    final fieldText = Colors.green.shade50;
+    const double buttonHeight = 52;
+    const double curveHeight = 340;
+
     return Scaffold(
       appBar: buildAppBar(widget.cliente.nameCliente, seta: true),
-
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
+      body: SizedBox.expand(
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            _buildMapCard(widget.cliente.moradaCliente),
-            SizedBox(height: 12),
-            _buildTextField('Nome', _nameController, readOnly: true),
-            SizedBox(height: 12),
-
-            _buildTextField('Morada', _moradaController, readOnly: true),
-
-            SizedBox(height: 20),
-
-            AppButton(
-              text: "Adicionar Horas",
-              icon: Icons.timer,
-              color: Color.fromARGB(255, 4, 76, 32),
-              onPressed: () => _abrirDialogAdicionarHoras(),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: curveHeight,
+              child: ClipPath(
+                clipper: CurvedCalendarClipper(),
+                child: Container(color: primary),
+              ),
+            ),
+            SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  const Align(
+                    alignment: Alignment.center,
+                    child: Icon(Icons.person, color: Colors.white, size: 100),
+                  ),
+                  const SizedBox(height: 6),
+                  _buildTextField(
+                    'Nome',
+                    _nameController,
+                    readOnly: true,
+                    borderColor: fieldBorder,
+                    labelColor: fieldLabel,
+                    textColor: fieldText,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildTextField(
+                    'Morada',
+                    _moradaController,
+                    readOnly: true,
+                    borderColor: fieldBorder,
+                    labelColor: fieldLabel,
+                    textColor: fieldText,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildTextField(
+                    'Código Postal',
+                    _codigoPostalController,
+                    readOnly: true,
+                    borderColor: fieldBorder,
+                    labelColor: fieldLabel,
+                    textColor: fieldText,
+                  ),
+                  const SizedBox(height: buttonHeight / 2),
+                ],
+              ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              top: curveHeight - (buttonHeight / 2),
+              child: SizedBox(
+                height: buttonHeight,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.timer, size: 20),
+                  label: const Text(
+                    'Adicionar Horas',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 4,
+                  ),
+                  onPressed: () => _abrirDialogAdicionarHoras(),
+                ),
+              ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  //Mapa(mostra morada)
-  Widget _buildMapCard(String endereco) {
-    const apiKey = String.fromEnvironment('GOOGLE_MAPS_API_KEY');
-
-    if (apiKey.isEmpty) {
-      return _buildMapContainer(
-        _buildMapPlaceholderContent(
-          'Define GOOGLE_MAPS_API_KEY com --dart-define',
-        ),
-      );
-    }
-
-    final encodedAddress = Uri.encodeComponent(endereco);
-
-    final mapUrl =
-        'https://maps.googleapis.com/maps/api/staticmap'
-        '?center=$encodedAddress'
-        '&zoom=15'
-        '&size=600x300'
-        '&markers=color:red|$encodedAddress'
-        '&key=$apiKey';
-
-    return _buildMapContainer(
-      Image.network(
-        mapUrl,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          debugPrint('STATIC MAP ERROR: $error');
-          return _buildMapPlaceholderContent('Erro ao carregar mapa');
-        },
-      ),
-    );
-  }
-
-  Widget _buildMapContainer(Widget child) {
-    return Container(
-      width: double.infinity,
-      height: 180,
-      margin: const EdgeInsets.symmetric(vertical: 16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withValues(alpha: 0.5),
-            spreadRadius: 5,
-            blurRadius: 7,
-            offset: Offset(0, 3),
-          ),
-        ],
-      ),
-      child: ClipRRect(borderRadius: BorderRadius.circular(12), child: child),
-    );
-  }
-
-  Widget _buildMapPlaceholderContent(String message) {
-    return Container(
-      color: Colors.grey.shade200,
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.map, color: Colors.grey, size: 32),
-          const SizedBox(height: 8),
-          Text(
-            message,
-            style: const TextStyle(color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
-        ],
       ),
     );
   }
@@ -665,14 +640,36 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     TextEditingController controller, {
     TextInputType keyboard = TextInputType.text,
     bool readOnly = false,
+    Color? borderColor,
+    Color? labelColor,
+    Color? textColor,
   }) {
     return TextFormField(
       controller: controller,
       readOnly: readOnly,
       keyboardType: keyboard,
+      style: textColor != null
+          ? TextStyle(color: textColor, fontWeight: FontWeight.w600)
+          : null,
       decoration: InputDecoration(
         labelText: label,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        labelStyle: labelColor != null
+            ? TextStyle(color: labelColor, fontWeight: FontWeight.w600)
+            : null,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: borderColor ?? Colors.grey.shade400,
+            width: 1.2,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: borderColor ?? Colors.grey.shade600,
+            width: 1.4,
+          ),
+        ),
       ),
     );
   }
@@ -761,95 +758,4 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
   }
 
-  Widget _buildTeikersSelector() {
-    final Color primary = const Color.fromARGB(255, 4, 76, 32);
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(14),
-        color: Colors.white,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text(
-                "Teikers Associadas",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: primary.withOpacity(.08),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  "${selectedTeikers.length}",
-                  style: TextStyle(
-                    color: primary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          if (teikersList.isEmpty)
-            const Text("Sem teikers.")
-          else
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: teikersList.map((t) {
-                final id = t['uid'];
-                final bool isSelected = selectedTeikers.contains(id);
-
-                return ChoiceChip(
-                  labelPadding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  label: Text(
-                    t['name'],
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: isSelected ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                  avatar: Icon(
-                    isSelected ? Icons.check : Icons.person_outline,
-                    size: 18,
-                    color: isSelected ? Colors.white : primary,
-                  ),
-                  selected: isSelected,
-                  onSelected: (v) {
-                    setState(() {
-                      if (v && !selectedTeikers.contains(id)) {
-                        selectedTeikers.add(id);
-                      } else if (!v) {
-                        selectedTeikers.remove(id);
-                      }
-                    });
-                  },
-                  selectedColor: primary,
-                  backgroundColor: Colors.grey.shade100,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: isSelected
-                          ? primary
-                          : Colors.grey.shade300,
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-        ],
-      ),
-    );
-  }
 }

@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -14,6 +16,7 @@ class NotificationService {
   factory NotificationService() => _instance;
 
   final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
 
@@ -45,6 +48,8 @@ class NotificationService {
     );
 
     await _fcm.requestPermission();
+    await _saveFcmToken();
+    _fcm.onTokenRefresh.listen((_) => _saveFcmToken());
     FirebaseMessaging.onMessage.listen((message) {
       // Receber notificações em foreground
       print("Notificação recebida: ${message.notification?.title}");
@@ -168,6 +173,38 @@ class NotificationService {
 
     _pendingPayload = null;
     _handleNotificationTap(payload);
+  }
+
+  Future<void> _saveFcmToken({int attempt = 0}) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    if (Platform.isIOS) {
+      final apns = await _fcm.getAPNSToken();
+      if (apns == null) {
+        if (attempt < 5) {
+          await Future.delayed(const Duration(seconds: 2));
+          return _saveFcmToken(attempt: attempt + 1);
+        }
+        return;
+      }
+    }
+
+    final token = await _fcm.getToken();
+    if (token == null) return;
+
+    final email = user.email ?? '';
+    final isAdmin = email.trim().endsWith("@teiker.ch");
+
+    await FirebaseFirestore.instance
+        .collection('fcm_tokens')
+        .doc(user.uid)
+        .set({
+      'token': token,
+      'updatedAt': Timestamp.now(),
+      'isAdmin': isAdmin,
+      'email': email,
+    }, SetOptions(merge: true));
   }
 }
 

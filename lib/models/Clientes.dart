@@ -2,6 +2,7 @@ class Clientes {
   String uid;
   String nameCliente;
   String moradaCliente;
+  String codigoPostal;
   double hourasCasa;
   int telemovel;
   String email;
@@ -12,6 +13,7 @@ class Clientes {
     required this.uid,
     required this.nameCliente,
     required this.moradaCliente,
+    required this.codigoPostal,
     required this.hourasCasa,
     required this.telemovel,
     required this.email,
@@ -24,6 +26,7 @@ class Clientes {
       'uid': uid,
       'nameCliente': nameCliente,
       'moradaCliente': moradaCliente,
+      'codigoPostal': codigoPostal,
       'hourasCasa': hourasCasa,
       'telemovel': telemovel,
       'email': email,
@@ -37,6 +40,7 @@ class Clientes {
       uid: map['uid'],
       nameCliente: map['nameCliente'],
       moradaCliente: map['moradaCliente'],
+      codigoPostal: map['codigoPostal'] ?? '',
       hourasCasa: (map['hourasCasa'] as num).toDouble(),
       telemovel: map['telemovel'],
       email: map['email'],

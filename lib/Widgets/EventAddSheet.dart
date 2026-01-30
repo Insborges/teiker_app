@@ -2,17 +2,20 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:teiker_app/models/Clientes.dart';
 
 class EventAddSheet extends StatefulWidget {
   final DateTime initialDate;
   final Color primaryColor;
   final Function(Map<String, dynamic>) onAddEvent;
+  final List<Clientes> clientes;
 
   const EventAddSheet({
     super.key,
     required this.initialDate,
     required this.primaryColor,
     required this.onAddEvent,
+    required this.clientes,
   });
 
   @override
@@ -24,6 +27,7 @@ class _EventAddSheetState extends State<EventAddSheet> {
   late DateTime _sheetDate;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
+  Clientes? _selectedCliente;
 
   @override
   void initState() {
@@ -160,6 +164,41 @@ class _EventAddSheetState extends State<EventAddSheet> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                if (widget.clientes.isNotEmpty) ...[
+                  DropdownButtonFormField<Clientes>(
+                    value: _selectedCliente,
+                    decoration: InputDecoration(
+                      hintText: 'Selecionar cliente',
+                      filled: true,
+                      fillColor: Colors.grey.shade100,
+                      prefixIcon:
+                          Icon(Icons.people_outline, color: widget.primaryColor),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: widget.primaryColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: widget.primaryColor,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    items: widget.clientes
+                        .map(
+                          (c) => DropdownMenuItem(
+                            value: c,
+                            child: Text(c.nameCliente),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      setState(() => _selectedCliente = value);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 InkWell(
                   onTap: () async {
                     final picked = await showDatePicker(
@@ -223,17 +262,30 @@ class _EventAddSheetState extends State<EventAddSheet> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      elevation: 6,
+                  elevation: 6,
                     ),
                     onPressed: () {
                       final text = _titleController.text.trim();
                       if (text.isEmpty) return;
+                      if (widget.clientes.isNotEmpty &&
+                          _selectedCliente == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Seleciona um cliente.'),
+                          ),
+                        );
+                        return;
+                      }
+                      final now = DateTime.now();
                       widget.onAddEvent({
                         'title': text,
                         'done': false,
                         'start': _startTime?.format(context) ?? '',
                         'end': _endTime?.format(context) ?? '',
                         'date': _sheetDate,
+                        'clienteId': _selectedCliente?.uid,
+                        'clienteName': _selectedCliente?.nameCliente,
+                        'createdAt': now,
                       });
                       Navigator.pop(context);
                     },

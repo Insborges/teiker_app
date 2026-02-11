@@ -51,10 +51,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       return false;
     } catch (e) {
-      state = state.copyWith(
-        status: AuthStatus.error,
-        errorMessage: e.toString(),
-      );
+      final raw = e.toString();
+      final message = raw.startsWith('Exception: ')
+          ? raw.substring('Exception: '.length)
+          : raw;
+      state = state.copyWith(status: AuthStatus.error, errorMessage: message);
 
       return false;
     }

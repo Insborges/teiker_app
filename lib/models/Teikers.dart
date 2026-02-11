@@ -16,6 +16,23 @@ Color _parseColor(dynamic value) {
   return Colors.green;
 }
 
+class FeriasPeriodo {
+  final DateTime inicio;
+  final DateTime fim;
+
+  const FeriasPeriodo({required this.inicio, required this.fim});
+
+  factory FeriasPeriodo.fromMap(Map<String, dynamic> map) {
+    final inicio = _parseDate(map['inicio']) ?? DateTime.now();
+    final fim = _parseDate(map['fim']) ?? inicio;
+    return FeriasPeriodo(inicio: inicio, fim: fim);
+  }
+
+  Map<String, dynamic> toMap() {
+    return {'inicio': inicio.toIso8601String(), 'fim': fim.toIso8601String()};
+  }
+}
+
 class Teiker {
   final String uid;
   final String nameTeiker;
@@ -26,6 +43,7 @@ class Teiker {
   final List<Consulta> consultas;
   final DateTime? feriasInicio;
   final DateTime? feriasFim;
+  final List<FeriasPeriodo> feriasPeriodos;
   final Color corIdentificadora;
   final bool isWorking;
   final DateTime? startTime;
@@ -42,10 +60,35 @@ class Teiker {
     required this.isWorking,
     this.feriasInicio,
     this.feriasFim,
+    this.feriasPeriodos = const [],
     this.startTime,
   });
 
   factory Teiker.fromMap(Map<String, dynamic> data, String documentId) {
+    final parsedPeriodos = (data['feriasPeriodos'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((raw) => Map<String, dynamic>.from(raw))
+        .map(FeriasPeriodo.fromMap)
+        .toList();
+    final legacyInicio = _parseDate(data['feriasInicio']);
+    final legacyFim = _parseDate(data['feriasFim']);
+    final seen = <String>{};
+    final periodosRaw = <FeriasPeriodo>[];
+    for (final periodo in parsedPeriodos) {
+      final key =
+          '${periodo.inicio.toIso8601String()}|${periodo.fim.toIso8601String()}';
+      if (seen.add(key)) {
+        periodosRaw.add(periodo);
+      }
+    }
+    if (legacyInicio != null && legacyFim != null) {
+      final key =
+          '${legacyInicio.toIso8601String()}|${legacyFim.toIso8601String()}';
+      if (seen.add(key)) {
+        periodosRaw.add(FeriasPeriodo(inicio: legacyInicio, fim: legacyFim));
+      }
+    }
+
     return Teiker(
       uid: documentId,
       nameTeiker: data['name'] ?? '',
@@ -60,6 +103,7 @@ class Teiker {
 
       feriasInicio: _parseDate(data['feriasInicio']),
       feriasFim: _parseDate(data['feriasFim']),
+      feriasPeriodos: periodosRaw,
 
       isWorking: data['isWorking'] ?? false,
       startTime: _parseDate(data['startTime']),
@@ -77,6 +121,7 @@ class Teiker {
       'consultas': consultas.map((c) => c.toMap()).toList(),
       'feriasInicio': feriasInicio?.toIso8601String(),
       'feriasFim': feriasFim?.toIso8601String(),
+      'feriasPeriodos': feriasPeriodos.map((p) => p.toMap()).toList(),
       'isWorking': isWorking,
       'startTime': startTime?.toIso8601String(),
     };
@@ -92,6 +137,7 @@ class Teiker {
     List<Consulta>? consultas,
     DateTime? feriasInicio,
     DateTime? feriasFim,
+    List<FeriasPeriodo>? feriasPeriodos,
     Color? corIdentificadora,
     bool? isWorking,
     DateTime? startTime,
@@ -106,6 +152,7 @@ class Teiker {
       consultas: consultas ?? this.consultas,
       feriasInicio: feriasInicio ?? this.feriasInicio,
       feriasFim: feriasFim ?? this.feriasFim,
+      feriasPeriodos: feriasPeriodos ?? this.feriasPeriodos,
       corIdentificadora: corIdentificadora ?? this.corIdentificadora,
       isWorking: isWorking ?? this.isWorking,
       startTime: startTime ?? this.startTime,

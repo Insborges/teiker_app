@@ -14,6 +14,42 @@ import 'package:teiker_app/theme/app_colors.dart';
 
 enum MainRole { admin, teiker }
 
+class _TeikerFormData {
+  const _TeikerFormData({
+    required this.name,
+    required this.email,
+    required this.password,
+    required this.telemovel,
+    required this.horas,
+    required this.cor,
+  });
+
+  final String name;
+  final String email;
+  final String password;
+  final int telemovel;
+  final double horas;
+  final Color cor;
+}
+
+class _ClienteFormData {
+  const _ClienteFormData({
+    required this.name,
+    required this.morada,
+    required this.codigoPostal,
+    required this.telemovel,
+    required this.email,
+    required this.orcamento,
+  });
+
+  final String name;
+  final String morada;
+  final String codigoPostal;
+  final int telemovel;
+  final String email;
+  final double orcamento;
+}
+
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key, required this.role});
 
@@ -29,6 +65,7 @@ class _MainScreenState extends State<MainScreen> {
   int selected = 0;
   bool showOptions = false;
   final PageController controller = PageController();
+  final AuthService _authService = AuthService();
 
   bool get _isAdmin => widget.isAdmin;
 
@@ -207,7 +244,7 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  void _teikerAdd() {
+  Future<void> _teikerAdd() async {
     Color selectedCor = Colors.green;
     final nameController = TextEditingController();
     final emailController = TextEditingController();
@@ -215,276 +252,169 @@ class _MainScreenState extends State<MainScreen> {
     final telemovelController = TextEditingController();
     final horasController = TextEditingController();
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return FractionallySizedBox(
-          heightFactor: 0.8,
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 12,
-              left: 12,
-              right: 12,
-            ),
-            child: StatefulBuilder(
-              builder: (context, setStateSheet) {
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: .08),
-                        blurRadius: 18,
-                        offset: const Offset(0, 10),
+    try {
+      final data = await _showFormSheet<_TeikerFormData>(
+        builder: (sheetContext) {
+          return StatefulBuilder(
+            builder: (_, setStateSheet) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sheetHeader(
+                    icon: Icons.person_add_alt_1,
+                    title: 'Adicionar Teiker',
+                    onClose: () => Navigator.pop(sheetContext),
+                  ),
+                  const SizedBox(height: 10),
+                  _formInput('Nome', nameController),
+                  const SizedBox(height: 10),
+                  _formInput(
+                    'Email',
+                    emailController,
+                    keyboard: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 10),
+                  _formInput('Password', passwordController, obscure: true),
+                  const SizedBox(height: 10),
+                  _formInput(
+                    'Telemóvel',
+                    telemovelController,
+                    keyboard: TextInputType.number,
+                  ),
+                  const SizedBox(height: 10),
+                  _formInput(
+                    'Horas',
+                    horasController,
+                    keyboard: TextInputType.number,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Text(
+                        'Cor da Teiker',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(width: 10),
+                      GestureDetector(
+                        onTap: () async {
+                          Color tempColor = selectedCor;
+                          final picked = await showDialog<Color>(
+                            context: sheetContext,
+                            builder: (c) => AlertDialog(
+                              title: const Text('Escolhe uma cor'),
+                              content: SingleChildScrollView(
+                                child: BlockPicker(
+                                  pickerColor: tempColor,
+                                  onColorChanged: (color) => tempColor = color,
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(c, null),
+                                  child: const Text('Cancelar'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(c, tempColor),
+                                  child: const Text('Selecionar'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (picked != null) {
+                            setStateSheet(() => selectedCor = picked);
+                          }
+                        },
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: selectedCor,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              backgroundColor: AppColors.primaryGreen
-                                  .withValues(alpha: .12),
-                              child: const Icon(
-                                Icons.person_add_alt_1,
-                                color: AppColors.primaryGreen,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            const Expanded(
-                              child: Text(
-                                'Adicionar Teiker',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 18,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(sheetContext),
-                              icon: const Icon(Icons.close),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        _formInput('Nome', nameController),
-                        const SizedBox(height: 10),
-                        _formInput(
-                          'Email',
-                          emailController,
-                          keyboard: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 10),
-                        _formInput(
-                          'Password',
-                          passwordController,
-                          obscure: true,
-                        ),
-                        const SizedBox(height: 10),
-                        _formInput(
-                          'Telemóvel',
-                          telemovelController,
-                          keyboard: TextInputType.number,
-                        ),
-                        const SizedBox(height: 10),
-                        _formInput(
-                          'Horas',
-                          horasController,
-                          keyboard: TextInputType.number,
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            const Text(
-                              'Cor da Teiker',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            const SizedBox(width: 10),
-                            GestureDetector(
-                              onTap: () async {
-                                Color tempColor = selectedCor;
-                                final picked = await showDialog<Color>(
-                                  context: sheetContext,
-                                  builder: (c) => AlertDialog(
-                                    title: const Text('Escolhe uma cor'),
-                                    content: SingleChildScrollView(
-                                      child: BlockPicker(
-                                        pickerColor: tempColor,
-                                        onColorChanged: (color) {
-                                          tempColor = color;
-                                        },
-                                      ),
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(c, null),
-                                        child: const Text('Cancelar'),
-                                      ),
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(c, tempColor),
-                                        child: const Text('Selecionar'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                                if (picked != null) {
-                                  setStateSheet(() => selectedCor = picked);
-                                }
-                              },
-                              child: Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: selectedCor,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: Colors.grey.shade300,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () => Navigator.pop(sheetContext),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primaryGreen,
-                                  side: const BorderSide(
-                                    color: AppColors.primaryGreen,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                ),
-                                child: const Text('Cancelar'),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                icon: const Icon(Icons.check),
-                                label: const Text(
-                                  'Adicionar',
-                                  style: TextStyle(fontWeight: FontWeight.bold),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primaryGreen,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                onPressed: () async {
-                                  final name = nameController.text.trim();
-                                  final email = emailController.text.trim();
-                                  final password = passwordController.text
-                                      .trim();
-                                  final telemovel = telemovelController.text
-                                      .trim();
-                                  final horas = horasController.text.trim();
+                  const SizedBox(height: 16),
+                  _sheetActions(
+                    sheetContext: sheetContext,
+                    onConfirm: () {
+                      final name = nameController.text.trim();
+                      final email = emailController.text.trim();
+                      final password = passwordController.text.trim();
+                      final telemovel = telemovelController.text.trim();
+                      final horas = horasController.text.trim();
 
-                                  if ([
-                                    name,
-                                    email,
-                                    password,
-                                    telemovel,
-                                    horas,
-                                  ].any((e) => e.isEmpty)) {
-                                    AppSnackBar.show(
-                                      context,
-                                      message: 'Preencha todos os campos',
-                                      icon: Icons.error,
-                                      background: Colors.red.shade700,
-                                    );
-                                    return;
-                                  }
+                      if (_hasEmpty([
+                        name,
+                        email,
+                        password,
+                        telemovel,
+                        horas,
+                      ])) {
+                        _showError('Preencha todos os campos');
+                        return;
+                      }
 
-                                  if (!RegExp(
-                                    r'^[0-9]+$',
-                                  ).hasMatch(telemovel)) {
-                                    AppSnackBar.show(
-                                      context,
-                                      message: 'Telemóvel inválido',
-                                      icon: Icons.error,
-                                      background: Colors.red.shade700,
-                                    );
-                                    return;
-                                  }
+                      if (!_isDigits(telemovel)) {
+                        _showError('Telemóvel inválido');
+                        return;
+                      }
 
-                                  final horasValue = double.tryParse(horas);
-                                  if (horasValue == null) {
-                                    AppSnackBar.show(
-                                      context,
-                                      message: 'Horas inválidas',
-                                      icon: Icons.error,
-                                      background: Colors.red.shade700,
-                                    );
-                                    return;
-                                  }
+                      final horasValue = double.tryParse(horas);
+                      if (horasValue == null) {
+                        _showError('Horas inválidas');
+                        return;
+                      }
 
-                                  try {
-                                    await AuthService().createTeiker(
-                                      name: name,
-                                      email: email,
-                                      password: password,
-                                      telemovel: int.parse(telemovel),
-                                      horas: horasValue,
-                                      cor: selectedCor,
-                                    );
-
-                                    if (Navigator.canPop(sheetContext)) {
-                                      Navigator.of(sheetContext).pop();
-                                    }
-                                    if (!mounted) return;
-                                    AppSnackBar.show(
-                                      context,
-                                      message: 'Teiker criada com sucesso!',
-                                      icon: Icons.check,
-                                      background: Colors.green.shade700,
-                                    );
-                                  } catch (e) {
-                                    if (!mounted) return;
-                                    AppSnackBar.show(
-                                      context,
-                                      message: 'Erro ao criar Teiker: $e',
-                                      icon: Icons.error,
-                                      background: Colors.red.shade700,
-                                    );
-                                  }
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      if (Navigator.canPop(sheetContext)) {
+                        Navigator.of(sheetContext).pop(
+                          _TeikerFormData(
+                            name: name,
+                            email: email,
+                            password: password,
+                            telemovel: int.parse(telemovel),
+                            horas: horasValue,
+                            cor: selectedCor,
+                          ),
+                        );
+                      }
+                    },
                   ),
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
+                ],
+              );
+            },
+          );
+        },
+      );
+
+      if (data == null) return;
+
+      await _authService.createTeiker(
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        telemovel: data.telemovel,
+        horas: data.horas,
+        cor: data.cor,
+      );
+      if (!mounted) return;
+      _showSuccess('Teiker criada com sucesso!');
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Erro ao criar Teiker: $e');
+    } finally {
+      nameController.dispose();
+      emailController.dispose();
+      passwordController.dispose();
+      telemovelController.dispose();
+      horasController.dispose();
+    }
   }
 
-  void _clienteAdd() {
+  Future<void> _clienteAdd() async {
     final nameController = TextEditingController();
     final moradaController = TextEditingController();
     final codigoPostalController = TextEditingController();
@@ -492,7 +422,129 @@ class _MainScreenState extends State<MainScreen> {
     final emailController = TextEditingController();
     final orcamentoController = TextEditingController();
 
-    showModalBottomSheet(
+    try {
+      final data = await _showFormSheet<_ClienteFormData>(
+        builder: (sheetContext) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sheetHeader(
+                icon: Icons.home_work_outlined,
+                title: 'Adicionar Cliente',
+                onClose: () => Navigator.pop(sheetContext),
+              ),
+              const SizedBox(height: 10),
+              _formInput('Nome', nameController),
+              const SizedBox(height: 10),
+              _formInput('Morada', moradaController),
+              const SizedBox(height: 10),
+              _formInput('Código Postal', codigoPostalController),
+              const SizedBox(height: 10),
+              _formInput(
+                'Telemóvel',
+                telemovelController,
+                keyboard: TextInputType.number,
+              ),
+              const SizedBox(height: 10),
+              _formInput(
+                'Email',
+                emailController,
+                keyboard: TextInputType.emailAddress,
+              ),
+              const SizedBox(height: 10),
+              _formInput(
+                'Preço/Hora (€)',
+                orcamentoController,
+                keyboard: TextInputType.number,
+              ),
+              const SizedBox(height: 16),
+              _sheetActions(
+                sheetContext: sheetContext,
+                onConfirm: () {
+                  final name = nameController.text.trim();
+                  final morada = moradaController.text.trim();
+                  final codigoPostal = codigoPostalController.text.trim();
+                  final telemovel = telemovelController.text.trim();
+                  final email = emailController.text.trim();
+                  final orcamento = orcamentoController.text.trim();
+
+                  if (_hasEmpty([
+                    name,
+                    morada,
+                    codigoPostal,
+                    telemovel,
+                    email,
+                    orcamento,
+                  ])) {
+                    _showError('Preencha todos os campos');
+                    return;
+                  }
+
+                  if (!_isDigits(telemovel)) {
+                    _showError('Telemóvel inválido');
+                    return;
+                  }
+
+                  final orc = double.tryParse(orcamento.replaceAll(',', '.'));
+                  if (orc == null) {
+                    _showError('Orçamento inválido');
+                    return;
+                  }
+
+                  if (Navigator.canPop(sheetContext)) {
+                    Navigator.of(sheetContext).pop(
+                      _ClienteFormData(
+                        name: name,
+                        morada: morada,
+                        codigoPostal: codigoPostal,
+                        telemovel: int.parse(telemovel),
+                        email: email,
+                        orcamento: orc,
+                      ),
+                    );
+                  }
+                },
+              ),
+            ],
+          );
+        },
+      );
+
+      if (data == null) return;
+
+      final newCliente = Clientes(
+        uid: FirebaseFirestore.instance.collection('clientes').doc().id,
+        nameCliente: data.name,
+        moradaCliente: data.morada,
+        codigoPostal: data.codigoPostal,
+        telemovel: data.telemovel,
+        email: data.email,
+        orcamento: data.orcamento,
+        hourasCasa: 0.0,
+        teikersIds: const [],
+      );
+
+      await _authService.createCliente(newCliente);
+      if (!mounted) return;
+      _showSuccess('Cliente criado com sucesso!');
+    } catch (e) {
+      if (!mounted) return;
+      _showError('Erro ao criar cliente: $e');
+    } finally {
+      nameController.dispose();
+      moradaController.dispose();
+      codigoPostalController.dispose();
+      telemovelController.dispose();
+      emailController.dispose();
+      orcamentoController.dispose();
+    }
+  }
+
+  Future<T?> _showFormSheet<T>({
+    required Widget Function(BuildContext sheetContext) builder,
+  }) {
+    return showModalBottomSheet<T>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -518,192 +570,98 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 ],
               ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: AppColors.primaryGreen.withValues(
-                            alpha: .12,
-                          ),
-                          child: const Icon(
-                            Icons.home_work_outlined,
-                            color: AppColors.primaryGreen,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            'Adicionar Cliente',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 18,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.pop(sheetContext),
-                          icon: const Icon(Icons.close),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    _formInput('Nome', nameController),
-                    const SizedBox(height: 10),
-                    _formInput('Morada', moradaController),
-                    const SizedBox(height: 10),
-                    _formInput('Código Postal', codigoPostalController),
-                    const SizedBox(height: 10),
-                    _formInput(
-                      'Telemóvel',
-                      telemovelController,
-                      keyboard: TextInputType.number,
-                    ),
-                    const SizedBox(height: 10),
-                    _formInput(
-                      'Email',
-                      emailController,
-                      keyboard: TextInputType.emailAddress,
-                    ),
-                    const SizedBox(height: 10),
-                    _formInput(
-                      'Preço/Hora (€)',
-                      orcamentoController,
-                      keyboard: TextInputType.number,
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => Navigator.pop(sheetContext),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.primaryGreen,
-                              side: const BorderSide(
-                                color: AppColors.primaryGreen,
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                            ),
-                            child: const Text('Cancelar'),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.check),
-                            label: const Text(
-                              'Adicionar',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primaryGreen,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            onPressed: () async {
-                              final name = nameController.text.trim();
-                              final morada = moradaController.text.trim();
-                              final codigoPostal = codigoPostalController.text
-                                  .trim();
-                              final telemovel = telemovelController.text.trim();
-                              final email = emailController.text.trim();
-                              final orcamento = orcamentoController.text.trim();
-
-                              if ([
-                                name,
-                                morada,
-                                codigoPostal,
-                                telemovel,
-                                email,
-                                orcamento,
-                              ].any((e) => e.isEmpty)) {
-                                AppSnackBar.show(
-                                  context,
-                                  message: 'Preencha todos os campos',
-                                  icon: Icons.error,
-                                  background: Colors.red.shade700,
-                                );
-                                return;
-                              }
-
-                              if (!RegExp(r'^[0-9]+$').hasMatch(telemovel)) {
-                                AppSnackBar.show(
-                                  context,
-                                  message: 'Telemóvel inválido',
-                                  icon: Icons.error,
-                                  background: Colors.red.shade700,
-                                );
-                                return;
-                              }
-
-                              final double? orc = double.tryParse(
-                                orcamento.replaceAll(',', '.'),
-                              );
-                              if (orc == null) {
-                                AppSnackBar.show(
-                                  context,
-                                  message: 'Orçamento inválido',
-                                  icon: Icons.error,
-                                  background: Colors.red.shade700,
-                                );
-                                return;
-                              }
-
-                              try {
-                                final newCliente = Clientes(
-                                  uid: FirebaseFirestore.instance
-                                      .collection('clientes')
-                                      .doc()
-                                      .id,
-                                  nameCliente: name,
-                                  moradaCliente: morada,
-                                  codigoPostal: codigoPostal,
-                                  telemovel: int.parse(telemovel),
-                                  email: email,
-                                  orcamento: orc,
-                                  hourasCasa: 0.0,
-                                  teikersIds: [],
-                                );
-
-                                await AuthService().createCliente(newCliente);
-
-                                if (Navigator.canPop(sheetContext)) {
-                                  Navigator.of(sheetContext).pop();
-                                }
-                                if (!mounted) return;
-                                AppSnackBar.show(
-                                  context,
-                                  message: 'Cliente criado com sucesso!',
-                                  icon: Icons.check,
-                                  background: Colors.green.shade700,
-                                );
-                              } catch (e) {
-                                if (!mounted) return;
-                                AppSnackBar.show(
-                                  context,
-                                  message: 'Erro ao criar cliente: $e',
-                                  icon: Icons.error,
-                                  background: Colors.red.shade700,
-                                );
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+              child: SingleChildScrollView(child: builder(sheetContext)),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _sheetHeader({
+    required IconData icon,
+    required String title,
+    required VoidCallback onClose,
+  }) {
+    return Row(
+      children: [
+        CircleAvatar(
+          backgroundColor: AppColors.primaryGreen.withValues(alpha: .12),
+          child: Icon(icon, color: AppColors.primaryGreen),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+        ),
+        IconButton(onPressed: onClose, icon: const Icon(Icons.close)),
+      ],
+    );
+  }
+
+  Widget _sheetActions({
+    required BuildContext sheetContext,
+    required VoidCallback onConfirm,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton(
+            onPressed: () => Navigator.pop(sheetContext),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primaryGreen,
+              side: const BorderSide(color: AppColors.primaryGreen),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            child: const Text('Cancelar'),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: ElevatedButton.icon(
+            icon: const Icon(Icons.check),
+            label: const Text(
+              'Adicionar',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryGreen,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            onPressed: onConfirm,
+          ),
+        ),
+      ],
+    );
+  }
+
+  bool _hasEmpty(List<String> values) => values.any((value) => value.isEmpty);
+
+  bool _isDigits(String value) => RegExp(r'^[0-9]+$').hasMatch(value);
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    AppSnackBar.show(
+      context,
+      message: message,
+      icon: Icons.check,
+      background: Colors.green.shade700,
+    );
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    AppSnackBar.show(
+      context,
+      message: message,
+      icon: Icons.error,
+      background: Colors.red.shade700,
     );
   }
 

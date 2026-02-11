@@ -46,6 +46,13 @@ class AppTextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final neutralBorder = borderColor ?? Colors.grey.shade400;
+    final baseLabelStyle =
+        labelStyle ??
+        TextStyle(
+          color: Colors.grey.shade700,
+          fontWeight: FontWeight.w600,
+          fontSize: 14,
+        );
 
     return TextFormField(
       controller: controller,
@@ -59,24 +66,42 @@ class AppTextField extends StatelessWidget {
       enableInteractiveSelection: enableInteractiveSelection ?? !readOnly,
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: labelStyle,
+        labelStyle: baseLabelStyle,
+        floatingLabelStyle: baseLabelStyle.copyWith(
+          color: focusColor,
+          fontWeight: FontWeight.w700,
+        ),
         prefixIcon: prefixIcon != null
             ? Icon(prefixIcon, color: focusColor)
             : null,
         suffixIcon: suffixIcon,
-        contentPadding: contentPadding,
+        contentPadding:
+            contentPadding ??
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        isDense: true,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
-          borderSide: BorderSide(color: neutralBorder, width: 1.2),
+          borderSide: BorderSide(
+            color: neutralBorder.withValues(alpha: .85),
+            width: 1.25,
+          ),
         ),
         filled: true,
         fillColor: fillColor,
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
-          borderSide: BorderSide(color: focusColor, width: 2),
+          borderSide: BorderSide(color: focusColor, width: 1.9),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(borderRadius),
+          borderSide: BorderSide(color: Colors.red.shade400, width: 1.4),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(borderRadius),
+          borderSide: BorderSide(color: Colors.red.shade700, width: 1.8),
         ),
       ),
     );

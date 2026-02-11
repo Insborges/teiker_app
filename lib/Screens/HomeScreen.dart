@@ -47,6 +47,9 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _loadReminders(String userId) async {
+    if (!mounted) return;
+    final isAdmin = ref.read(isAdminProvider);
+
     final snapshot = await FirebaseFirestore.instance
         .collection('reminders')
         .doc(userId)
@@ -54,8 +57,6 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         .get();
 
     final Map<DateTime, List<Map<String, dynamic>>> loaded = {};
-
-    final isAdmin = ref.read(isAdminProvider);
 
     for (final doc in snapshot.docs) {
       final data = doc.data();
@@ -134,7 +135,9 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _loadFerias() async {
-    final feriasRaw = await ref.read(authServiceProvider).getFeriasTeikers();
+    if (!mounted) return;
+    final authService = ref.read(authServiceProvider);
+    final feriasRaw = await authService.getFeriasTeikers();
 
     final List<Map<String, dynamic>> feriasProcessed = [];
 
@@ -163,7 +166,9 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _loadClientes() async {
-    final clientes = await ref.read(authServiceProvider).getClientes();
+    if (!mounted) return;
+    final authService = ref.read(authServiceProvider);
+    final clientes = await authService.getClientes();
     if (!mounted) return;
     setState(() => _clientes = clientes);
   }
@@ -192,11 +197,11 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _loadConsultas() async {
-    final consultasRaw = await ref
-        .read(authServiceProvider)
-        .getConsultasTeikers();
+    if (!mounted) return;
+    final authService = ref.read(authServiceProvider);
     final userId = ref.read(authStateProvider).asData?.value?.uid;
     final isAdmin = ref.read(isAdminProvider);
+    final consultasRaw = await authService.getConsultasTeikers();
 
     final Map<DateTime, List<Map<String, dynamic>>> grouped = {};
 

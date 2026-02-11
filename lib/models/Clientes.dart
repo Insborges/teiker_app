@@ -8,6 +8,9 @@ class Clientes {
   String email;
   double orcamento;
   List<String> teikersIds;
+  bool isArchived;
+  String? archivedBy;
+  DateTime? archivedAt;
 
   Clientes({
     required this.uid,
@@ -19,6 +22,9 @@ class Clientes {
     required this.email,
     required this.orcamento,
     required this.teikersIds,
+    this.isArchived = false,
+    this.archivedBy,
+    this.archivedAt,
   });
 
   Map<String, dynamic> toMap() {
@@ -32,6 +38,9 @@ class Clientes {
       'email': email,
       'orcamento': orcamento,
       'teikersIds': teikersIds,
+      'isArchived': isArchived,
+      'archivedBy': archivedBy,
+      'archivedAt': archivedAt?.toIso8601String(),
     };
   }
 
@@ -40,6 +49,11 @@ class Clientes {
     final telemovel = telemovelRaw is int
         ? telemovelRaw
         : int.tryParse('$telemovelRaw') ?? 0;
+
+    final archivedAtRaw = map['archivedAt'];
+    final archivedAt = archivedAtRaw is String
+        ? DateTime.tryParse(archivedAtRaw)
+        : null;
 
     return Clientes(
       uid: map['uid'] as String? ?? '',
@@ -51,6 +65,9 @@ class Clientes {
       email: map['email'] as String? ?? '',
       orcamento: (map['orcamento'] as num?)?.toDouble() ?? 0.0,
       teikersIds: List<String>.from(map['teikersIds'] ?? []),
+      isArchived: map['isArchived'] == true,
+      archivedBy: map['archivedBy'] as String?,
+      archivedAt: archivedAt,
     );
   }
 }

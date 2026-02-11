@@ -12,6 +12,7 @@ class AppCard extends StatelessWidget {
   final bool whiteText;
   final Widget? child;
   final EdgeInsets? padding;
+  final BorderSide? borderSide;
 
   const AppCard({
     super.key,
@@ -26,6 +27,7 @@ class AppCard extends StatelessWidget {
     this.iconColor,
     this.child,
     this.padding,
+    this.borderSide,
   });
 
   @override
@@ -34,7 +36,10 @@ class AppCard extends StatelessWidget {
       color: color ?? Theme.of(context).cardColor,
       elevation: 3,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: borderSide ?? BorderSide.none,
+      ),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),

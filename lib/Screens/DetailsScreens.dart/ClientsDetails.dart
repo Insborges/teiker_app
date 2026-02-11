@@ -8,9 +8,12 @@ import 'package:teiker_app/Widgets/cupertino_time_picker_sheet.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
 import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/monthly_hours_overview_card.dart';
 import 'package:teiker_app/backend/auth_service.dart';
+import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/theme/app_colors.dart';
+import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import '../../models/Clientes.dart';
 
 class Clientsdetails extends StatefulWidget {
@@ -40,6 +43,9 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   bool? isAdmin;
   final WorkSessionService _workSessionService = WorkSessionService();
+  final MonthlyHoursOverviewService _hoursOverviewService =
+      MonthlyHoursOverviewService();
+  late Future<Map<DateTime, double>> _hoursOverviewFuture;
 
   @override
   void initState() {
@@ -63,6 +69,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
 
     _horasCasa = widget.cliente.hourasCasa;
+    _hoursOverviewFuture = _buildHoursOverviewFuture();
 
     _checkPendingSessionReminder();
     _loadHorasParaTeiker();
@@ -76,6 +83,21 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
     if (!mounted) return;
     setState(() => _horasCasa = total);
+  }
+
+  Future<Map<DateTime, double>> _buildHoursOverviewFuture() {
+    final currentUserId = FirebaseService().currentUser?.uid;
+    final teikerId = isAdmin == true ? null : currentUserId;
+    return _hoursOverviewService.fetchMonthlyTotals(
+      teikerId: teikerId,
+      clienteId: widget.cliente.uid,
+    );
+  }
+
+  void _refreshHoursOverview() {
+    setState(() {
+      _hoursOverviewFuture = _buildHoursOverviewFuture();
+    });
   }
 
   Future<void> _checkPendingSessionReminder() async {
@@ -275,6 +297,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                         widget.cliente.hourasCasa = total;
                                       }
                                     });
+                                    _refreshHoursOverview();
                                     widget.onSessionClosed?.call();
 
                                     AppSnackBar.show(
@@ -325,6 +348,9 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       orcamento: double.tryParse(_orcamentoController.text) ?? 0,
       hourasCasa: _horasCasa,
       teikersIds: widget.cliente.teikersIds,
+      isArchived: widget.cliente.isArchived,
+      archivedBy: widget.cliente.archivedBy,
+      archivedAt: widget.cliente.archivedAt,
     );
 
     try {
@@ -384,6 +410,9 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   //Admin Layout
   Widget _buildAdminLayout() {
+    const adminPrimary = Color.fromARGB(255, 4, 76, 32);
+    final adminBorder = adminPrimary.withValues(alpha: .22);
+
     return Scaffold(
       appBar: buildAppBar(
         widget.cliente.nameCliente,
@@ -422,42 +451,77 @@ class _ClientsdetailsState extends State<Clientsdetails> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            _buildTextField('Nome', _nameController),
-            SizedBox(height: 12),
-            _buildTextField('Morada', _moradaController),
-            SizedBox(height: 12),
-            _buildTextField('Código Postal', _codigoPostalController),
-            SizedBox(height: 12),
+            _buildTextField(
+              'Nome',
+              _nameController,
+              borderColor: adminBorder,
+              focusColor: adminPrimary,
+              fillColor: Colors.white,
+              prefixIcon: Icons.person_outline,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              'Morada',
+              _moradaController,
+              borderColor: adminBorder,
+              focusColor: adminPrimary,
+              fillColor: Colors.white,
+              prefixIcon: Icons.home_outlined,
+            ),
+            const SizedBox(height: 12),
+            _buildTextField(
+              'Código Postal',
+              _codigoPostalController,
+              borderColor: adminBorder,
+              focusColor: adminPrimary,
+              fillColor: Colors.white,
+              prefixIcon: Icons.local_post_office_outlined,
+            ),
+            const SizedBox(height: 12),
             _buildTextField(
               'Telefone',
               _phoneController,
               keyboard: TextInputType.phone,
+              borderColor: adminBorder,
+              focusColor: adminPrimary,
+              fillColor: Colors.white,
+              prefixIcon: Icons.phone_outlined,
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             _buildTextField(
               'Email',
               _emailController,
               keyboard: TextInputType.emailAddress,
+              borderColor: adminBorder,
+              focusColor: adminPrimary,
+              fillColor: Colors.white,
+              prefixIcon: Icons.email_outlined,
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             _buildTextField(
               'Preço/Hora',
               _orcamentoController,
               keyboard: TextInputType.number,
+              borderColor: adminBorder,
+              focusColor: adminPrimary,
+              fillColor: Colors.white,
+              prefixIcon: Icons.payments_outlined,
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             _buildHorasCard(_horasCasa),
-            SizedBox(height: 8),
+            const SizedBox(height: 12),
+            _buildMonthlyHoursSection(),
+            const SizedBox(height: 8),
             AppButton(
               text: "Adicionar Horas",
               icon: Icons.timer,
               color: const Color.fromARGB(255, 4, 76, 32),
               onPressed: () => _abrirDialogAdicionarHoras(),
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             _buildOrcamentoCard(widget.cliente.orcamento, _horasCasa),
 
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
 
             // Emitir faturas
             AppButton(
@@ -512,6 +576,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     _nameController,
                     readOnly: true,
                     borderColor: fieldBorder,
+                    prefixIcon: Icons.person_outline,
                     labelColor: fieldLabel,
                     textColor: fieldText,
                     fillColor: fieldFill,
@@ -522,6 +587,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     _moradaController,
                     readOnly: true,
                     borderColor: fieldBorder,
+                    prefixIcon: Icons.home_outlined,
                     labelColor: fieldLabel,
                     textColor: fieldText,
                     fillColor: fieldFill,
@@ -532,6 +598,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     _codigoPostalController,
                     readOnly: true,
                     borderColor: fieldBorder,
+                    prefixIcon: Icons.local_post_office_outlined,
                     labelColor: fieldLabel,
                     textColor: fieldText,
                     fillColor: fieldFill,
@@ -604,16 +671,19 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     TextInputType keyboard = TextInputType.text,
     bool readOnly = false,
     Color? borderColor,
+    Color? focusColor,
     Color? labelColor,
     Color? textColor,
     Color fillColor = Colors.white,
+    IconData? prefixIcon,
   }) {
     return AppTextField(
       label: label,
       controller: controller,
+      prefixIcon: prefixIcon,
       readOnly: readOnly,
       keyboard: keyboard,
-      focusColor: borderColor ?? Colors.grey.shade600,
+      focusColor: focusColor ?? borderColor ?? Colors.grey.shade600,
       fillColor: fillColor,
       borderColor: borderColor ?? Colors.grey.shade400,
       enableInteractiveSelection: !readOnly,
@@ -662,6 +732,60 @@ class _ClientsdetailsState extends State<Clientsdetails> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMonthlyHoursSection() {
+    return FutureBuilder<Map<DateTime, double>>(
+      future: _hoursOverviewFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade100),
+            ),
+            child: const Text(
+              'Não foi possível carregar o histórico de horas.',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          );
+        }
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: AppColors.primaryGreen.withValues(alpha: .14),
+            ),
+          ),
+          child: MonthlyHoursOverviewCard(
+            monthlyTotals: snapshot.data ?? const {},
+            primaryColor: const Color.fromARGB(255, 4, 76, 32),
+            title: 'Horas por mês',
+            emptyMessage: 'Sem horas registadas para esta casa.',
+          ),
+        );
+      },
     );
   }
 

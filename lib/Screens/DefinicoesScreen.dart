@@ -6,7 +6,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:teiker_app/Screens/TeikerHorasScreen.dart';
-import 'package:teiker_app/Screens/LoginScreen.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
 import 'package:teiker_app/Widgets/ResetPasswordDialog.dart';
@@ -135,19 +134,7 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
 
   Future<void> _logout() async {
     await _authService.logout();
-    if (!mounted) return;
-
-    AppSnackBar.show(
-      context,
-      message: 'Terminaste a sessão com sucesso!',
-      icon: Icons.logout_outlined,
-      background: Colors.green.shade700,
-    );
-
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (route) => false,
-    );
+    // A navegação é gerida automaticamente pelo AuthGate.
   }
 
   void _openResetDialog() {

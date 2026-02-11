@@ -20,15 +20,24 @@ void main() async {
   runApp(ProviderScope(child: MyApp()));
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       NotificationService().processPendingNavigation();
     });
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Teiker App',
       navigatorKey: NotificationService().navigatorKey,
@@ -43,6 +52,27 @@ class MyApp extends StatelessWidget {
         // Radius e estilo padrão para Inputs
         inputDecorationTheme: InputDecorationTheme(
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+
+        dialogTheme: DialogThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: const Color.fromARGB(255, 4, 76, 32),
+          ),
+        ),
+
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color.fromARGB(255, 4, 76, 32),
+            foregroundColor: Colors.white,
+          ),
         ),
 
         // SnackBar padrão

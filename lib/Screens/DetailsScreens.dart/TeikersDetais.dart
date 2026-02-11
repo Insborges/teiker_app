@@ -3,16 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/DatePickerBottomSheet.dart';
 import 'package:teiker_app/Widgets/AppTextInput.dart';
+import 'package:teiker_app/Widgets/app_section_card.dart';
+import 'package:teiker_app/Widgets/consulta_item_card.dart';
+import 'package:teiker_app/Widgets/monthly_hours_overview_card.dart';
 import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
 import 'package:teiker_app/Widgets/SingleTimePickerBottomSheet.dart';
-import 'package:teiker_app/work_sessions/application/monthly_teiker_hours_service.dart';
-import '../../models/Clientes.dart';
+import 'package:teiker_app/Widgets/teiker_ferias_content.dart';
+import 'package:teiker_app/Widgets/teiker_personal_info_content.dart';
+import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import '../../models/Teikers.dart';
 import '../../Widgets/AppBar.dart';
 import '../../Widgets/AppButton.dart';
 import '../../Widgets/AppSnackBar.dart';
 import 'package:teiker_app/backend/TeikerService.dart';
-import 'package:teiker_app/backend/auth_service.dart';
 
 class TeikersDetails extends StatefulWidget {
   final Teiker teiker;
@@ -24,34 +27,40 @@ class TeikersDetails extends StatefulWidget {
 
 class _TeikersDetailsState extends State<TeikersDetails> {
   final Color _primaryColor = const Color.fromARGB(255, 4, 76, 32);
-  final MonthlyTeikerHoursService _monthlyHoursService =
-      MonthlyTeikerHoursService();
-  late TextEditingController _emailController;
+  static const String _hoursSectionTitle = 'Horas da Teiker';
+  final MonthlyHoursOverviewService _hoursOverviewService =
+      MonthlyHoursOverviewService();
   late TextEditingController _telemovelController;
-  DateTime? _feriasInicio;
-  DateTime? _feriasFim;
-  final Map<String, Clientes> _clientes = {};
-  late Future<Map<String, double>> _hoursFuture;
+  late List<FeriasPeriodo> _feriasPeriodos;
+  late Future<Map<DateTime, double>> _hoursFuture;
   late List<Consulta> _consultas;
 
   @override
   void initState() {
     super.initState();
-    _emailController = TextEditingController(text: widget.teiker.email);
     _telemovelController = TextEditingController(
       text: widget.teiker.telemovel.toString(),
     );
 
-    _feriasInicio = widget.teiker.feriasInicio;
-    _feriasFim = widget.teiker.feriasFim;
+    _feriasPeriodos = List<FeriasPeriodo>.from(widget.teiker.feriasPeriodos);
+    if (_feriasPeriodos.isEmpty &&
+        widget.teiker.feriasInicio != null &&
+        widget.teiker.feriasFim != null) {
+      _feriasPeriodos = [
+        FeriasPeriodo(
+          inicio: widget.teiker.feriasInicio!,
+          fim: widget.teiker.feriasFim!,
+        ),
+      ];
+    }
     _consultas = List<Consulta>.from(widget.teiker.consultas);
-    _hoursFuture = _fetchTeikerHours(widget.teiker.uid);
-    _loadClientes();
+    _hoursFuture = _hoursOverviewService.fetchMonthlyTotals(
+      teikerId: widget.teiker.uid,
+    );
   }
 
   @override
   void dispose() {
-    _emailController.dispose();
     _telemovelController.dispose();
     super.dispose();
   }
@@ -67,9 +76,13 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     }
 
     try {
+      final lastFerias = _feriasPeriodos.isEmpty ? null : _feriasPeriodos.last;
       final updatedTeiker = widget.teiker.copyWith(
         telemovel: newTelemovel,
         consultas: _consultas,
+        feriasPeriodos: _feriasPeriodos,
+        feriasInicio: lastFerias?.inicio,
+        feriasFim: lastFerias?.fim,
       );
 
       await TeikerService().updateTeiker(updatedTeiker);
@@ -118,43 +131,30 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   }
 
   Future<void> _adicionarFerias() async {
+    final lastPeriodo = _feriasPeriodos.isEmpty ? null : _feriasPeriodos.last;
     final selectedDates = await DatePickerBottomSheet.show(
       context,
-      initialStart: _feriasInicio,
-      initialEnd: _feriasFim,
+      initialStart: lastPeriodo?.inicio,
+      initialEnd: lastPeriodo?.fim,
     );
 
     if (selectedDates == null || selectedDates.length != 2) return;
+    final inicio = selectedDates[0];
+    final fim = selectedDates[1];
+    if (inicio == null || fim == null) return;
 
     setState(() {
-      _feriasInicio = selectedDates[0];
-      _feriasFim = selectedDates[1];
+      _feriasPeriodos.add(FeriasPeriodo(inicio: inicio, fim: fim));
     });
 
-    await TeikerService().updateFerias(
-      widget.teiker.uid,
-      _feriasInicio,
-      _feriasFim,
-    );
+    await TeikerService().addFeriasPeriodo(widget.teiker.uid, inicio, fim);
 
     AppSnackBar.show(
       context,
-      message: "Férias atualizadas!",
+      message: "Período de férias adicionado!",
       icon: Icons.check,
       background: Colors.green.shade700,
     );
-  }
-
-  Future<void> _loadClientes() async {
-    final all = await AuthService().getClientes();
-    if (!mounted) return;
-    setState(() {
-      _clientes.addEntries(all.map((c) => MapEntry(c.uid, c)));
-    });
-  }
-
-  Future<Map<String, double>> _fetchTeikerHours(String teikerId) {
-    return _monthlyHoursService.fetchHoursByCliente(teikerId: teikerId);
   }
 
   Future<void> _openConsultaSheet({Consulta? consulta, int? index}) async {
@@ -225,39 +225,15 @@ class _TeikersDetailsState extends State<TeikersDetails> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Info Pessoal + Botão Guardar
-            _buildSectionCard(
+            AppSectionCard(
               title: "Informações Pessoais",
+              titleIcon: Icons.badge_outlined,
+              titleColor: _primaryColor,
               children: [
-                _buildInputField(
-                  "Telemóvel",
-                  _telemovelController,
-                  Icons.phone,
-                ),
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: OutlinedButton.icon(
-                    icon: Icon(Icons.save, color: _primaryColor),
-                    label: Text(
-                      "Guardar Alterações",
-                      style: TextStyle(
-                        color: _primaryColor,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: _primaryColor, width: 1.6),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 14,
-                      ),
-                    ),
-                    onPressed: _guardarAlteracoes,
-                  ),
+                TeikerPersonalInfoContent(
+                  telemovelController: _telemovelController,
+                  primaryColor: _primaryColor,
+                  onSave: _guardarAlteracoes,
                 ),
               ],
             ),
@@ -265,10 +241,12 @@ class _TeikersDetailsState extends State<TeikersDetails> {
             const SizedBox(height: 20),
 
             // Horas (apenas texto)
-            _buildSectionCard(
-              title: "Horas",
+            AppSectionCard(
+              title: _hoursSectionTitle,
+              titleColor: _primaryColor,
+              titleIcon: Icons.bar_chart_rounded,
               children: [
-                FutureBuilder<Map<String, double>>(
+                FutureBuilder<Map<DateTime, double>>(
                   future: _hoursFuture,
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
@@ -291,41 +269,12 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       );
                     }
 
-                    final data = snapshot.data ?? {};
-                    if (data.isEmpty) {
-                      return const Text(
-                        "Sem horas registadas este mês.",
-                        style: TextStyle(color: Colors.grey),
-                      );
-                    }
-
-                    final total = data.values.fold<double>(
-                      0,
-                      (prev, e) => prev + e,
-                    );
-
-                    return SizedBox(
-                      width: double.infinity,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildInfoRow(
-                            "Este mês (h):",
-                            "${total.toStringAsFixed(1)}h",
-                          ),
-                          const SizedBox(height: 8),
-                          ...data.entries.map((entry) {
-                            final clienteName =
-                                _clientes[entry.key]?.nameCliente ?? entry.key;
-                            return _buildInfoRow(
-                              "$clienteName:",
-                              "${entry.value.toStringAsFixed(1)}h",
-                              valueColor: Colors.black54,
-                              valueWeight: FontWeight.w500,
-                            );
-                          }),
-                        ],
-                      ),
+                    return MonthlyHoursOverviewCard(
+                      monthlyTotals: snapshot.data ?? const {},
+                      primaryColor: _primaryColor,
+                      title: _hoursSectionTitle,
+                      showHeader: false,
+                      emptyMessage: 'Sem horas registadas.',
                     );
                   },
                 ),
@@ -334,8 +283,10 @@ class _TeikersDetailsState extends State<TeikersDetails> {
 
             const SizedBox(height: 20),
 
-            _buildSectionCard(
+            AppSectionCard(
               title: "Consultas",
+              titleIcon: Icons.event_note_outlined,
+              titleColor: _primaryColor,
               children: [
                 if (_consultas.isEmpty)
                   const Text(
@@ -344,13 +295,17 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                   )
                 else
                   Column(
-                    children: _consultas
-                        .asMap()
-                        .entries
-                        .map(
-                          (entry) => _buildConsultaTile(entry.value, entry.key),
-                        )
-                        .toList(),
+                    children: _consultas.asMap().entries.map((entry) {
+                      return ConsultaItemCard(
+                        consulta: entry.value,
+                        primaryColor: _primaryColor,
+                        onEdit: () => _openConsultaSheet(
+                          consulta: entry.value,
+                          index: entry.key,
+                        ),
+                        onDelete: () => _confirmDeleteConsulta(entry.key),
+                      );
+                    }).toList(),
                   ),
                 const SizedBox(height: 12),
                 AppButton(
@@ -364,168 +319,13 @@ class _TeikersDetailsState extends State<TeikersDetails> {
 
             const SizedBox(height: 20),
 
-            // Férias
-            _buildSectionCard(
+            AppSectionCard(
               title: "Férias",
-              children: [
-                if (_feriasInicio != null && _feriasFim != null)
-                  Text(
-                    "De ${_feriasInicio!.day}/${_feriasInicio!.month} "
-                    "até ${_feriasFim!.day}/${_feriasFim!.month}",
-                    style: const TextStyle(
-                      color: Color.fromARGB(255, 4, 76, 32),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  )
-                else
-                  const Text(
-                    "Ainda sem férias registadas.",
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                const SizedBox(height: 12),
-                AppButton(
-                  text: "Adicionar férias",
-                  color: _primaryColor,
-                  icon: Icons.beach_access,
-                  onPressed: _adicionarFerias,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Componentes auxiliares
-  Widget _buildSectionCard({
-    required String title,
-    required List<Widget> children,
-  }) {
-    return Card(
-      elevation: 3,
-      shadowColor: Colors.black26,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 17,
-                color: _primaryColor,
-              ),
-            ),
-            const SizedBox(height: 10),
-            ...children,
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputField(
-    String label,
-    TextEditingController controller,
-    IconData icon,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: AppTextField(
-        label: label,
-        controller: controller,
-        prefixIcon: icon,
-        focusColor: _primaryColor,
-        fillColor: Colors.grey.shade100,
-        borderColor: _primaryColor,
-        borderRadius: 10,
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(
-    String label,
-    String value, {
-    Color valueColor = const Color.fromARGB(255, 4, 76, 32),
-    FontWeight valueWeight = FontWeight.w600,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 16,
-              color: valueColor,
-              fontWeight: valueWeight,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildConsultaTile(Consulta consulta, int index) {
-    final hora = DateFormat('HH:mm', 'pt_PT').format(consulta.data);
-    final dia = DateFormat('dd MMM', 'pt_PT').format(consulta.data);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _primaryColor.withValues(alpha: .16)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: _primaryColor.withValues(alpha: .08),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.event, color: _primaryColor),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  consulta.descricao.isNotEmpty
-                      ? consulta.descricao
-                      : "Consulta",
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Container(
+              titleIcon: Icons.beach_access_outlined,
+              titleColor: _primaryColor,
+              titleTrailing: _feriasPeriodos.isEmpty
+                  ? null
+                  : Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
                         vertical: 6,
@@ -533,73 +333,25 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       decoration: BoxDecoration(
                         color: _primaryColor.withValues(alpha: .08),
                         borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _primaryColor.withValues(alpha: .2),
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.access_time,
-                            color: _primaryColor,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            "$dia · $hora",
-                            style: TextStyle(
-                              color: _primaryColor,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        '${_feriasPeriodos.length}',
+                        style: TextStyle(
+                          color: _primaryColor,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
-                    _consultaActionChip(
-                      icon: Icons.edit_outlined,
-                      label: "Editar",
-                      onTap: () =>
-                          _openConsultaSheet(consulta: consulta, index: index),
-                    ),
-                    _consultaActionChip(
-                      icon: Icons.delete_outline,
-                      label: "Eliminar",
-                      danger: true,
-                      onTap: () => _confirmDeleteConsulta(index),
-                    ),
-                  ],
+              children: [
+                TeikerFeriasContent(
+                  feriasPeriodos: _feriasPeriodos,
+                  primaryColor: _primaryColor,
+                  onAddFerias: _adicionarFerias,
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _consultaActionChip({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool danger = false,
-  }) {
-    final color = danger ? Colors.red.shade700 : _primaryColor;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: danger
-              ? Colors.red.shade50
-              : _primaryColor.withValues(alpha: .08),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(color: color, fontWeight: FontWeight.w600),
             ),
           ],
         ),

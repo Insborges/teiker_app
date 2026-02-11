@@ -19,149 +19,79 @@ class ConsultaItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hora = DateFormat('HH:mm', 'pt_PT').format(consulta.data);
-    final dia = DateFormat('dd MMM', 'pt_PT').format(consulta.data);
+    final dia = DateFormat('dd MMM yyyy', 'pt_PT').format(consulta.data);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: primaryColor.withValues(alpha: .16)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: primaryColor.withValues(alpha: .18)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
+            color: Colors.black.withValues(alpha: .03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: primaryColor.withValues(alpha: .08),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(Icons.event, color: primaryColor),
-          ),
+          Icon(Icons.event_outlined, color: primaryColor, size: 18),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  consulta.descricao.isNotEmpty
-                      ? consulta.descricao
-                      : 'Consulta',
-                  style: const TextStyle(
-                    fontSize: 15,
+                  '$dia · $hora',
+                  style: TextStyle(
+                    color: primaryColor,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: primaryColor.withValues(alpha: .08),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.access_time,
-                            color: primaryColor,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '$dia · $hora',
-                            style: TextStyle(
-                              color: primaryColor,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
+                if (consulta.descricao.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    consulta.descricao.trim(),
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w500,
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _ConsultaActionChip(
-                          icon: Icons.edit_outlined,
-                          label: 'Editar',
-                          color: primaryColor,
-                          onTap: onEdit,
-                        ),
-                        const SizedBox(height: 8),
-                        _ConsultaActionChip(
-                          icon: Icons.delete_outline,
-                          label: 'Eliminar',
-                          color: Colors.red.shade700,
-                          backgroundColor: Colors.red.shade50,
-                          onTap: onDelete,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ],
             ),
           ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Editar consulta',
+                onPressed: onEdit,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.edit_outlined, color: primaryColor, size: 20),
+              ),
+              const SizedBox(width: 2),
+              IconButton(
+                tooltip: 'Eliminar consulta',
+                onPressed: onDelete,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  Icons.delete_outline,
+                  color: Colors.red.shade700,
+                  size: 20,
+                ),
+              ),
+            ],
+          ),
         ],
-      ),
-    );
-  }
-}
-
-class _ConsultaActionChip extends StatelessWidget {
-  const _ConsultaActionChip({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-    this.backgroundColor,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-  final Color? backgroundColor;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: backgroundColor ?? color.withValues(alpha: .08),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(color: color, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
       ),
     );
   }

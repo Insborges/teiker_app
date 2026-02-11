@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'firebase_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/Teikers.dart';
+import 'package:teiker_app/models/teiker_workload.dart';
 
 class AuthService {
   final _firebase = FirebaseService();
@@ -17,6 +18,24 @@ class AuthService {
   }
 
   String _normalizeEmail(String email) => email.trim().toLowerCase();
+
+  DateTime? _parseDate(dynamic raw) {
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is String && raw.isNotEmpty) return DateTime.tryParse(raw);
+    return null;
+  }
+
+  List<DateTime> _expandRangeDays(DateTime inicio, DateTime fim) {
+    final dias = <DateTime>[];
+    final seen = <DateTime>{};
+    var d = DateTime.utc(inicio.year, inicio.month, inicio.day);
+    final end = DateTime.utc(fim.year, fim.month, fim.day);
+    while (!d.isAfter(end)) {
+      if (seen.add(d)) dias.add(d);
+      d = d.add(const Duration(days: 1));
+    }
+    return dias;
+  }
 
   Future<bool?> _hasAccountForEmail(String email) async {
     try {
@@ -151,7 +170,9 @@ class AuthService {
     required String email,
     required String password,
     required int telemovel,
-    required double horas,
+    String phoneCountryIso = 'PT',
+    required int workPercentage,
+    DateTime? birthDate,
     List<String>? clientesIds,
     Color? cor,
   }) async {
@@ -168,9 +189,10 @@ class AuthService {
     if (telemovel <= 0) {
       throw Exception('Telemóvel inválido.');
     }
-    if (horas < 0) {
-      throw Exception('Horas não pode ser negativo.');
+    if (!TeikerWorkload.isSupported(workPercentage)) {
+      throw Exception('Percentagem de trabalho inválida.');
     }
+    final weeklyHours = TeikerWorkload.weeklyHoursForPercentage(workPercentage);
 
     final creatorAuth = await _firebase.secondaryAuth;
     final userCredential = await creatorAuth.createUserWithEmailAndPassword(
@@ -182,8 +204,11 @@ class AuthService {
       uid: userCredential.user!.uid,
       nameTeiker: name,
       email: normalizedEmail,
+      birthDate: birthDate,
       telemovel: telemovel,
-      horas: horas,
+      phoneCountryIso: phoneCountryIso,
+      horas: weeklyHours,
+      workPercentage: workPercentage,
       clientesIds: clientesIds ?? [],
       consultas: const [],
       corIdentificadora: cor ?? Colors.green,
@@ -207,12 +232,18 @@ class AuthService {
   Future<void> updateTeikerContact({
     required String uid,
     required int newTelemovel,
+    String? phoneCountryIso,
   }) async {
     try {
       // Atualiza Firestore
-      await FirebaseService().firestore.collection('teikers').doc(uid).update({
-        'telemovel': newTelemovel,
-      });
+      final payload = <String, dynamic>{'telemovel': newTelemovel};
+      if (phoneCountryIso != null && phoneCountryIso.trim().isNotEmpty) {
+        payload['phoneCountryIso'] = phoneCountryIso.trim().toUpperCase();
+      }
+      await FirebaseService().firestore
+          .collection('teikers')
+          .doc(uid)
+          .update(payload);
     } catch (e) {
       throw "Erro ao atualizar email e contacto: $e";
     }
@@ -226,7 +257,7 @@ class AuthService {
         .collection('teikers')
         .get();
 
-    List<Map<String, dynamic>> ferias = [];
+    final ferias = <Map<String, dynamic>>[];
 
     for (var doc in snapshot.docs) {
       final data = doc.data();
@@ -253,34 +284,14 @@ class AuthService {
       }
 
       for (final periodo in periodos) {
-        DateTime? inicio;
-        DateTime? fim;
-
-        try {
-          final inicioRaw = periodo['inicio'];
-          final fimRaw = periodo['fim'];
-          if (inicioRaw is Timestamp) {
-            inicio = inicioRaw.toDate();
-          } else if (inicioRaw is String && inicioRaw.isNotEmpty) {
-            inicio = DateTime.parse(inicioRaw);
-          }
-          if (fimRaw is Timestamp) {
-            fim = fimRaw.toDate();
-          } else if (fimRaw is String && fimRaw.isNotEmpty) {
-            fim = DateTime.parse(fimRaw);
-          }
-        } catch (_) {
-          continue;
-        }
+        final inicio = _parseDate(periodo['inicio']);
+        final fim = _parseDate(periodo['fim']);
 
         if (inicio == null || fim == null) continue;
-        DateTime d = inicio;
-        while (!d.isAfter(fim)) {
-          final dayKey = DateTime.utc(d.year, d.month, d.day);
-          if (diasSet.add(dayKey)) {
-            dias.add(dayKey);
+        for (final day in _expandRangeDays(inicio, fim)) {
+          if (diasSet.add(day)) {
+            dias.add(day);
           }
-          d = d.add(const Duration(days: 1));
         }
       }
 
@@ -295,6 +306,53 @@ class AuthService {
     }
 
     return ferias;
+  }
+
+  Future<List<Map<String, dynamic>>> getBaixasTeikers() async {
+    final user = FirebaseAuth.instance.currentUser;
+    final admin = isCurrentUserAdmin;
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('teikers')
+        .get();
+
+    final baixas = <Map<String, dynamic>>[];
+
+    for (var doc in snapshot.docs) {
+      if (!admin && doc.id != user?.uid) continue;
+
+      final data = doc.data();
+      final periodos = (data['baixasPeriodos'] as List<dynamic>? ?? [])
+          .whereType<Map>()
+          .map((raw) => Map<String, dynamic>.from(raw))
+          .toList();
+      if (periodos.isEmpty) continue;
+
+      final dias = <DateTime>[];
+      final diasSet = <DateTime>{};
+
+      for (final periodo in periodos) {
+        final inicio = _parseDate(periodo['inicio']);
+        final fim = _parseDate(periodo['fim']);
+        if (inicio == null || fim == null) continue;
+
+        for (final day in _expandRangeDays(inicio, fim)) {
+          if (diasSet.add(day)) {
+            dias.add(day);
+          }
+        }
+      }
+
+      if (dias.isEmpty) continue;
+      baixas.add({
+        'uid': doc.id,
+        'nome': data['name'] ?? '',
+        'dias': dias,
+        'cor': Colors.red.shade700,
+      });
+    }
+
+    return baixas;
   }
 
   Future<List<Map<String, dynamic>>> getConsultasTeikers() async {
@@ -393,6 +451,22 @@ class AuthService {
         'isArchived': true,
         'archivedBy': archivedBy,
         'archivedAt': DateTime.now().toIso8601String(),
+      });
+    }
+    await batch.commit();
+  }
+
+  Future<void> unarchiveClientes(List<String> clienteIds) async {
+    final ids = clienteIds.where((id) => id.trim().isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return;
+
+    final batch = FirebaseFirestore.instance.batch();
+    for (final id in ids) {
+      final ref = FirebaseFirestore.instance.collection('clientes').doc(id);
+      batch.update(ref, {
+        'isArchived': false,
+        'archivedBy': null,
+        'archivedAt': null,
       });
     }
     await batch.commit();

@@ -55,6 +55,25 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
     );
   }
 
+  void _preloadHoursTotals(List<Teiker> teikers) {
+    for (final teiker in teikers) {
+      if (_totalHoursCache.containsKey(teiker.uid)) continue;
+
+      _getTeikerHours(teiker.uid)
+          .then((monthly) {
+            if (!mounted) return;
+            final total = monthly.values.fold<double>(0, (a, b) => a + b);
+            if (_totalHoursCache[teiker.uid] == total) return;
+            setState(() => _totalHoursCache[teiker.uid] = total);
+          })
+          .catchError((_) {
+            if (!mounted) return;
+            if (_totalHoursCache.containsKey(teiker.uid)) return;
+            setState(() => _totalHoursCache[teiker.uid] = 0);
+          });
+    }
+  }
+
   void _toggleSelected(String teikerId) {
     setState(() {
       if (_selectedTeikers.contains(teikerId)) {
@@ -133,15 +152,48 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
     return filtered;
   }
 
+  int _countFeriasDays(
+    List<FeriasPeriodo> periodos, {
+    DateTime? legacyStart,
+    DateTime? legacyEnd,
+  }) {
+    final dayKeys = <DateTime>{};
+
+    void addRange(DateTime start, DateTime end) {
+      final normalizedStart = DateTime(start.year, start.month, start.day);
+      final normalizedEnd = DateTime(end.year, end.month, end.day);
+      var cursor = normalizedStart;
+      while (!cursor.isAfter(normalizedEnd)) {
+        dayKeys.add(DateTime(cursor.year, cursor.month, cursor.day));
+        cursor = cursor.add(const Duration(days: 1));
+      }
+    }
+
+    for (final periodo in periodos) {
+      addRange(periodo.inicio, periodo.fim);
+    }
+    if (legacyStart != null && legacyEnd != null) {
+      addRange(legacyStart, legacyEnd);
+    }
+
+    return dayKeys.length;
+  }
+
+  double? _monthHoursForTeiker(String teikerId) {
+    return _totalHoursCache[teikerId];
+  }
+
   Widget _teikerCard(Teiker teiker) {
     final selected = _selectedTeikers.contains(teiker.uid);
     final primary = teiker.corIdentificadora;
     final consultasCount = teiker.consultas.length;
     final feriasPeriodos = teiker.feriasPeriodos;
-    final hasLegacyFerias =
-        feriasPeriodos.isEmpty &&
-        teiker.feriasInicio != null &&
-        teiker.feriasFim != null;
+    final feriasDays = _countFeriasDays(
+      feriasPeriodos,
+      legacyStart: teiker.feriasInicio,
+      legacyEnd: teiker.feriasFim,
+    );
+    final currentMonthHours = _monthHoursForTeiker(teiker.uid);
 
     return InkWell(
       onTap: () {
@@ -209,52 +261,6 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                           ),
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: FutureBuilder<Map<String, double>>(
-                          future: _getTeikerHours(teiker.uid),
-                          builder: (context, hoursSnap) {
-                            if (hoursSnap.connectionState ==
-                                ConnectionState.waiting) {
-                              return const SizedBox(
-                                width: 50,
-                                height: 16,
-                                child: Center(
-                                  child: SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }
-
-                            final data = hoursSnap.data ?? {};
-                            final total = data.values.fold<double>(
-                              0,
-                              (a, b) => a + b,
-                            );
-                            _totalHoursCache[teiker.uid] = total;
-
-                            return Text(
-                              '${total.toStringAsFixed(1)}h',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: primary,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -262,13 +268,12 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                     spacing: 10,
                     runSpacing: 8,
                     children: [
-                      if (feriasPeriodos.isNotEmpty || hasLegacyFerias)
+                      if (feriasDays > 0)
                         _infoChip(
                           icon: Icons.beach_access,
                           color: Colors.orange.shade700,
-                          text: feriasPeriodos.isNotEmpty
-                              ? 'Férias: ${feriasPeriodos.length} período${feriasPeriodos.length == 1 ? '' : 's'}'
-                              : 'Férias: ${teiker.feriasInicio!.day}/${teiker.feriasInicio!.month} - ${teiker.feriasFim!.day}/${teiker.feriasFim!.month}',
+                          text:
+                              'Férias: $feriasDays dia${feriasDays == 1 ? '' : 's'}',
                         ),
                       _infoChip(
                         icon: Icons.event_note,
@@ -282,7 +287,23 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
               ),
             ),
             if (!_selectionMode)
-              const Icon(Icons.chevron_right, color: Colors.grey),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    currentMonthHours == null
+                        ? '...h'
+                        : '${currentMonthHours.toStringAsFixed(1)}h',
+                    style: TextStyle(
+                      color: primary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.chevron_right, color: Colors.grey),
+                ],
+              ),
           ],
         ),
       ),
@@ -365,6 +386,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
         }
 
         final teikers = snapshot.data ?? [];
+        _preloadHoursTotals(teikers);
         final filteredTeikers = _applyFilters(teikers);
 
         return Scaffold(

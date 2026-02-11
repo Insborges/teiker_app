@@ -10,6 +10,7 @@ class ModernCalendar extends StatefulWidget {
   final Map<DateTime, List>? events;
   final bool highlightWeek;
   final bool showHolidays;
+  final double? maxHeight;
 
   final List<Map<String, dynamic>> teikersFerias;
 
@@ -23,6 +24,7 @@ class ModernCalendar extends StatefulWidget {
     this.events,
     this.highlightWeek = true,
     this.showHolidays = true,
+    this.maxHeight,
     this.teikersFerias = const [],
   });
 
@@ -123,7 +125,7 @@ class _ModernCalendarState extends State<ModernCalendar> {
     final days = _daysForMonth();
     final weekDays = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
     final screenHeight = MediaQuery.of(context).size.height;
-    final maxHeight = screenHeight * 0.45;
+    final maxHeight = widget.maxHeight ?? (screenHeight * 0.45);
 
     return ClipRRect(
       borderRadius: radius,

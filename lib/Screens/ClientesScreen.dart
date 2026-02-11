@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:teiker_app/Screens/DetailsScreens.dart/ClientsDetails.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
@@ -10,6 +11,7 @@ import 'package:teiker_app/Widgets/app_search_bar.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/theme/app_colors.dart';
+import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import 'package:teiker_app/work_sessions/domain/work_session.dart';
 import '../models/Clientes.dart';
 
@@ -26,12 +28,17 @@ class ClientesScreen extends StatefulWidget {
 
 class _ClientesScreenState extends State<ClientesScreen> {
   final Map<String, WorkSession?> _openSessions = {};
+  final Map<String, Future<Map<DateTime, double>>> _hoursByClienteFuture = {};
+  final Map<String, double> _currentMonthHoursCache = {};
   String _openSessionsKey = '';
   final WorkSessionService _workSessionService = WorkSessionService();
+  final MonthlyHoursOverviewService _monthlyHoursOverviewService =
+      MonthlyHoursOverviewService();
   final AuthService _authService = AuthService();
   final TextEditingController _searchController = TextEditingController();
   late Future<List<Clientes>> _clientesFuture;
   late final bool _isAdmin;
+  late final String? _currentUserId;
 
   bool _showFilters = false;
   bool _onlyArchived = false;
@@ -40,11 +47,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
   final Set<String> _selectedClientes = {};
 
   bool get _isSelecting => _bulkMode != _ClientesBulkMode.none;
+  bool get _hasAnyOpenSession => _openSessions.values.any((s) => s != null);
 
   @override
   void initState() {
     super.initState();
     _isAdmin = _authService.isCurrentUserAdmin;
+    _currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _clientesFuture = _loadClientes();
   }
 
@@ -71,9 +80,43 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
     for (var i = 0; i < clientes.length; i++) {
       clientes[i].hourasCasa = totals[i];
+      _currentMonthHoursCache[clientes[i].uid] = totals[i];
     }
 
     return clientes;
+  }
+
+  Future<Map<DateTime, double>> _getClienteHoursByMonth(String clienteId) {
+    return _hoursByClienteFuture.putIfAbsent(
+      clienteId,
+      () => _monthlyHoursOverviewService.fetchMonthlyTotals(
+        teikerId: _isAdmin ? null : _currentUserId,
+        clienteId: clienteId,
+      ),
+    );
+  }
+
+  double _currentMonthHoursFromMap(Map<DateTime, double> monthlyTotals) {
+    final now = DateTime.now();
+    return monthlyTotals[DateTime(now.year, now.month)] ?? 0;
+  }
+
+  void _preloadCurrentMonthHours(List<Clientes> clientes) {
+    for (final cliente in clientes) {
+      if (_currentMonthHoursCache.containsKey(cliente.uid)) continue;
+      _getClienteHoursByMonth(cliente.uid)
+          .then((monthlyTotals) {
+            if (!mounted) return;
+            final total = _currentMonthHoursFromMap(monthlyTotals);
+            if (_currentMonthHoursCache[cliente.uid] == total) return;
+            setState(() => _currentMonthHoursCache[cliente.uid] = total);
+          })
+          .catchError((_) {
+            if (!mounted) return;
+            if (_currentMonthHoursCache.containsKey(cliente.uid)) return;
+            setState(() => _currentMonthHoursCache[cliente.uid] = 0);
+          });
+    }
   }
 
   Future<void> _ensureOpenSessions(List<Clientes> clientes) async {
@@ -106,12 +149,19 @@ class _ClientesScreenState extends State<ClientesScreen> {
             referenceDate: DateTime.now(),
           );
       if (!mounted) return;
-      setState(() => cliente.hourasCasa = total);
+      setState(() {
+        cliente.hourasCasa = total;
+        _currentMonthHoursCache[cliente.uid] = total;
+      });
       return;
     }
 
     if (!mounted) return;
-    setState(() {});
+    setState(() {
+      _hoursByClienteFuture.remove(cliente.uid);
+      _currentMonthHoursCache.remove(cliente.uid);
+    });
+    _preloadCurrentMonthHours([cliente]);
   }
 
   Future<void> _refreshClientes() async {
@@ -121,6 +171,8 @@ class _ClientesScreenState extends State<ClientesScreen> {
       _openSessions.clear();
       _openSessionsKey = '';
       _selectedClientes.clear();
+      _hoursByClienteFuture.clear();
+      _currentMonthHoursCache.clear();
     });
   }
 
@@ -220,11 +272,45 @@ class _ClientesScreenState extends State<ClientesScreen> {
     }
   }
 
+  Future<void> _toggleArchiveStatus(Clientes cliente, bool archive) async {
+    try {
+      if (archive) {
+        await _authService.archiveClientes([cliente.uid], archivedBy: 'Admin');
+      } else {
+        await _authService.unarchiveClientes([cliente.uid]);
+      }
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: archive
+            ? 'Cliente arquivado com sucesso.'
+            : 'Cliente desarquivado com sucesso.',
+        icon: archive ? Icons.archive_outlined : Icons.unarchive_outlined,
+        background: Colors.green.shade700,
+      );
+      await _refreshClientes();
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: archive
+            ? 'Erro ao arquivar cliente: $e'
+            : 'Erro ao desarquivar cliente: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
   List<Clientes> _applyFilters(List<Clientes> input) {
     final query = _searchController.text.trim().toLowerCase();
 
     var list = input.where((cliente) {
-      if (_onlyArchived && !cliente.isArchived) return false;
+      if (_onlyArchived) {
+        if (!cliente.isArchived) return false;
+      } else {
+        if (cliente.isArchived) return false;
+      }
       if (query.isEmpty) return true;
       return cliente.nameCliente.toLowerCase().contains(query) ||
           cliente.moradaCliente.toLowerCase().contains(query);
@@ -238,7 +324,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
           ),
         );
       case _ClientesSort.hoursDesc:
-        list.sort((a, b) => b.hourasCasa.compareTo(a.hourasCasa));
+        list.sort((a, b) {
+          final aHours = _currentMonthHoursCache[a.uid] ?? a.hourasCasa;
+          final bHours = _currentMonthHoursCache[b.uid] ?? b.hourasCasa;
+          return bHours.compareTo(aHours);
+        });
     }
 
     return list;
@@ -262,6 +352,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
         }
 
         final listaClientes = snapshot.data ?? [];
+        _preloadCurrentMonthHours(listaClientes);
         final filteredClientes = _applyFilters(listaClientes);
 
         final nextOpenSessionsKey =
@@ -399,9 +490,15 @@ class _ClientesScreenState extends State<ClientesScreen> {
                           final selected = _selectedClientes.contains(
                             cliente.uid,
                           );
+                          final isArchived = cliente.isArchived;
+                          final cachedHours =
+                              _currentMonthHoursCache[cliente.uid] ??
+                              cliente.hourasCasa;
 
                           return AppCard(
-                            color: Colors.white,
+                            color: isArchived
+                                ? AppColors.primaryGreen.withValues(alpha: .5)
+                                : Colors.white,
                             borderSide: selected
                                 ? const BorderSide(
                                     color: AppColors.primaryGreen,
@@ -446,7 +543,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                             : Icons.people,
                                         color: selected
                                             ? AppColors.primaryGreen
-                                            : Colors.black87,
+                                            : (isArchived
+                                                  ? Colors.white
+                                                  : Colors.black87),
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
@@ -456,52 +555,114 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                           children: [
                                             Text(
                                               cliente.nameCliente,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontWeight: FontWeight.w600,
                                                 fontSize: 20,
+                                                color: isArchived
+                                                    ? Colors.white
+                                                    : Colors.black87,
                                               ),
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
                                               cliente.moradaCliente,
                                               style: TextStyle(
-                                                color: Colors.grey.shade700,
+                                                color: isArchived
+                                                    ? Colors.white
+                                                    : Colors.grey.shade700,
                                               ),
                                             ),
-                                            if (cliente.isArchived &&
-                                                cliente.archivedBy != null) ...[
+                                            if (cliente.isArchived) ...[
                                               const SizedBox(height: 4),
-                                              Text(
-                                                'Arquivado por: ${cliente.archivedBy}',
-                                                style: TextStyle(
-                                                  color: Colors.orange.shade700,
-                                                  fontWeight: FontWeight.w600,
-                                                  fontSize: 12,
+                                              InkWell(
+                                                onTap: _isAdmin
+                                                    ? () =>
+                                                          _toggleArchiveStatus(
+                                                            cliente,
+                                                            false,
+                                                          )
+                                                    : null,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                child: Container(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 6,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.white
+                                                        .withValues(alpha: .16),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          10,
+                                                        ),
+                                                    border: Border.all(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                            alpha: .3,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      const Icon(
+                                                        Icons
+                                                            .unarchive_outlined,
+                                                        size: 14,
+                                                        color: Colors.white,
+                                                      ),
+                                                      const SizedBox(width: 6),
+                                                      Expanded(
+                                                        child: Text(
+                                                          '${cliente.archivedBy == null ? 'Arquivado' : 'Arquivado por ${cliente.archivedBy}'} · toque para desarquivar',
+                                                          maxLines: 2,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style: TextStyle(
+                                                            color: Colors.white,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
                                               ),
                                             ],
                                           ],
                                         ),
                                       ),
-                                      Text(
-                                        '${cliente.hourasCasa.toStringAsFixed(1)} horas',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                          color: cliente.hourasCasa >= 40
-                                              ? const Color.fromARGB(
-                                                  255,
-                                                  4,
-                                                  76,
-                                                  32,
-                                                )
-                                              : const Color.fromARGB(
-                                                  255,
-                                                  188,
-                                                  82,
-                                                  82,
-                                                ),
-                                        ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            '${cachedHours.toStringAsFixed(1)}h',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 15,
+                                              color: isArchived
+                                                  ? Colors.white
+                                                  : const Color.fromARGB(
+                                                      255,
+                                                      4,
+                                                      76,
+                                                      32,
+                                                    ),
+                                            ),
+                                          ),
+                                          if (!_isSelecting) ...[
+                                            const SizedBox(width: 4),
+                                            Icon(
+                                              Icons.chevron_right,
+                                              color: isArchived
+                                                  ? Colors.white
+                                                  : Colors.grey,
+                                            ),
+                                          ],
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -519,7 +680,8 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                             76,
                                             32,
                                           ),
-                                          enabled: !working,
+                                          enabled:
+                                              !working && !_hasAnyOpenSession,
                                           onPressed: () async {
                                             try {
                                               final session =
@@ -606,6 +768,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                                 _openSessions[cliente.uid] =
                                                     null;
                                                 cliente.hourasCasa =
+                                                    displayTotal;
+                                                _currentMonthHoursCache[cliente
+                                                        .uid] =
                                                     displayTotal;
                                               });
 

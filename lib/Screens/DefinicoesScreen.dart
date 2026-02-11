@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:teiker_app/Screens/AdminInvoicesScreen.dart';
 import 'package:teiker_app/Screens/TeikerHorasScreen.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
@@ -161,7 +162,12 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
         SettingsOptionCard(
           icon: Icons.receipt_long_outlined,
           label: 'Ver as minhas faturas',
-          onTap: () {},
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminInvoicesScreen()),
+            );
+          },
           color: _mainColor,
         ),
       );

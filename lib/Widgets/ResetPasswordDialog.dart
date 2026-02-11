@@ -126,6 +126,7 @@ class _ResetPasswordDialogContentState
                     text: "Cancelar",
                     outline: true,
                     onPressed: () {
+                      FocusManager.instance.primaryFocus?.unfocus();
                       if (Navigator.canPop(context)) {
                         Navigator.of(context).pop();
                       }

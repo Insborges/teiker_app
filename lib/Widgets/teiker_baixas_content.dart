@@ -3,25 +3,25 @@ import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/models/Teikers.dart';
 
-class TeikerFeriasContent extends StatelessWidget {
-  const TeikerFeriasContent({
+class TeikerBaixasContent extends StatelessWidget {
+  const TeikerBaixasContent({
     super.key,
-    required this.feriasPeriodos,
+    required this.baixasPeriodos,
     required this.primaryColor,
-    required this.onAddFerias,
-    required this.onEditFerias,
-    required this.onDeleteFerias,
+    required this.onAddBaixa,
+    required this.onEditBaixa,
+    required this.onDeleteBaixa,
   });
 
-  final List<FeriasPeriodo> feriasPeriodos;
+  final List<BaixaPeriodo> baixasPeriodos;
   final Color primaryColor;
-  final VoidCallback onAddFerias;
-  final void Function(int index, FeriasPeriodo periodo) onEditFerias;
-  final void Function(int index, FeriasPeriodo periodo) onDeleteFerias;
+  final VoidCallback onAddBaixa;
+  final void Function(int index, BaixaPeriodo periodo) onEditBaixa;
+  final void Function(int index, BaixaPeriodo periodo) onDeleteBaixa;
 
   @override
   Widget build(BuildContext context) {
-    final sorted = feriasPeriodos.asMap().entries.toList()
+    final sorted = baixasPeriodos.asMap().entries.toList()
       ..sort((a, b) => b.value.inicio.compareTo(a.value.inicio));
 
     return Column(
@@ -56,28 +56,44 @@ class TeikerFeriasContent extends StatelessWidget {
                     ],
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        Icons.beach_access_outlined,
+                        Icons.healing_outlined,
                         color: primaryColor,
                         size: 18,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          _periodLabel(periodo),
-                          style: TextStyle(
-                            color: primaryColor,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _periodLabel(periodo),
+                              style: TextStyle(
+                                color: primaryColor,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            if (periodo.motivo.trim().isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                periodo.motivo.trim(),
+                                style: TextStyle(
+                                  color: Colors.grey.shade700,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
-                            tooltip: 'Editar período',
-                            onPressed: () => onEditFerias(index, periodo),
+                            tooltip: 'Editar baixa',
+                            onPressed: () => onEditBaixa(index, periodo),
                             constraints: const BoxConstraints(
                               minWidth: 32,
                               minHeight: 32,
@@ -92,8 +108,8 @@ class TeikerFeriasContent extends StatelessWidget {
                           ),
                           const SizedBox(width: 2),
                           IconButton(
-                            tooltip: 'Eliminar período',
-                            onPressed: () => onDeleteFerias(index, periodo),
+                            tooltip: 'Eliminar baixa',
+                            onPressed: () => onDeleteBaixa(index, periodo),
                             constraints: const BoxConstraints(
                               minWidth: 32,
                               minHeight: 32,
@@ -116,21 +132,21 @@ class TeikerFeriasContent extends StatelessWidget {
           )
         else
           const Text(
-            'Ainda sem ferias registadas.',
+            'Ainda sem períodos de baixa.',
             style: TextStyle(color: Colors.grey),
           ),
         const SizedBox(height: 12),
         AppButton(
-          text: 'Adicionar ferias',
+          text: 'Inserir baixa',
           color: primaryColor,
-          icon: Icons.beach_access,
-          onPressed: onAddFerias,
+          icon: Icons.healing_outlined,
+          onPressed: onAddBaixa,
         ),
       ],
     );
   }
 
-  String _periodLabel(FeriasPeriodo periodo) {
+  String _periodLabel(BaixaPeriodo periodo) {
     final start = DateFormat('dd MMM yyyy', 'pt_PT').format(periodo.inicio);
     final end = DateFormat('dd MMM yyyy', 'pt_PT').format(periodo.fim);
     return '$start - $end';

@@ -6,6 +6,8 @@ abstract class WorkSessionRepository {
     required String teikerId,
   });
 
+  Future<WorkSession?> findAnyOpenSession({required String teikerId});
+
   Future<WorkSession> startSession({
     required String clienteId,
     required String teikerId,
@@ -22,6 +24,13 @@ abstract class WorkSessionRepository {
     required String teikerId,
     required DateTime start,
     required DateTime end,
+  });
+
+  Future<bool> hasSessionOverlap({
+    required String teikerId,
+    required DateTime start,
+    required DateTime end,
+    String? excludingSessionId,
   });
 
   Future<double> calculateMonthlyTotal({

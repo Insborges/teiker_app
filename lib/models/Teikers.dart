@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:teiker_app/models/teiker_workload.dart';
 
 DateTime? _parseDate(dynamic value) {
   if (value == null) return null;
@@ -33,17 +34,48 @@ class FeriasPeriodo {
   }
 }
 
+class BaixaPeriodo {
+  final DateTime inicio;
+  final DateTime fim;
+  final String motivo;
+
+  const BaixaPeriodo({
+    required this.inicio,
+    required this.fim,
+    required this.motivo,
+  });
+
+  factory BaixaPeriodo.fromMap(Map<String, dynamic> map) {
+    final inicio = _parseDate(map['inicio']) ?? DateTime.now();
+    final fim = _parseDate(map['fim']) ?? inicio;
+    final motivo = (map['motivo'] as String? ?? '').trim();
+    return BaixaPeriodo(inicio: inicio, fim: fim, motivo: motivo);
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'inicio': inicio.toIso8601String(),
+      'fim': fim.toIso8601String(),
+      'motivo': motivo,
+    };
+  }
+}
+
 class Teiker {
   final String uid;
   final String nameTeiker;
   final String email;
+  final DateTime? birthDate;
   final int telemovel;
+  final String phoneCountryIso;
   final double horas;
+  final int workPercentage;
   final List<String> clientesIds;
   final List<Consulta> consultas;
   final DateTime? feriasInicio;
   final DateTime? feriasFim;
   final List<FeriasPeriodo> feriasPeriodos;
+  final List<BaixaPeriodo> baixasPeriodos;
   final Color corIdentificadora;
   final bool isWorking;
   final DateTime? startTime;
@@ -52,8 +84,11 @@ class Teiker {
     required this.uid,
     required this.nameTeiker,
     required this.email,
+    this.birthDate,
     required this.telemovel,
+    this.phoneCountryIso = 'PT',
     required this.horas,
+    this.workPercentage = TeikerWorkload.fullTime,
     required this.clientesIds,
     required this.consultas,
     required this.corIdentificadora,
@@ -61,6 +96,7 @@ class Teiker {
     this.feriasInicio,
     this.feriasFim,
     this.feriasPeriodos = const [],
+    this.baixasPeriodos = const [],
     this.startTime,
   });
 
@@ -88,13 +124,33 @@ class Teiker {
         periodosRaw.add(FeriasPeriodo(inicio: legacyInicio, fim: legacyFim));
       }
     }
+    final baixasRaw = (data['baixasPeriodos'] as List<dynamic>? ?? [])
+        .whereType<Map>()
+        .map((raw) => Map<String, dynamic>.from(raw))
+        .map(BaixaPeriodo.fromMap)
+        .toList();
+
+    final storedWeeklyHours = (data['horas'] as num?)?.toDouble();
+    final workPercentage = TeikerWorkload.normalizePercentage(
+      data['workPercentage'],
+      fallbackWeeklyHours: storedWeeklyHours,
+    );
+    final weeklyHours =
+        storedWeeklyHours ??
+        TeikerWorkload.weeklyHoursForPercentage(workPercentage);
 
     return Teiker(
       uid: documentId,
       nameTeiker: data['name'] ?? '',
       email: data['email'] ?? '',
+      birthDate:
+          _parseDate(data['birthDate']) ?? _parseDate(data['dataNascimento']),
+      workPercentage: workPercentage,
       telemovel: data['telemovel'] ?? 0,
-      horas: (data['horas'] ?? 0).toDouble(),
+      phoneCountryIso: (data['phoneCountryIso'] as String? ?? 'PT')
+          .trim()
+          .toUpperCase(),
+      horas: weeklyHours,
       corIdentificadora: _parseColor(data['cor']),
       clientesIds: List<String>.from(data['clientesIds'] ?? []),
       consultas: (data['consultas'] as List<dynamic>? ?? [])
@@ -104,6 +160,7 @@ class Teiker {
       feriasInicio: _parseDate(data['feriasInicio']),
       feriasFim: _parseDate(data['feriasFim']),
       feriasPeriodos: periodosRaw,
+      baixasPeriodos: baixasRaw,
 
       isWorking: data['isWorking'] ?? false,
       startTime: _parseDate(data['startTime']),
@@ -114,14 +171,18 @@ class Teiker {
     return {
       'name': nameTeiker,
       'email': email,
+      'birthDate': birthDate?.toIso8601String(),
       'telemovel': telemovel,
+      'phoneCountryIso': phoneCountryIso,
       'horas': horas,
+      'workPercentage': workPercentage,
       'cor': corIdentificadora.toARGB32(),
       'clientesIds': clientesIds,
       'consultas': consultas.map((c) => c.toMap()).toList(),
       'feriasInicio': feriasInicio?.toIso8601String(),
       'feriasFim': feriasFim?.toIso8601String(),
       'feriasPeriodos': feriasPeriodos.map((p) => p.toMap()).toList(),
+      'baixasPeriodos': baixasPeriodos.map((p) => p.toMap()).toList(),
       'isWorking': isWorking,
       'startTime': startTime?.toIso8601String(),
     };
@@ -131,13 +192,17 @@ class Teiker {
     String? uid,
     String? nameTeiker,
     String? email,
+    DateTime? birthDate,
     int? telemovel,
+    String? phoneCountryIso,
     double? horas,
+    int? workPercentage,
     List<String>? clientesIds,
     List<Consulta>? consultas,
     DateTime? feriasInicio,
     DateTime? feriasFim,
     List<FeriasPeriodo>? feriasPeriodos,
+    List<BaixaPeriodo>? baixasPeriodos,
     Color? corIdentificadora,
     bool? isWorking,
     DateTime? startTime,
@@ -146,18 +211,28 @@ class Teiker {
       uid: uid ?? this.uid,
       nameTeiker: nameTeiker ?? this.nameTeiker,
       email: email ?? this.email,
+      birthDate: birthDate ?? this.birthDate,
       telemovel: telemovel ?? this.telemovel,
+      phoneCountryIso: phoneCountryIso ?? this.phoneCountryIso,
       horas: horas ?? this.horas,
+      workPercentage: workPercentage ?? this.workPercentage,
       clientesIds: clientesIds ?? this.clientesIds,
       consultas: consultas ?? this.consultas,
       feriasInicio: feriasInicio ?? this.feriasInicio,
       feriasFim: feriasFim ?? this.feriasFim,
       feriasPeriodos: feriasPeriodos ?? this.feriasPeriodos,
+      baixasPeriodos: baixasPeriodos ?? this.baixasPeriodos,
       corIdentificadora: corIdentificadora ?? this.corIdentificadora,
       isWorking: isWorking ?? this.isWorking,
       startTime: startTime ?? this.startTime,
     );
   }
+
+  double get weeklyTargetHours =>
+      TeikerWorkload.weeklyHoursForPercentage(workPercentage);
+
+  String get workPercentageLabel =>
+      TeikerWorkload.labelForPercentage(workPercentage);
 }
 
 class Consulta {

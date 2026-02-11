@@ -24,7 +24,12 @@ class EventItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDone = event['done'] ?? false;
-    final tagText = tag ?? event['tag'] as String?;
+    final rawTag = tag ?? event['tag'] as String?;
+    final tagText = rawTag?.trim();
+    final subtitle = (event['subtitle'] as String?)?.trim();
+    final start = (event['start'] ?? '').toString();
+    final end = (event['end'] ?? '').toString();
+    final hasHours = start.isNotEmpty || end.isNotEmpty;
 
     final card = AnimatedContainer(
       duration: const Duration(milliseconds: 350),
@@ -76,24 +81,28 @@ class EventItem extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (tagText != null) _tagChip(tagText),
+                    if (tagText != null && tagText.isNotEmpty)
+                      _tagChip(tagText),
                   ],
                 ),
-                if (showHours) ...[
+                if (subtitle != null && subtitle.isNotEmpty) ...[
                   const SizedBox(height: 3),
-                  if (event['subtitle'] != null)
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  ),
+                ],
+                if (showHours) ...[
+                  if (hasHours) ...[
+                    const SizedBox(height: 2),
                     Text(
-                      event['subtitle'],
+                      "$start${(start.isNotEmpty && end.isNotEmpty) ? ' — ' : ''}$end",
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade700,
+                        color: Colors.grey.shade600,
                       ),
                     ),
-                  if (event['subtitle'] != null) const SizedBox(height: 2),
-                  Text(
-                    "${event['start'] ?? ''}${(event['start'] != null && (event['end'] ?? '') != '') ? ' — ' : ''}${event['end'] ?? ''}",
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
+                  ],
                 ],
               ],
             ),

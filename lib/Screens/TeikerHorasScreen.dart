@@ -5,6 +5,7 @@ import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
+import 'package:teiker_app/models/teiker_workload.dart';
 
 class TeikerHorasScreen extends StatefulWidget {
   const TeikerHorasScreen({super.key});
@@ -22,6 +23,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
   List<DateTime> _months = [];
   DateTime? _selectedMonth;
   double _targetHoras = 0;
+  int _workPercentage = TeikerWorkload.fullTime;
   late final PageController _pageController;
 
   @override
@@ -48,7 +50,10 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     final Map<String, Clientes> clientesMap = {
       for (final c in clientes) c.uid: c,
     };
-    double targetHoras = 0;
+    double targetHoras = TeikerWorkload.weeklyHoursForPercentage(
+      TeikerWorkload.fullTime,
+    );
+    int workPercentage = TeikerWorkload.fullTime;
     try {
       final teikerDoc = await FirebaseFirestore.instance
           .collection('teikers')
@@ -56,7 +61,11 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
           .get();
       final data = teikerDoc.data();
       if (data != null) {
-        targetHoras = (data['horas'] ?? 0).toDouble();
+        workPercentage = TeikerWorkload.normalizePercentage(
+          data['workPercentage'],
+          fallbackWeeklyHours: (data['horas'] as num?)?.toDouble(),
+        );
+        targetHoras = TeikerWorkload.weeklyHoursForPercentage(workPercentage);
       }
     } catch (_) {}
 
@@ -65,7 +74,12 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
           .collection('workSessions')
           .where('teikerId', isEqualTo: user.uid)
           .get();
-      _buildMonthlyData(snapshot.docs, clientesMap, targetHoras);
+      _buildMonthlyData(
+        snapshot.docs,
+        clientesMap,
+        targetHoras,
+        workPercentage,
+      );
     } on FirebaseException catch (e) {
       if (e.code != 'failed-precondition') rethrow;
 
@@ -73,7 +87,12 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
           .collection('workSessions')
           .where('teikerId', isEqualTo: user.uid)
           .get();
-      _buildMonthlyData(snapshot.docs, clientesMap, targetHoras);
+      _buildMonthlyData(
+        snapshot.docs,
+        clientesMap,
+        targetHoras,
+        workPercentage,
+      );
     }
   }
 
@@ -81,6 +100,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
     Map<String, Clientes> clientesMap,
     double targetHoras,
+    int workPercentage,
   ) {
     final Map<DateTime, Map<DateTime, Map<String, double>>> grouped = {};
     final Map<DateTime, double> totals = {};
@@ -147,6 +167,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
       _selectedMonth = selectedMonth;
       _hoursByDay = grouped[selectedMonth] ?? {};
       _targetHoras = targetHoras;
+      _workPercentage = workPercentage;
       _loading = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -168,7 +189,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
                 children: [
                   if (_months.isNotEmpty)
                     SizedBox(
-                      height: 86,
+                      height: 100,
                       child: PageView.builder(
                         controller: _pageController,
                         itemCount: _months.length,
@@ -300,7 +321,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
   Widget _summaryCard(String label, double total, bool isPositive) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -321,6 +342,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -328,9 +350,12 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
+                    height: 1.2,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   "Total: ${total.toStringAsFixed(1)} h",
                   style: TextStyle(
@@ -339,7 +364,22 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
                         : Colors.red.shade700,
                     fontWeight: FontWeight.w700,
                     fontSize: 15,
+                    height: 1.2,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  "Meta semanal: ${_targetHoras.toStringAsFixed(0)} h ($_workPercentage%)",
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    height: 1.2,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),

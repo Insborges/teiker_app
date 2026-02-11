@@ -7,6 +7,23 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
 
   FirestoreWorkSessionRepository(this.firestore);
 
+  WorkSession _toWorkSession(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc, {
+    required String fallbackTeikerId,
+  }) {
+    final data = doc.data();
+    return WorkSession(
+      id: doc.id,
+      clienteId: data['clienteId'] as String,
+      teikerId: (data['teikerId'] as String?) ?? fallbackTeikerId,
+      startTime: (data['startTime'] as Timestamp).toDate(),
+      endTime: data['endTime'] != null
+          ? (data['endTime'] as Timestamp).toDate()
+          : null,
+      durationHours: (data['durationHours'] as num?)?.toDouble(),
+    );
+  }
+
   @override
   Future<WorkSession?> findOpenSession({
     required String clienteId,
@@ -34,14 +51,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       for (final doc in fallback.docs) {
         final data = doc.data();
         if (data['clienteId'] == clienteId && data['endTime'] == null) {
-          return WorkSession(
-            id: doc.id,
-            clienteId: data['clienteId'] as String,
-            teikerId: (data['teikerId'] as String?) ?? teikerId,
-            startTime: (data['startTime'] as Timestamp).toDate(),
-            endTime: null,
-            durationHours: (data['durationHours'] as num?)?.toDouble(),
-          );
+          return _toWorkSession(doc, fallbackTeikerId: teikerId);
         }
       }
 
@@ -51,20 +61,37 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     if (snapshot.docs.isEmpty) return null;
 
     final doc = snapshot.docs.first;
-    final data = doc.data();
+    return _toWorkSession(doc, fallbackTeikerId: teikerId);
+  }
 
-    final storedTeikerId = (data['teikerId'] as String?) ?? teikerId;
+  @override
+  Future<WorkSession?> findAnyOpenSession({required String teikerId}) async {
+    QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await firestore
+          .collection('workSessions')
+          .where('teikerId', isEqualTo: teikerId)
+          .where('endTime', isNull: true)
+          .limit(1)
+          .get();
+    } on FirebaseException catch (e) {
+      if (e.code != 'failed-precondition') rethrow;
 
-    return WorkSession(
-      id: doc.id,
-      clienteId: data['clienteId'] as String,
-      teikerId: storedTeikerId,
-      startTime: (data['startTime'] as Timestamp).toDate(),
-      endTime: data['endTime'] != null
-          ? (data['endTime'] as Timestamp).toDate()
-          : null,
-      durationHours: (data['durationHours'] as num?)?.toDouble(),
-    );
+      final fallback = await firestore
+          .collection('workSessions')
+          .where('teikerId', isEqualTo: teikerId)
+          .get();
+
+      for (final doc in fallback.docs) {
+        if (doc.data()['endTime'] == null) {
+          return _toWorkSession(doc, fallbackTeikerId: teikerId);
+        }
+      }
+      return null;
+    }
+
+    if (snapshot.docs.isEmpty) return null;
+    return _toWorkSession(snapshot.docs.first, fallbackTeikerId: teikerId);
   }
 
   Future<Iterable<QueryDocumentSnapshot<Map<String, dynamic>>>>
@@ -247,6 +274,52 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       endTime: end,
       durationHours: duration,
     );
+  }
+
+  @override
+  Future<bool> hasSessionOverlap({
+    required String teikerId,
+    required DateTime start,
+    required DateTime end,
+    String? excludingSessionId,
+  }) async {
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
+
+    try {
+      final snapshot = await firestore
+          .collection('workSessions')
+          .where('teikerId', isEqualTo: teikerId)
+          .where('startTime', isLessThan: Timestamp.fromDate(end))
+          .get();
+      docs = snapshot.docs;
+    } on FirebaseException catch (e) {
+      if (e.code != 'failed-precondition') rethrow;
+      final fallback = await firestore
+          .collection('workSessions')
+          .where('teikerId', isEqualTo: teikerId)
+          .get();
+      docs = fallback.docs;
+    }
+
+    for (final doc in docs) {
+      if (excludingSessionId != null && doc.id == excludingSessionId) {
+        continue;
+      }
+
+      final data = doc.data();
+      final sessionStart = (data['startTime'] as Timestamp?)?.toDate();
+      if (sessionStart == null) continue;
+
+      final sessionEndRaw = data['endTime'];
+      final sessionEnd = sessionEndRaw is Timestamp
+          ? sessionEndRaw.toDate()
+          : DateTime.now();
+
+      final overlaps = sessionStart.isBefore(end) && sessionEnd.isAfter(start);
+      if (overlaps) return true;
+    }
+
+    return false;
   }
 
   @override

@@ -22,8 +22,10 @@ class AppConfirmDialog extends StatelessWidget {
     required String confirmLabel,
     Color confirmColor = AppColors.primaryGreen,
   }) async {
+    if (!context.mounted) return false;
     final result = await showDialog<bool>(
       context: context,
+      useRootNavigator: true,
       builder: (_) => AppConfirmDialog(
         title: title,
         message: message,
@@ -57,7 +59,16 @@ class AppConfirmDialog extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context, false),
+                    onPressed: () {
+                      FocusManager.instance.primaryFocus?.unfocus();
+                      final navigator = Navigator.of(
+                        context,
+                        rootNavigator: true,
+                      );
+                      if (navigator.canPop()) {
+                        navigator.pop(false);
+                      }
+                    },
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.primaryGreen,
                       side: const BorderSide(
@@ -71,7 +82,16 @@ class AppConfirmDialog extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context, true),
+                    onPressed: () {
+                      FocusManager.instance.primaryFocus?.unfocus();
+                      final navigator = Navigator.of(
+                        context,
+                        rootNavigator: true,
+                      );
+                      if (navigator.canPop()) {
+                        navigator.pop(true);
+                      }
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: confirmColor,
                       foregroundColor: Colors.white,

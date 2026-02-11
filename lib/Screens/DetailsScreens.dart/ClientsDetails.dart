@@ -1,14 +1,18 @@
 import 'dart:ui';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppTextInput.dart';
-import 'package:teiker_app/Widgets/cupertino_time_picker_sheet.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
 import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/SingleTimePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/app_bottom_sheet_shell.dart';
 import 'package:teiker_app/Widgets/monthly_hours_overview_card.dart';
+import 'package:teiker_app/Widgets/phone_number_input_row.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
@@ -31,6 +35,17 @@ class Clientsdetails extends StatefulWidget {
 }
 
 class _ClientsdetailsState extends State<Clientsdetails> {
+  static const List<String> _serviceCatalog = [
+    'Shopping',
+    'Laundry',
+    'Preparação de refeições',
+    'Passar a ferro',
+    'Medicação',
+    'Companhia',
+    'Transporte',
+    'Limpeza profunda',
+  ];
+
   // Controllers
   late TextEditingController _nameController;
   late TextEditingController _moradaController;
@@ -38,8 +53,11 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
   late TextEditingController _orcamentoController;
+  late Map<String, double> _appliedServicePrices;
+  late String _serviceMonthKey;
 
   late double _horasCasa;
+  late String _phoneCountryIso;
 
   bool? isAdmin;
   final WorkSessionService _workSessionService = WorkSessionService();
@@ -63,9 +81,19 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     _phoneController = TextEditingController(
       text: widget.cliente.telemovel.toString(),
     );
+    _phoneCountryIso = widget.cliente.phoneCountryIso;
     _emailController = TextEditingController(text: widget.cliente.email);
     _orcamentoController = TextEditingController(
       text: widget.cliente.orcamento.toString(),
+    );
+    _serviceMonthKey = _monthKey(DateTime.now());
+    final monthServices =
+        widget.cliente.additionalServicePricesByMonth[_serviceMonthKey] ??
+        widget.cliente.additionalServicePrices;
+    _appliedServicePrices = Map<String, double>.fromEntries(
+      monthServices.entries.where(
+        (entry) => _serviceCatalog.contains(entry.key),
+      ),
     );
 
     _horasCasa = widget.cliente.hourasCasa;
@@ -74,6 +102,131 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     _checkPendingSessionReminder();
     _loadHorasParaTeiker();
   }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _moradaController.dispose();
+    _codigoPostalController.dispose();
+    _phoneController.dispose();
+    _emailController.dispose();
+    _orcamentoController.dispose();
+    super.dispose();
+  }
+
+  Map<String, double>? _collectServicePrices({required bool validate}) {
+    return Map<String, double>.from(_appliedServicePrices);
+  }
+
+  Future<void> _persistAdditionalServices() async {
+    final monthly = Map<String, Map<String, double>>.from(
+      widget.cliente.additionalServicePricesByMonth,
+    );
+    monthly[_serviceMonthKey] = Map<String, double>.from(_appliedServicePrices);
+
+    await FirebaseFirestore.instance
+        .collection('clientes')
+        .doc(widget.cliente.uid)
+        .update({
+          'additionalServicePrices': Map<String, double>.from(
+            _appliedServicePrices,
+          ),
+          'additionalServicePricesByMonth': monthly,
+        });
+
+    widget.cliente.additionalServicePrices = Map<String, double>.from(
+      _appliedServicePrices,
+    );
+    widget.cliente.additionalServicePricesByMonth = monthly;
+  }
+
+  Future<void> _removeAppliedService(String service) async {
+    setState(() {
+      _appliedServicePrices.remove(service);
+    });
+    try {
+      await _persistAdditionalServices();
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro ao guardar serviço removido: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  Future<void> _openAddServiceDialog() async {
+    if (_serviceCatalog.isEmpty) {
+      AppSnackBar.show(
+        context,
+        message: 'Sem serviços disponíveis para adicionar.',
+        icon: Icons.info_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
+
+    final options = _serviceCatalog
+        .map((service) => _ServicePickerOption(id: service, label: service))
+        .toList();
+
+    final picked = await showModalBottomSheet<_ServicePickerOption>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: .78,
+        child: _ServiceSearchPickerSheet(
+          title: 'Selecionar serviço',
+          subtitle: 'Procura e escolhe o serviço',
+          searchHint: 'Pesquisar serviço',
+          options: options,
+          selectedId: null,
+          primaryColor: AppColors.primaryGreen,
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    if (picked == null) return;
+
+    final selectedService = picked.id;
+    final price = await showModalBottomSheet<double>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _ServicePriceSheet(
+        serviceName: selectedService,
+        primaryColor: AppColors.primaryGreen,
+        initialPrice: _appliedServicePrices[selectedService],
+      ),
+    );
+
+    if (!mounted) return;
+    if (price == null) return;
+    setState(() {
+      _appliedServicePrices[selectedService] = price;
+    });
+    try {
+      await _persistAdditionalServices();
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro ao guardar serviço: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  String _monthKey(DateTime date) =>
+      '${date.year}-${date.month.toString().padLeft(2, '0')}';
+
+  String get _serviceMonthLabel =>
+      DateFormat('MMMM yyyy', 'pt_PT').format(DateTime.now());
 
   Future<void> _loadHorasParaTeiker() async {
     if (isAdmin == true) return;
@@ -197,28 +350,34 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                         ),
                         const SizedBox(height: 16),
                         InkWell(
-                          onTap: () => showCupertinoTimePickerSheet(
-                            context,
-                            initialTime: startTime ?? TimeOfDay.now(),
-                            onChanged: (time) {
-                              setModalState(() {
-                                startTime = time;
-                              });
-                            },
-                          ),
+                          onTap: () async {
+                            final picked =
+                                await SingleTimePickerBottomSheet.show(
+                                  context,
+                                  initialTime: startTime ?? TimeOfDay.now(),
+                                  title: 'Hora de início',
+                                  subtitle: 'Escolhe a hora inicial',
+                                  confirmLabel: 'Confirmar',
+                                );
+                            if (picked == null) return;
+                            setModalState(() => startTime = picked);
+                          },
                           child: _buildTimeInput("Hora de início", startTime),
                         ),
                         const SizedBox(height: 12),
                         InkWell(
-                          onTap: () => showCupertinoTimePickerSheet(
-                            context,
-                            initialTime: endTime ?? TimeOfDay.now(),
-                            onChanged: (time) {
-                              setModalState(() {
-                                endTime = time;
-                              });
-                            },
-                          ),
+                          onTap: () async {
+                            final picked =
+                                await SingleTimePickerBottomSheet.show(
+                                  context,
+                                  initialTime: endTime ?? TimeOfDay.now(),
+                                  title: 'Hora de fim',
+                                  subtitle: 'Escolhe a hora final',
+                                  confirmLabel: 'Confirmar',
+                                );
+                            if (picked == null) return;
+                            setModalState(() => endTime = picked);
+                          },
                           child: _buildTimeInput("Hora de fim", endTime),
                         ),
                         const SizedBox(height: 16),
@@ -229,7 +388,12 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                 text: "Cancelar",
                                 outline: true,
                                 color: const Color.fromARGB(255, 4, 76, 32),
-                                onPressed: () => Navigator.pop(context),
+                                onPressed: () {
+                                  FocusManager.instance.primaryFocus?.unfocus();
+                                  if (Navigator.canPop(context)) {
+                                    Navigator.of(context).pop();
+                                  }
+                                },
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -267,6 +431,19 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                     endValue.hour,
                                     endValue.minute,
                                   );
+                                  final now = DateTime.now();
+
+                                  if (startDate.isAfter(now) ||
+                                      endDate.isAfter(now)) {
+                                    AppSnackBar.show(
+                                      context,
+                                      message:
+                                          "Não podes adicionar antes da hora",
+                                      icon: Icons.info_outline,
+                                      background: Colors.red.shade700,
+                                    );
+                                    return;
+                                  }
 
                                   if (!endDate.isAfter(startDate)) {
                                     AppSnackBar.show(
@@ -338,12 +515,25 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   }
 
   void atualizarDadosCliente() async {
+    final additionalServicePrices = _collectServicePrices(validate: true);
+    if (additionalServicePrices == null) return;
+    final additionalServicePricesByMonth =
+        Map<String, Map<String, double>>.from(
+          widget.cliente.additionalServicePricesByMonth,
+        );
+    additionalServicePricesByMonth[_serviceMonthKey] = Map<String, double>.from(
+      additionalServicePrices,
+    );
+
     final updated = Clientes(
       uid: widget.cliente.uid,
       nameCliente: _nameController.text,
       moradaCliente: _moradaController.text,
       codigoPostal: _codigoPostalController.text,
       telemovel: int.tryParse(_phoneController.text) ?? 0,
+      phoneCountryIso: _phoneCountryIso,
+      additionalServicePrices: additionalServicePrices,
+      additionalServicePricesByMonth: additionalServicePricesByMonth,
       email: _emailController.text,
       orcamento: double.tryParse(_orcamentoController.text) ?? 0,
       hourasCasa: _horasCasa,
@@ -354,10 +544,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
 
     try {
-      // 1️⃣ Atualiza o cliente
       await AuthService().updateCliente(updated);
 
-      // 4️⃣ Feedback ao utilizador
       AppSnackBar.show(
         context,
         message: "Dados atualizados com sucesso!",
@@ -365,9 +553,15 @@ class _ClientsdetailsState extends State<Clientsdetails> {
         background: Colors.green.shade700,
       );
 
-      // 5️⃣ Atualiza estado local do cliente para manter sincronia
       setState(() {
         widget.cliente.teikersIds = List.from(widget.cliente.teikersIds);
+        widget.cliente.additionalServicePrices = Map<String, double>.from(
+          additionalServicePrices,
+        );
+        widget.cliente.additionalServicePricesByMonth =
+            Map<String, Map<String, double>>.from(
+              additionalServicePricesByMonth,
+            );
       });
     } catch (e) {
       AppSnackBar.show(
@@ -412,125 +606,160 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   Widget _buildAdminLayout() {
     const adminPrimary = Color.fromARGB(255, 4, 76, 32);
     final adminBorder = adminPrimary.withValues(alpha: .22);
+    final currentPricePerHour =
+        double.tryParse(_orcamentoController.text.replaceAll(',', '.')) ??
+        widget.cliente.orcamento;
+    final currentServicePrices = Map<String, double>.from(
+      _appliedServicePrices,
+    );
 
     return Scaffold(
-      appBar: buildAppBar(
-        widget.cliente.nameCliente,
-        seta: true,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.save_rounded, size: 18),
-              label: const Text(
-                'Guardar',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color.fromARGB(255, 4, 76, 32),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                shape: RoundedRectangleBorder(
+      appBar: buildAppBar(widget.cliente.nameCliente, seta: true),
+      body: DefaultTabController(
+        length: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: adminBorder),
+                ),
+                child: TabBar(
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  indicator: BoxDecoration(
+                    color: adminPrimary.withValues(alpha: .14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  labelColor: adminPrimary,
+                  unselectedLabelColor: Colors.black54,
+                  labelStyle: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                  tabs: const [
+                    Tab(text: 'Horas & Preços'),
+                    Tab(text: 'Informações'),
+                  ],
                 ),
               ),
-              onPressed: () {
-                atualizarDadosCliente();
-                Navigator.pop(context, true);
-              },
-            ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: TabBarView(
+                  children: [
+                    SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _buildOrcamentoCard(
+                            currentPricePerHour,
+                            _horasCasa,
+                            currentServicePrices,
+                          ),
+                          const SizedBox(height: 12),
+                          AppButton(
+                            text: "Adicionar Horas",
+                            icon: Icons.timer,
+                            color: adminPrimary,
+                            onPressed: () => _abrirDialogAdicionarHoras(),
+                          ),
+                          const SizedBox(height: 12),
+                          AppButton(
+                            text: "Emitir Faturas",
+                            icon: Icons.file_copy,
+                            color: adminPrimary,
+                            onPressed: () => emitirFaturas(),
+                          ),
+                          const SizedBox(height: 12),
+                          _buildAdditionalServicesSection(
+                            primaryColor: adminPrimary,
+                            borderColor: adminBorder,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                    ),
+                    SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _buildTextField(
+                            'Nome',
+                            _nameController,
+                            borderColor: adminBorder,
+                            focusColor: adminPrimary,
+                            fillColor: Colors.white,
+                            prefixIcon: Icons.person_outline,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                            'Morada',
+                            _moradaController,
+                            borderColor: adminBorder,
+                            focusColor: adminPrimary,
+                            fillColor: Colors.white,
+                            prefixIcon: Icons.home_outlined,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                            'Código Postal',
+                            _codigoPostalController,
+                            borderColor: adminBorder,
+                            focusColor: adminPrimary,
+                            fillColor: Colors.white,
+                            prefixIcon: Icons.local_post_office_outlined,
+                          ),
+                          const SizedBox(height: 12),
+                          PhoneNumberInputRow(
+                            controller: _phoneController,
+                            countryIso: _phoneCountryIso,
+                            onCountryChanged: (iso) {
+                              setState(() => _phoneCountryIso = iso);
+                            },
+                            primaryColor: adminPrimary,
+                            label: 'Telefone',
+                            fillColor: Colors.white,
+                            borderColor: adminBorder,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                            'Email',
+                            _emailController,
+                            keyboard: TextInputType.emailAddress,
+                            borderColor: adminBorder,
+                            focusColor: adminPrimary,
+                            fillColor: Colors.white,
+                            prefixIcon: Icons.email_outlined,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildTextField(
+                            'Preço/Hora',
+                            _orcamentoController,
+                            keyboard: TextInputType.number,
+                            borderColor: adminBorder,
+                            focusColor: adminPrimary,
+                            fillColor: Colors.white,
+                            prefixIcon: Icons.payments_outlined,
+                          ),
+                          const SizedBox(height: 16),
+                          AppButton(
+                            text: "Guardar Alterações",
+                            icon: Icons.save_rounded,
+                            color: adminPrimary,
+                            onPressed: atualizarDadosCliente,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildMonthlyHoursSection(),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
-
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _buildTextField(
-              'Nome',
-              _nameController,
-              borderColor: adminBorder,
-              focusColor: adminPrimary,
-              fillColor: Colors.white,
-              prefixIcon: Icons.person_outline,
-            ),
-            const SizedBox(height: 12),
-            _buildTextField(
-              'Morada',
-              _moradaController,
-              borderColor: adminBorder,
-              focusColor: adminPrimary,
-              fillColor: Colors.white,
-              prefixIcon: Icons.home_outlined,
-            ),
-            const SizedBox(height: 12),
-            _buildTextField(
-              'Código Postal',
-              _codigoPostalController,
-              borderColor: adminBorder,
-              focusColor: adminPrimary,
-              fillColor: Colors.white,
-              prefixIcon: Icons.local_post_office_outlined,
-            ),
-            const SizedBox(height: 12),
-            _buildTextField(
-              'Telefone',
-              _phoneController,
-              keyboard: TextInputType.phone,
-              borderColor: adminBorder,
-              focusColor: adminPrimary,
-              fillColor: Colors.white,
-              prefixIcon: Icons.phone_outlined,
-            ),
-            const SizedBox(height: 12),
-            _buildTextField(
-              'Email',
-              _emailController,
-              keyboard: TextInputType.emailAddress,
-              borderColor: adminBorder,
-              focusColor: adminPrimary,
-              fillColor: Colors.white,
-              prefixIcon: Icons.email_outlined,
-            ),
-            const SizedBox(height: 12),
-            _buildTextField(
-              'Preço/Hora',
-              _orcamentoController,
-              keyboard: TextInputType.number,
-              borderColor: adminBorder,
-              focusColor: adminPrimary,
-              fillColor: Colors.white,
-              prefixIcon: Icons.payments_outlined,
-            ),
-            const SizedBox(height: 12),
-            _buildHorasCard(_horasCasa),
-            const SizedBox(height: 12),
-            _buildMonthlyHoursSection(),
-            const SizedBox(height: 8),
-            AppButton(
-              text: "Adicionar Horas",
-              icon: Icons.timer,
-              color: const Color.fromARGB(255, 4, 76, 32),
-              onPressed: () => _abrirDialogAdicionarHoras(),
-            ),
-            const SizedBox(height: 12),
-            _buildOrcamentoCard(widget.cliente.orcamento, _horasCasa),
-
-            const SizedBox(height: 16),
-
-            // Emitir faturas
-            AppButton(
-              text: "Emitir Faturas",
-              icon: Icons.file_copy,
-              color: Color.fromARGB(255, 4, 76, 32),
-              onPressed: () => emitirFaturas(),
-            ),
-          ],
         ),
       ),
     );
@@ -697,44 +926,6 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
   }
 
-  //Card das horas
-  Widget _buildHorasCard(double horas) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-      decoration: BoxDecoration(
-        color: horas >= 40 ? Colors.green.shade50 : Colors.red.shade50,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: horas >= 40
-              ? Colors.green
-              : const Color.fromARGB(255, 185, 64, 55),
-          width: 1.5,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.access_time,
-            color: horas >= 40
-                ? Colors.green
-                : const Color.fromARGB(255, 185, 64, 55),
-            size: 28,
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'Horas na casa: ${horas.toStringAsFixed(1)}h',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: horas >= 40 ? Colors.green.shade900 : Colors.red.shade900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildMonthlyHoursSection() {
     return FutureBuilder<Map<DateTime, double>>(
       future: _hoursOverviewFuture,
@@ -789,48 +980,529 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
   }
 
-  //Card Orçamento
-  Widget _buildOrcamentoCard(double? orcamento, double horas) {
-    if (orcamento == null) return const SizedBox.shrink();
-    final total = horas * orcamento;
+  Widget _buildAdditionalServicesSection({
+    required Color primaryColor,
+    required Color borderColor,
+  }) {
+    final appliedEntries = _appliedServicePrices.entries.toList()
+      ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.green.shade100,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.green.shade700, width: 1.5),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.add_business_outlined, color: primaryColor, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Serviços adicionais',
+                style: TextStyle(
+                  color: primaryColor,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Valores para $_serviceMonthLabel',
+            style: TextStyle(
+              color: Colors.black54,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (appliedEntries.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: borderColor.withValues(alpha: .7)),
+              ),
+              child: const Text(
+                'Ainda sem serviços adicionados neste mês.',
+                style: TextStyle(
+                  color: Colors.black54,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: borderColor),
+              ),
+              child: Column(
+                children: appliedEntries
+                    .map(
+                      (entry) => Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: borderColor.withValues(alpha: .8),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${entry.key} • ${entry.value.toStringAsFixed(2)} CHF',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Remover serviço',
+                                onPressed: () =>
+                                    _removeAppliedService(entry.key),
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  color: Colors.redAccent,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
+          const SizedBox(height: 10),
+          AppButton(
+            text: 'Adicionar Serviço',
+            icon: Icons.add_rounded,
+            color: primaryColor,
+            onPressed: _openAddServiceDialog,
+            verticalPadding: 13,
+          ),
+        ],
+      ),
+    );
+  }
+
+  //Card Orçamento
+  Widget _buildOrcamentoCard(
+    double? orcamento,
+    double horas,
+    Map<String, double> servicePrices,
+  ) {
+    if (orcamento == null) return const SizedBox.shrink();
+    final totalHoras = horas * orcamento;
+    final totalServicos = servicePrices.values.fold<double>(
+      0,
+      (total, item) => total + item,
+    );
+    final totalFinal = totalHoras + totalServicos;
+    const primary = AppColors.primaryGreen;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: primary.withValues(alpha: .16), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .03),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.payments_outlined,
+                  color: primary,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Resumo de Horas & Preços',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: primary,
+                  ),
+                ),
+              ),
+              Text(
+                '${totalFinal.toStringAsFixed(2)} CHF',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildFinancialRow(
+            icon: Icons.timer_outlined,
+            label: 'Total Horas (${horas.toStringAsFixed(1)}h)',
+            value: '${totalHoras.toStringAsFixed(2)} CHF',
+            primary: primary,
+          ),
+          const SizedBox(height: 8),
+          _buildFinancialRow(
+            icon: Icons.add_business_outlined,
+            label: 'Preço Serviço',
+            value: '${totalServicos.toStringAsFixed(2)} CHF',
+            primary: primary,
+          ),
+          const SizedBox(height: 8),
+          _buildFinancialRow(
+            icon: Icons.payments_rounded,
+            label: 'Preço/Hora (${orcamento.toStringAsFixed(2)} CHF)',
+            value: '${totalFinal.toStringAsFixed(2)} CHF',
+            primary: primary,
+            strong: true,
+          ),
+          if (servicePrices.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: servicePrices.entries
+                  .map(
+                    (entry) => Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: primary.withValues(alpha: .08),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${entry.key}: ${entry.value.toStringAsFixed(2)} CHF',
+                        style: const TextStyle(
+                          color: primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFinancialRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color primary,
+    bool strong = false,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: primary.withValues(alpha: strong ? .10 : .06),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          Icon(Icons.payments_outlined, color: Colors.green.shade700, size: 28),
-          const SizedBox(width: 12),
+          Icon(icon, size: 18, color: primary),
+          const SizedBox(width: 8),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Preço/Hora: ${orcamento.toStringAsFixed(2)} CHF',
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.black87,
+                fontWeight: strong ? FontWeight.w700 : FontWeight.w600,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(color: primary, fontWeight: FontWeight.w800),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ServicePickerOption {
+  const _ServicePickerOption({required this.id, required this.label});
+
+  final String id;
+  final String label;
+}
+
+class _ServiceSearchPickerSheet extends StatefulWidget {
+  const _ServiceSearchPickerSheet({
+    required this.title,
+    required this.subtitle,
+    required this.searchHint,
+    required this.options,
+    required this.selectedId,
+    required this.primaryColor,
+  });
+
+  final String title;
+  final String subtitle;
+  final String searchHint;
+  final List<_ServicePickerOption> options;
+  final String? selectedId;
+  final Color primaryColor;
+
+  @override
+  State<_ServiceSearchPickerSheet> createState() =>
+      _ServiceSearchPickerSheetState();
+}
+
+class _ServiceSearchPickerSheetState extends State<_ServiceSearchPickerSheet> {
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _searchController.text.trim().toLowerCase();
+    final filtered = widget.options.where((option) {
+      if (query.isEmpty) return true;
+      return option.label.toLowerCase().contains(query);
+    }).toList();
+
+    return AppBottomSheetShell(
+      title: widget.title,
+      subtitle: widget.subtitle,
+      child: SizedBox(
+        height: 420,
+        child: Column(
+          children: [
+            AppTextField(
+              label: widget.searchHint,
+              controller: _searchController,
+              prefixIcon: Icons.search,
+              focusColor: widget.primaryColor,
+              borderColor: widget.primaryColor.withValues(alpha: .25),
+              fillColor: Colors.grey.shade100,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Sem resultados.',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final option = filtered[index];
+                        final selected = option.id == widget.selectedId;
+                        return InkWell(
+                          onTap: () => Navigator.pop(context, option),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? widget.primaryColor.withValues(alpha: .12)
+                                  : Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: selected
+                                    ? widget.primaryColor
+                                    : widget.primaryColor.withValues(
+                                        alpha: .15,
+                                      ),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    option.label,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                ),
+                                Icon(
+                                  selected
+                                      ? Icons.check_circle
+                                      : Icons.chevron_right_rounded,
+                                  color: selected
+                                      ? widget.primaryColor
+                                      : Colors.grey.shade600,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ServicePriceSheet extends StatefulWidget {
+  const _ServicePriceSheet({
+    required this.serviceName,
+    required this.primaryColor,
+    this.initialPrice,
+  });
+
+  final String serviceName;
+  final Color primaryColor;
+  final double? initialPrice;
+
+  @override
+  State<_ServicePriceSheet> createState() => _ServicePriceSheetState();
+}
+
+class _ServicePriceSheetState extends State<_ServicePriceSheet> {
+  late final TextEditingController _priceController;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _priceController = TextEditingController(
+      text: widget.initialPrice == null
+          ? ''
+          : widget.initialPrice!.toStringAsFixed(2),
+    );
+  }
+
+  @override
+  void dispose() {
+    _priceController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final raw = _priceController.text.trim();
+    final parsed = double.tryParse(raw.replaceAll(',', '.'));
+    if (raw.isEmpty || parsed == null || parsed < 0) {
+      setState(() => _errorText = 'Define um valor válido para o serviço.');
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).pop(parsed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 200),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: AppBottomSheetShell(
+        title: 'Preço do serviço',
+        subtitle: widget.serviceName,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppTextField(
+              label: 'Preço (CHF)',
+              controller: _priceController,
+              keyboard: TextInputType.number,
+              prefixIcon: Icons.payments_outlined,
+              focusColor: widget.primaryColor,
+              borderColor: widget.primaryColor.withValues(alpha: .25),
+              fillColor: Colors.grey.shade100,
+            ),
+            if (_errorText != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _errorText!,
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green.shade700,
+                    color: Colors.red.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Total (${horas.toStringAsFixed(1)}h): ${total.toStringAsFixed(2)} CHF',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.green.shade900,
+              ),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    text: 'Cancelar',
+                    outline: true,
+                    color: widget.primaryColor,
+                    onPressed: () => Navigator.of(context).pop(),
+                    verticalPadding: 13,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AppButton(
+                    text: 'Adicionar',
+                    icon: Icons.check_rounded,
+                    color: widget.primaryColor,
+                    onPressed: _submit,
+                    verticalPadding: 13,
                   ),
                 ),
               ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

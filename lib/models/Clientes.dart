@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class Clientes {
   String uid;
   String nameCliente;
@@ -5,6 +7,9 @@ class Clientes {
   String codigoPostal;
   double hourasCasa;
   int telemovel;
+  String phoneCountryIso;
+  Map<String, double> additionalServicePrices;
+  Map<String, Map<String, double>> additionalServicePricesByMonth;
   String email;
   double orcamento;
   List<String> teikersIds;
@@ -19,13 +24,17 @@ class Clientes {
     required this.codigoPostal,
     required this.hourasCasa,
     required this.telemovel,
+    this.phoneCountryIso = 'PT',
+    Map<String, double>? additionalServicePrices,
+    Map<String, Map<String, double>>? additionalServicePricesByMonth,
     required this.email,
     required this.orcamento,
     required this.teikersIds,
     this.isArchived = false,
     this.archivedBy,
     this.archivedAt,
-  });
+  }) : additionalServicePrices = additionalServicePrices ?? {},
+       additionalServicePricesByMonth = additionalServicePricesByMonth ?? {};
 
   Map<String, dynamic> toMap() {
     return {
@@ -35,6 +44,9 @@ class Clientes {
       'codigoPostal': codigoPostal,
       'hourasCasa': hourasCasa,
       'telemovel': telemovel,
+      'phoneCountryIso': phoneCountryIso,
+      'additionalServicePrices': additionalServicePrices,
+      'additionalServicePricesByMonth': additionalServicePricesByMonth,
       'email': email,
       'orcamento': orcamento,
       'teikersIds': teikersIds,
@@ -51,9 +63,57 @@ class Clientes {
         : int.tryParse('$telemovelRaw') ?? 0;
 
     final archivedAtRaw = map['archivedAt'];
-    final archivedAt = archivedAtRaw is String
-        ? DateTime.tryParse(archivedAtRaw)
-        : null;
+    DateTime? archivedAt;
+    if (archivedAtRaw is String) {
+      archivedAt = DateTime.tryParse(archivedAtRaw);
+    } else if (archivedAtRaw is Timestamp) {
+      archivedAt = archivedAtRaw.toDate();
+    } else if (archivedAtRaw is DateTime) {
+      archivedAt = archivedAtRaw;
+    } else if (archivedAtRaw is int) {
+      archivedAt = DateTime.fromMillisecondsSinceEpoch(archivedAtRaw);
+    }
+
+    final archivedByRaw = map['archivedBy'];
+    final archivedBy = archivedByRaw == null
+        ? null
+        : archivedByRaw.toString().trim().isEmpty
+        ? null
+        : archivedByRaw.toString();
+
+    final additionalRaw = map['additionalServicePrices'];
+    final additionalServicePrices = <String, double>{};
+    if (additionalRaw is Map) {
+      additionalRaw.forEach((key, value) {
+        final service = key.toString().trim();
+        if (service.isEmpty) return;
+        final price = value is num
+            ? value.toDouble()
+            : double.tryParse('$value');
+        if (price == null) return;
+        additionalServicePrices[service] = price;
+      });
+    }
+
+    final additionalByMonthRaw = map['additionalServicePricesByMonth'];
+    final additionalServicePricesByMonth = <String, Map<String, double>>{};
+    if (additionalByMonthRaw is Map) {
+      additionalByMonthRaw.forEach((monthKeyRaw, servicesRaw) {
+        final monthKey = monthKeyRaw.toString().trim();
+        if (monthKey.isEmpty || servicesRaw is! Map) return;
+        final monthServices = <String, double>{};
+        servicesRaw.forEach((serviceRaw, valueRaw) {
+          final service = serviceRaw.toString().trim();
+          if (service.isEmpty) return;
+          final price = valueRaw is num
+              ? valueRaw.toDouble()
+              : double.tryParse('$valueRaw');
+          if (price == null) return;
+          monthServices[service] = price;
+        });
+        additionalServicePricesByMonth[monthKey] = monthServices;
+      });
+    }
 
     return Clientes(
       uid: map['uid'] as String? ?? '',
@@ -62,11 +122,16 @@ class Clientes {
       codigoPostal: map['codigoPostal'] ?? '',
       hourasCasa: (map['hourasCasa'] as num?)?.toDouble() ?? 0.0,
       telemovel: telemovel,
+      phoneCountryIso: (map['phoneCountryIso'] as String? ?? 'PT')
+          .trim()
+          .toUpperCase(),
+      additionalServicePrices: additionalServicePrices,
+      additionalServicePricesByMonth: additionalServicePricesByMonth,
       email: map['email'] as String? ?? '',
       orcamento: (map['orcamento'] as num?)?.toDouble() ?? 0.0,
       teikersIds: List<String>.from(map['teikersIds'] ?? []),
       isArchived: map['isArchived'] == true,
-      archivedBy: map['archivedBy'] as String?,
+      archivedBy: archivedBy,
       archivedAt: archivedAt,
     );
   }

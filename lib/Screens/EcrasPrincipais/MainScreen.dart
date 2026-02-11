@@ -1,6 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:intl/intl.dart';
 import 'package:teiker_app/Screens/ClientesScreen.dart';
 import 'package:teiker_app/Screens/DefinicoesScreen.dart';
 import 'package:teiker_app/Screens/HomeScreen.dart';
@@ -8,8 +8,12 @@ import 'package:teiker_app/Screens/TeikersInfoScreen.dart';
 import 'package:teiker_app/Widgets/AppBottomNavBar.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/AppTextInput.dart';
+import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/app_color_palette_picker.dart';
+import 'package:teiker_app/Widgets/phone_number_input_row.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
+import 'package:teiker_app/models/teiker_workload.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
 enum MainRole { admin, teiker }
@@ -20,7 +24,9 @@ class _TeikerFormData {
     required this.email,
     required this.password,
     required this.telemovel,
-    required this.horas,
+    required this.phoneCountryIso,
+    required this.birthDate,
+    required this.workPercentage,
     required this.cor,
   });
 
@@ -28,7 +34,9 @@ class _TeikerFormData {
   final String email;
   final String password;
   final int telemovel;
-  final double horas;
+  final String phoneCountryIso;
+  final DateTime birthDate;
+  final int workPercentage;
   final Color cor;
 }
 
@@ -38,6 +46,7 @@ class _ClienteFormData {
     required this.morada,
     required this.codigoPostal,
     required this.telemovel,
+    required this.phoneCountryIso,
     required this.email,
     required this.orcamento,
   });
@@ -46,6 +55,7 @@ class _ClienteFormData {
   final String morada;
   final String codigoPostal;
   final int telemovel;
+  final String phoneCountryIso;
   final String email;
   final double orcamento;
 }
@@ -68,6 +78,18 @@ class _MainScreenState extends State<MainScreen> {
   final AuthService _authService = AuthService();
 
   bool get _isAdmin => widget.isAdmin;
+
+  void _disposeControllersDeferred(
+    Iterable<TextEditingController> controllers,
+  ) {
+    Future<void>.delayed(const Duration(milliseconds: 350), () {
+      for (final controller in controllers) {
+        try {
+          controller.dispose();
+        } catch (_) {}
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -245,12 +267,15 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _teikerAdd() async {
-    Color selectedCor = Colors.green;
+    Color selectedCor = const Color(0xFF2D7A4B);
+    int selectedWorkPercentage = TeikerWorkload.fullTime;
+    String selectedPhoneCountryIso = 'PT';
     final nameController = TextEditingController();
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
     final telemovelController = TextEditingController();
-    final horasController = TextEditingController();
+    final birthDateController = TextEditingController();
+    DateTime? selectedBirthDate;
 
     try {
       final data = await _showFormSheet<_TeikerFormData>(
@@ -264,7 +289,12 @@ class _MainScreenState extends State<MainScreen> {
                   _sheetHeader(
                     icon: Icons.person_add_alt_1,
                     title: 'Adicionar Teiker',
-                    onClose: () => Navigator.pop(sheetContext),
+                    onClose: () {
+                      FocusManager.instance.primaryFocus?.unfocus();
+                      if (Navigator.canPop(sheetContext)) {
+                        Navigator.of(sheetContext).pop();
+                      }
+                    },
                   ),
                   const SizedBox(height: 10),
                   _formInput('Nome', nameController),
@@ -277,65 +307,104 @@ class _MainScreenState extends State<MainScreen> {
                   const SizedBox(height: 10),
                   _formInput('Password', passwordController, obscure: true),
                   const SizedBox(height: 10),
-                  _formInput(
-                    'Telemóvel',
-                    telemovelController,
-                    keyboard: TextInputType.number,
+                  PhoneNumberInputRow(
+                    controller: telemovelController,
+                    countryIso: selectedPhoneCountryIso,
+                    onCountryChanged: (iso) {
+                      setStateSheet(() => selectedPhoneCountryIso = iso);
+                    },
+                    primaryColor: AppColors.primaryGreen,
+                    label: 'Telemóvel',
+                    fillColor: Colors.white,
+                    borderColor: AppColors.primaryGreen.withValues(alpha: .18),
                   ),
                   const SizedBox(height: 10),
-                  _formInput(
-                    'Horas',
-                    horasController,
-                    keyboard: TextInputType.number,
+                  GestureDetector(
+                    onTap: () async {
+                      final picked = await SingleDatePickerBottomSheet.show(
+                        sheetContext,
+                        initialDate: selectedBirthDate ?? DateTime(1990, 1, 1),
+                        firstDate: DateTime(1900, 1, 1),
+                        lastDate: DateTime.now(),
+                        title: 'Data de nascimento',
+                        subtitle: 'Escolhe a data de nascimento da teiker',
+                        confirmLabel: 'Confirmar',
+                      );
+                      if (picked == null) return;
+                      selectedBirthDate = DateTime(
+                        picked.year,
+                        picked.month,
+                        picked.day,
+                      );
+                      birthDateController.text = DateFormat(
+                        'dd/MM/yyyy',
+                        'pt_PT',
+                      ).format(selectedBirthDate!);
+                      setStateSheet(() {});
+                    },
+                    child: AbsorbPointer(
+                      child: _formInput(
+                        'Data de nascimento',
+                        birthDateController,
+                        keyboard: TextInputType.datetime,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Carga horária',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primaryGreen,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: TeikerWorkload.supportedPercentages.map((value) {
+                      final selected = selectedWorkPercentage == value;
+                      return ChoiceChip(
+                        label: Text(TeikerWorkload.labelForPercentage(value)),
+                        selected: selected,
+                        selectedColor: AppColors.primaryGreen.withValues(
+                          alpha: .14,
+                        ),
+                        checkmarkColor: AppColors.primaryGreen,
+                        side: BorderSide(
+                          color: selected
+                              ? AppColors.primaryGreen
+                              : AppColors.primaryGreen.withValues(alpha: .25),
+                        ),
+                        onSelected: (_) {
+                          setStateSheet(() => selectedWorkPercentage = value);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Meta semanal: ${TeikerWorkload.weeklyHoursForPercentage(selectedWorkPercentage).toStringAsFixed(0)} h',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Text(
-                        'Cor da Teiker',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(width: 10),
-                      GestureDetector(
-                        onTap: () async {
-                          Color tempColor = selectedCor;
-                          final picked = await showDialog<Color>(
-                            context: sheetContext,
-                            builder: (c) => AlertDialog(
-                              title: const Text('Escolhe uma cor'),
-                              content: SingleChildScrollView(
-                                child: BlockPicker(
-                                  pickerColor: tempColor,
-                                  onColorChanged: (color) => tempColor = color,
-                                ),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(c, null),
-                                  child: const Text('Cancelar'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(c, tempColor),
-                                  child: const Text('Selecionar'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (picked != null) {
-                            setStateSheet(() => selectedCor = picked);
-                          }
-                        },
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: selectedCor,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade300),
-                          ),
-                        ),
-                      ),
-                    ],
+                  const Text(
+                    'Cor da Teiker',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primaryGreen,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  AppColorPalettePicker(
+                    selectedColor: selectedCor,
+                    onChanged: (color) {
+                      setStateSheet(() => selectedCor = color);
+                    },
                   ),
                   const SizedBox(height: 16),
                   _sheetActions(
@@ -345,16 +414,13 @@ class _MainScreenState extends State<MainScreen> {
                       final email = emailController.text.trim();
                       final password = passwordController.text.trim();
                       final telemovel = telemovelController.text.trim();
-                      final horas = horasController.text.trim();
 
-                      if (_hasEmpty([
-                        name,
-                        email,
-                        password,
-                        telemovel,
-                        horas,
-                      ])) {
+                      if (_hasEmpty([name, email, password, telemovel])) {
                         _showError('Preencha todos os campos');
+                        return;
+                      }
+                      if (selectedBirthDate == null) {
+                        _showError('Seleciona a data de nascimento');
                         return;
                       }
 
@@ -363,12 +429,7 @@ class _MainScreenState extends State<MainScreen> {
                         return;
                       }
 
-                      final horasValue = double.tryParse(horas);
-                      if (horasValue == null) {
-                        _showError('Horas inválidas');
-                        return;
-                      }
-
+                      FocusManager.instance.primaryFocus?.unfocus();
                       if (Navigator.canPop(sheetContext)) {
                         Navigator.of(sheetContext).pop(
                           _TeikerFormData(
@@ -376,7 +437,9 @@ class _MainScreenState extends State<MainScreen> {
                             email: email,
                             password: password,
                             telemovel: int.parse(telemovel),
-                            horas: horasValue,
+                            phoneCountryIso: selectedPhoneCountryIso,
+                            birthDate: selectedBirthDate!,
+                            workPercentage: selectedWorkPercentage,
                             cor: selectedCor,
                           ),
                         );
@@ -397,7 +460,9 @@ class _MainScreenState extends State<MainScreen> {
         email: data.email,
         password: data.password,
         telemovel: data.telemovel,
-        horas: data.horas,
+        phoneCountryIso: data.phoneCountryIso,
+        birthDate: data.birthDate,
+        workPercentage: data.workPercentage,
         cor: data.cor,
       );
       if (!mounted) return;
@@ -406,18 +471,22 @@ class _MainScreenState extends State<MainScreen> {
       if (!mounted) return;
       _showError('Erro ao criar Teiker: $e');
     } finally {
-      nameController.dispose();
-      emailController.dispose();
-      passwordController.dispose();
-      telemovelController.dispose();
-      horasController.dispose();
+      _disposeControllersDeferred([
+        nameController,
+        emailController,
+        passwordController,
+        telemovelController,
+        birthDateController,
+      ]);
     }
   }
 
   Future<void> _clienteAdd() async {
+    String selectedPhoneCountryIso = 'PT';
     final nameController = TextEditingController();
     final moradaController = TextEditingController();
-    final codigoPostalController = TextEditingController();
+    final codigoPostalPrefixController = TextEditingController();
+    final codigoPostalSuffixController = TextEditingController();
     final telemovelController = TextEditingController();
     final emailController = TextEditingController();
     final orcamentoController = TextEditingController();
@@ -425,88 +494,150 @@ class _MainScreenState extends State<MainScreen> {
     try {
       final data = await _showFormSheet<_ClienteFormData>(
         builder: (sheetContext) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _sheetHeader(
-                icon: Icons.home_work_outlined,
-                title: 'Adicionar Cliente',
-                onClose: () => Navigator.pop(sheetContext),
-              ),
-              const SizedBox(height: 10),
-              _formInput('Nome', nameController),
-              const SizedBox(height: 10),
-              _formInput('Morada', moradaController),
-              const SizedBox(height: 10),
-              _formInput('Código Postal', codigoPostalController),
-              const SizedBox(height: 10),
-              _formInput(
-                'Telemóvel',
-                telemovelController,
-                keyboard: TextInputType.number,
-              ),
-              const SizedBox(height: 10),
-              _formInput(
-                'Email',
-                emailController,
-                keyboard: TextInputType.emailAddress,
-              ),
-              const SizedBox(height: 10),
-              _formInput(
-                'Preço/Hora (€)',
-                orcamentoController,
-                keyboard: TextInputType.number,
-              ),
-              const SizedBox(height: 16),
-              _sheetActions(
-                sheetContext: sheetContext,
-                onConfirm: () {
-                  final name = nameController.text.trim();
-                  final morada = moradaController.text.trim();
-                  final codigoPostal = codigoPostalController.text.trim();
-                  final telemovel = telemovelController.text.trim();
-                  final email = emailController.text.trim();
-                  final orcamento = orcamentoController.text.trim();
-
-                  if (_hasEmpty([
-                    name,
-                    morada,
-                    codigoPostal,
-                    telemovel,
-                    email,
-                    orcamento,
-                  ])) {
-                    _showError('Preencha todos os campos');
-                    return;
-                  }
-
-                  if (!_isDigits(telemovel)) {
-                    _showError('Telemóvel inválido');
-                    return;
-                  }
-
-                  final orc = double.tryParse(orcamento.replaceAll(',', '.'));
-                  if (orc == null) {
-                    _showError('Orçamento inválido');
-                    return;
-                  }
-
-                  if (Navigator.canPop(sheetContext)) {
-                    Navigator.of(sheetContext).pop(
-                      _ClienteFormData(
-                        name: name,
-                        morada: morada,
-                        codigoPostal: codigoPostal,
-                        telemovel: int.parse(telemovel),
-                        email: email,
-                        orcamento: orc,
+          return StatefulBuilder(
+            builder: (_, setStateSheet) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sheetHeader(
+                    icon: Icons.home_work_outlined,
+                    title: 'Adicionar Cliente',
+                    onClose: () {
+                      FocusManager.instance.primaryFocus?.unfocus();
+                      if (Navigator.canPop(sheetContext)) {
+                        Navigator.of(sheetContext).pop();
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 10),
+                  _formInput('Nome', nameController),
+                  const SizedBox(height: 10),
+                  _formInput('Morada', moradaController),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _formInput(
+                          'Código Postal',
+                          codigoPostalPrefixController,
+                          keyboard: TextInputType.number,
+                        ),
                       ),
-                    );
-                  }
-                },
-              ),
-            ],
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text(
+                          '-',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: _formInput(
+                          'Sufixo',
+                          codigoPostalSuffixController,
+                          keyboard: TextInputType.number,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  PhoneNumberInputRow(
+                    controller: telemovelController,
+                    countryIso: selectedPhoneCountryIso,
+                    onCountryChanged: (iso) {
+                      setStateSheet(() => selectedPhoneCountryIso = iso);
+                    },
+                    primaryColor: AppColors.primaryGreen,
+                    label: 'Telemóvel',
+                    fillColor: Colors.white,
+                    borderColor: AppColors.primaryGreen.withValues(alpha: .18),
+                  ),
+                  const SizedBox(height: 10),
+                  _formInput(
+                    'Email',
+                    emailController,
+                    keyboard: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 10),
+                  _formInput(
+                    'Preço/Hora (€)',
+                    orcamentoController,
+                    keyboard: TextInputType.number,
+                  ),
+                  const SizedBox(height: 16),
+                  _sheetActions(
+                    sheetContext: sheetContext,
+                    onConfirm: () {
+                      final name = nameController.text.trim();
+                      final morada = moradaController.text.trim();
+                      final codigoPostalPrefix = codigoPostalPrefixController
+                          .text
+                          .trim();
+                      final codigoPostalSuffix = codigoPostalSuffixController
+                          .text
+                          .trim();
+                      final telemovel = telemovelController.text.trim();
+                      final email = emailController.text.trim();
+                      final orcamento = orcamentoController.text.trim();
+
+                      if (_hasEmpty([
+                        name,
+                        morada,
+                        codigoPostalPrefix,
+                        codigoPostalSuffix,
+                        telemovel,
+                        email,
+                        orcamento,
+                      ])) {
+                        _showError('Preencha todos os campos');
+                        return;
+                      }
+
+                      if (!_isDigits(telemovel)) {
+                        _showError('Telemóvel inválido');
+                        return;
+                      }
+
+                      if (!_isDigits(codigoPostalPrefix) ||
+                          !_isDigits(codigoPostalSuffix) ||
+                          codigoPostalPrefix.length != 4 ||
+                          codigoPostalSuffix.length != 3) {
+                        _showError('Código postal inválido');
+                        return;
+                      }
+
+                      final orc = double.tryParse(
+                        orcamento.replaceAll(',', '.'),
+                      );
+                      if (orc == null) {
+                        _showError('Orçamento inválido');
+                        return;
+                      }
+
+                      FocusManager.instance.primaryFocus?.unfocus();
+                      if (Navigator.canPop(sheetContext)) {
+                        Navigator.of(sheetContext).pop(
+                          _ClienteFormData(
+                            name: name,
+                            morada: morada,
+                            codigoPostal:
+                                '$codigoPostalPrefix-$codigoPostalSuffix',
+                            telemovel: int.parse(telemovel),
+                            phoneCountryIso: selectedPhoneCountryIso,
+                            email: email,
+                            orcamento: orc,
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              );
+            },
           );
         },
       );
@@ -519,6 +650,7 @@ class _MainScreenState extends State<MainScreen> {
         moradaCliente: data.morada,
         codigoPostal: data.codigoPostal,
         telemovel: data.telemovel,
+        phoneCountryIso: data.phoneCountryIso,
         email: data.email,
         orcamento: data.orcamento,
         hourasCasa: 0.0,
@@ -532,12 +664,15 @@ class _MainScreenState extends State<MainScreen> {
       if (!mounted) return;
       _showError('Erro ao criar cliente: $e');
     } finally {
-      nameController.dispose();
-      moradaController.dispose();
-      codigoPostalController.dispose();
-      telemovelController.dispose();
-      emailController.dispose();
-      orcamentoController.dispose();
+      _disposeControllersDeferred([
+        nameController,
+        moradaController,
+        codigoPostalPrefixController,
+        codigoPostalSuffixController,
+        telemovelController,
+        emailController,
+        orcamentoController,
+      ]);
     }
   }
 
@@ -562,11 +697,14 @@ class _MainScreenState extends State<MainScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: AppColors.primaryGreen.withValues(alpha: .12),
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: .08),
-                    blurRadius: 18,
-                    offset: const Offset(0, 10),
+                    color: Colors.black.withValues(alpha: .05),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
@@ -609,7 +747,12 @@ class _MainScreenState extends State<MainScreen> {
       children: [
         Expanded(
           child: OutlinedButton(
-            onPressed: () => Navigator.pop(sheetContext),
+            onPressed: () {
+              FocusManager.instance.primaryFocus?.unfocus();
+              if (Navigator.canPop(sheetContext)) {
+                Navigator.of(sheetContext).pop();
+              }
+            },
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.primaryGreen,
               side: const BorderSide(color: AppColors.primaryGreen),
@@ -677,8 +820,8 @@ class _MainScreenState extends State<MainScreen> {
       keyboard: keyboard,
       obscureText: obscure,
       focusColor: AppColors.primaryGreen,
-      fillColor: Colors.grey.shade100,
-      borderColor: AppColors.primaryGreen.withValues(alpha: .2),
+      fillColor: Colors.white,
+      borderColor: AppColors.primaryGreen.withValues(alpha: .18),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
     );
   }

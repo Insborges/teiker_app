@@ -27,6 +27,29 @@ class WorkSessionService {
     return id;
   }
 
+  void _ensureNotFuture(DateTime value) {
+    if (value.isAfter(DateTime.now())) {
+      throw Exception('Não podes adicionar antes da hora');
+    }
+  }
+
+  Future<void> _ensureNoOverlap({
+    required String teikerId,
+    required DateTime start,
+    required DateTime end,
+    String? excludingSessionId,
+  }) async {
+    final hasOverlap = await _repository.hasSessionOverlap(
+      teikerId: teikerId,
+      start: start,
+      end: end,
+      excludingSessionId: excludingSessionId,
+    );
+    if (hasOverlap) {
+      throw Exception('Esse intervalo já está registado noutra sessão.');
+    }
+  }
+
   Future<WorkSession> startSession({
     required String clienteId,
     required String clienteName,
@@ -47,6 +70,11 @@ class WorkSessionService {
 
     if (existing != null) {
       throw Exception('Já existe uma sessão aberta para este cliente.');
+    }
+
+    final anyOpen = await _repository.findAnyOpenSession(teikerId: teikerId);
+    if (anyOpen != null) {
+      throw Exception('Já tens uma sessão ativa noutro cliente.');
     }
 
     final now = DateTime.now();
@@ -74,6 +102,15 @@ class WorkSessionService {
       teikerId: teikerId,
     );
 
+    if (open != null) {
+      await _ensureNoOverlap(
+        teikerId: teikerId,
+        start: open.startTime,
+        end: DateTime.now(),
+        excludingSessionId: open.id,
+      );
+    }
+
     final total = await _finishUseCase.execute(
       clienteId: clienteId,
       teikerId: teikerId,
@@ -96,8 +133,11 @@ class WorkSessionService {
     if (!end.isAfter(start)) {
       throw Exception('A hora de fim deve ser posterior ao início.');
     }
+    _ensureNotFuture(start);
+    _ensureNotFuture(end);
 
     final teikerId = _requireUser();
+    await _ensureNoOverlap(teikerId: teikerId, start: start, end: end);
 
     await _repository.addManualSession(
       clienteId: clienteId,
@@ -143,6 +183,13 @@ class WorkSessionService {
     if (session == null || session.id != sessionId) {
       throw Exception('Não existe sessão iniciada para este cliente.');
     }
+    _ensureNotFuture(end);
+    await _ensureNoOverlap(
+      teikerId: teikerId,
+      start: session.startTime,
+      end: end,
+      excludingSessionId: session.id,
+    );
 
     await _repository.closeSession(sessionId: sessionId, end: end);
 
@@ -178,8 +225,15 @@ class WorkSessionService {
     if (open == null || open.id != sessionId) {
       throw Exception('Não existe sessão iniciada para este cliente.');
     }
+    final end = DateTime.now();
+    await _ensureNoOverlap(
+      teikerId: teikerId,
+      start: open.startTime,
+      end: end,
+      excludingSessionId: open.id,
+    );
 
-    await _repository.closeSession(sessionId: sessionId, end: DateTime.now());
+    await _repository.closeSession(sessionId: sessionId, end: end);
 
     await _notificationService.cancelPendingSessionReminder(sessionId);
 

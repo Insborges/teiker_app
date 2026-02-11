@@ -73,6 +73,16 @@ class AuthService {
   Future<UserCredential> login(String email, String password) async {
     final normalizedEmail = _normalizeEmail(email);
     try {
+      if (!isAdminEmail(normalizedEmail)) {
+        final hasAccount = await _hasAccountForEmail(normalizedEmail);
+        if (hasAccount == false) {
+          throw FirebaseAuthException(
+            code: 'user-not-found',
+            message: 'Conta nao existente.',
+          );
+        }
+      }
+
       final credential = await _firebase.auth.signInWithEmailAndPassword(
         email: normalizedEmail,
         password: password,

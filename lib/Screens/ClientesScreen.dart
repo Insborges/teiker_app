@@ -281,7 +281,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                   Expanded(
                     child: AppSearchBar(
                       controller: _searchController,
-                      hintText: 'Pesquisar clientes',
+                      hintText: 'Pesquisar',
                       margin: const EdgeInsets.fromLTRB(12, 10, 6, 8),
                       onChanged: (_) => setState(() {}),
                     ),

@@ -376,7 +376,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                   Expanded(
                     child: AppSearchBar(
                       controller: _searchController,
-                      hintText: 'Pesquisar teikers',
+                      hintText: 'Pesquisar',
                       margin: const EdgeInsets.fromLTRB(12, 10, 6, 8),
                       onChanged: (_) => setState(() {}),
                     ),

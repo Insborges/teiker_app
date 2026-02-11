@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:teiker_app/Screens/EcrasPrincipais/MainScreen.dart';
 import 'package:teiker_app/Screens/LoginScreen.dart';
+import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/auth/auth_notifier.dart';
 
 class AuthGate extends ConsumerWidget {
@@ -45,6 +46,7 @@ class _TeikerFirestoreGuard extends ConsumerStatefulWidget {
 
 class _TeikerFirestoreGuardState extends ConsumerState<_TeikerFirestoreGuard> {
   bool _loggingOut = false;
+  bool _missingAccountNotified = false;
 
   Future<void> _logoutIfDeleted() async {
     if (_loggingOut) return;
@@ -64,17 +66,34 @@ class _TeikerFirestoreGuardState extends ConsumerState<_TeikerFirestoreGuard> {
           .doc(widget.user.uid)
           .snapshots(),
       builder: (context, snapshot) {
-        final exists = snapshot.data?.exists ?? true;
-        if (!exists) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              _logoutIfDeleted();
-            }
-          });
+        if (snapshot.connectionState == ConnectionState.waiting ||
+            !snapshot.hasData) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
+
+        final exists = snapshot.data?.exists ?? false;
+        if (!exists) {
+          if (!_missingAccountNotified) {
+            _missingAccountNotified = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              AppSnackBar.show(
+                context,
+                message: 'Conta Não Existente',
+                icon: Icons.error_outline,
+                background: Colors.red.shade700,
+              );
+              _logoutIfDeleted();
+            });
+          }
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        _missingAccountNotified = false;
         return const MainScreen(role: MainRole.teiker);
       },
     );

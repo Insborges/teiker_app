@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 class AppBottomNavBar extends StatelessWidget {
   final int index;
@@ -19,8 +20,8 @@ class AppBottomNavBar extends StatelessWidget {
     this.showFab = true,
   });
 
-  static const Color barColor = Color.fromARGB(255, 4, 76, 32);
-  static const Color appBackground = Color(0xFFF8F6EB);
+  static const Color barColor = AppColors.primaryGreen;
+  static const Color appBackground = AppColors.creamBackground;
   static const double barHeight = 90;
   static const double fabSize = 60;
 
@@ -86,7 +87,7 @@ class AppBottomNavBar extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.28),
+                            color: Colors.black.withValues(alpha: 0.28),
                             blurRadius: 16,
                             offset: const Offset(0, 8),
                           ),

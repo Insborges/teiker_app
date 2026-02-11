@@ -36,15 +36,20 @@ class Clientes {
   }
 
   factory Clientes.fromMap(Map<String, dynamic> map) {
+    final telemovelRaw = map['telemovel'];
+    final telemovel = telemovelRaw is int
+        ? telemovelRaw
+        : int.tryParse('$telemovelRaw') ?? 0;
+
     return Clientes(
-      uid: map['uid'],
-      nameCliente: map['nameCliente'],
-      moradaCliente: map['moradaCliente'],
+      uid: map['uid'] as String? ?? '',
+      nameCliente: map['nameCliente'] as String? ?? '',
+      moradaCliente: map['moradaCliente'] as String? ?? '',
       codigoPostal: map['codigoPostal'] ?? '',
-      hourasCasa: (map['hourasCasa'] as num).toDouble(),
-      telemovel: map['telemovel'],
-      email: map['email'],
-      orcamento: (map['orcamento'] as num).toDouble(),
+      hourasCasa: (map['hourasCasa'] as num?)?.toDouble() ?? 0.0,
+      telemovel: telemovel,
+      email: map['email'] as String? ?? '',
+      orcamento: (map['orcamento'] as num?)?.toDouble() ?? 0.0,
       teikersIds: List<String>.from(map['teikersIds'] ?? []),
     );
   }

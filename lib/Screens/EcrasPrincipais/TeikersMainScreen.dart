@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:teiker_app/Screens/ClientesScreen.dart';
-import 'package:teiker_app/Screens/DefinicoesScreens/DefinicoesTeikersScreen.dart';
+import 'package:teiker_app/Screens/DefinicoesScreens/DefinicoesScreen.dart';
 import 'package:teiker_app/Screens/HomeScreen.dart';
 import 'package:teiker_app/Widgets/AppBottomNavBar.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 class TeikersMainscreen extends StatefulWidget {
   const TeikersMainscreen({super.key});
@@ -14,8 +15,6 @@ class TeikersMainscreen extends StatefulWidget {
 class _TeikersMainscreenState extends State<TeikersMainscreen> {
   int selected = 0;
   final controller = PageController();
-
-  static const Color creamBackground = Color(0xFFF8F6EB);
 
   @override
   void dispose() {
@@ -31,7 +30,7 @@ class _TeikersMainscreenState extends State<TeikersMainscreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: creamBackground,
+      backgroundColor: AppColors.creamBackground,
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
@@ -41,32 +40,32 @@ class _TeikersMainscreenState extends State<TeikersMainscreen> {
             children: const [
               HomeScreen(),
               ClientesScreen(),
-              DefinicoesTeikersScreen(),
+              DefinicoesScreen(role: SettingsRole.teiker),
             ],
           ),
 
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: AppBottomNavBar(
-                index: selected,
-                showFab: false,
-                items: const [
-                  NavItemConfig(
-                    icon: Icons.home_outlined,
-                    activeIcon: Icons.home_filled,
-                    label: "Home",
-                  ),
-                  NavItemConfig(
-                    icon: Icons.people_outline,
-                    activeIcon: Icons.groups,
-                    label: "Clientes",
-                  ),
-                  NavItemConfig(
-                    icon: Icons.settings_outlined,
-                    activeIcon: Icons.settings,
-                    label: "Settings",
-                  ),
-                ],
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: AppBottomNavBar(
+              index: selected,
+              showFab: false,
+              items: const [
+                NavItemConfig(
+                  icon: Icons.home_outlined,
+                  activeIcon: Icons.home_filled,
+                  label: "Home",
+                ),
+                NavItemConfig(
+                  icon: Icons.people_outline,
+                  activeIcon: Icons.groups,
+                  label: "Clientes",
+                ),
+                NavItemConfig(
+                  icon: Icons.settings_outlined,
+                  activeIcon: Icons.settings,
+                  label: "Settings",
+                ),
+              ],
               onTap: _onNavTap,
             ),
           ),

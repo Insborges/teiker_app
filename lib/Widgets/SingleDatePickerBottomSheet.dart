@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:teiker_app/Widgets/app_bottom_sheet_shell.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 class SingleDatePickerBottomSheet {
   static Future<DateTime?> show(
@@ -57,7 +59,7 @@ class _SingleDatePickerSheetState extends State<_SingleDatePickerSheet> {
   }
 
   CalendarStyle _calendarStyleClean() {
-    const primary = Color(0xFF044C20);
+    const primary = AppColors.primaryGreenHex;
 
     return CalendarStyle(
       isTodayHighlighted: true,
@@ -78,37 +80,13 @@ class _SingleDatePickerSheetState extends State<_SingleDatePickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    return AppBottomSheetShell(
+      title: widget.title,
+      subtitle: widget.subtitle,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 5,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(50),
-              ),
-            ),
-          ),
-          Text(
-            widget.title,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            widget.subtitle,
-            style: const TextStyle(fontSize: 14, color: Colors.black54),
-          ),
-          const SizedBox(height: 20),
           TableCalendar(
             firstDay: DateTime.utc(2020),
             lastDay: DateTime.utc(2030),
@@ -141,7 +119,7 @@ class _SingleDatePickerSheetState extends State<_SingleDatePickerSheet> {
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF044C20),
+                  foregroundColor: AppColors.primaryGreenHex,
                 ),
                 child: const Text('Cancelar'),
               ),
@@ -150,7 +128,7 @@ class _SingleDatePickerSheetState extends State<_SingleDatePickerSheet> {
                     ? null
                     : () => Navigator.pop(context, selectedDate),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF044C20),
+                  backgroundColor: AppColors.primaryGreenHex,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -167,23 +145,9 @@ class _SingleDatePickerSheetState extends State<_SingleDatePickerSheet> {
   }
 
   Widget _dateChip(String label, DateTime? date) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.black45)),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            date != null ? _formatDate(date) : '--/--',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-          ),
-        ),
-      ],
+    return AppLabeledValueChip(
+      label: label,
+      value: date != null ? _formatDate(date) : '--/--',
     );
   }
 

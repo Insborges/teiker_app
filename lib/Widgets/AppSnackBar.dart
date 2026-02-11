@@ -14,7 +14,10 @@ class AppSnackBar {
         ? Duration(milliseconds: durationMs)
         : (duration ?? const Duration(seconds: 2));
 
-    ScaffoldMessenger.of(context).showSnackBar(
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+
+    messenger.showSnackBar(
       SnackBar(
         content: Row(
           children: [

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 class AppFAB extends StatelessWidget {
   final IconData icon;
@@ -18,7 +19,7 @@ class AppFAB extends StatelessWidget {
       heroTag: tooltip,
       onPressed: onPressed,
       tooltip: tooltip,
-      backgroundColor: const Color.fromARGB(255, 4, 76, 32),
+      backgroundColor: AppColors.primaryGreen,
       child: Icon(icon, color: Colors.white),
     );
   }

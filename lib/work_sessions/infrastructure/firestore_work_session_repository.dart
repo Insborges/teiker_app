@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
 import '../domain/work_session.dart';
 import '../domain/work_session_repository.dart';
 
@@ -68,6 +67,82 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     );
   }
 
+  Future<Iterable<QueryDocumentSnapshot<Map<String, dynamic>>>>
+  _queryMonthlySessions({
+    required String clienteId,
+    required DateTime referenceDate,
+    String? teikerId,
+  }) async {
+    final monthStart = DateTime(referenceDate.year, referenceDate.month, 1);
+    final nextMonth = DateTime(referenceDate.year, referenceDate.month + 1, 1);
+
+    try {
+      Query<Map<String, dynamic>> query = firestore
+          .collection('workSessions')
+          .where('clienteId', isEqualTo: clienteId);
+
+      if (teikerId != null) {
+        query = query.where('teikerId', isEqualTo: teikerId);
+      }
+
+      final snapshot = await query
+          .where(
+            'startTime',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
+          )
+          .where('startTime', isLessThan: Timestamp.fromDate(nextMonth))
+          .get();
+
+      return snapshot.docs;
+    } on FirebaseException catch (e) {
+      if (e.code != 'failed-precondition') rethrow;
+
+      Query<Map<String, dynamic>> fallback = firestore
+          .collection('workSessions')
+          .where(
+            teikerId != null ? 'teikerId' : 'clienteId',
+            isEqualTo: teikerId ?? clienteId,
+          );
+
+      final snapshot = await fallback.get();
+      return snapshot.docs.where((doc) {
+        final data = doc.data();
+        if (teikerId != null && data['clienteId'] != clienteId) {
+          return false;
+        }
+
+        final start = (data['startTime'] as Timestamp?)?.toDate();
+        return start != null &&
+            !start.isBefore(monthStart) &&
+            start.isBefore(nextMonth);
+      });
+    }
+  }
+
+  double _sumDurationHours(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    var totalHours = 0.0;
+    for (final doc in docs) {
+      final duration = _resolveDurationHours(doc.data());
+      if (duration != null) {
+        totalHours += duration;
+      }
+    }
+    return totalHours;
+  }
+
+  double? _resolveDurationHours(Map<String, dynamic> data) {
+    var duration = (data['durationHours'] as num?)?.toDouble();
+    if (duration != null) return duration;
+
+    final start = (data['startTime'] as Timestamp?)?.toDate();
+    final end = (data['endTime'] as Timestamp?)?.toDate();
+    if (start == null || end == null) return null;
+
+    return end.difference(start).inMinutes / 60.0;
+  }
+
   @override
   Future<WorkSession> startSession({
     required String clienteId,
@@ -98,38 +173,50 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     required DateTime end,
   }) async {
     final docRef = firestore.collection('workSessions').doc(sessionId);
-    final snapshot = await docRef.get();
+    late WorkSession closedSession;
 
-    if (!snapshot.exists) {
-      throw Exception('Sessão não encontrada.');
-    }
+    await firestore.runTransaction((tx) async {
+      final snapshot = await tx.get(docRef);
 
-    final data = snapshot.data();
-    if (data == null) {
-      throw Exception('Sessão sem dados.');
-    }
+      if (!snapshot.exists) {
+        throw Exception('Sessão não encontrada.');
+      }
 
-    final startTime = (data['startTime'] as Timestamp?)?.toDate();
-    if (startTime == null) {
-      throw Exception('Sessão sem hora de início válida.');
-    }
+      final data = snapshot.data();
+      if (data == null) {
+        throw Exception('Sessão sem dados.');
+      }
 
-    final durationHours = end.difference(startTime).inMinutes / 60.0;
+      if (data['endTime'] != null) {
+        throw Exception('Sessão já fechada.');
+      }
 
-    // ✅ Só agora escreve
-    await docRef.update({
-      'endTime': Timestamp.fromDate(end),
-      'durationHours': durationHours,
+      final startTime = (data['startTime'] as Timestamp?)?.toDate();
+      if (startTime == null) {
+        throw Exception('Sessão sem hora de início válida.');
+      }
+      if (!end.isAfter(startTime)) {
+        throw Exception('A hora de fim deve ser posterior ao início.');
+      }
+
+      final durationHours = end.difference(startTime).inMinutes / 60.0;
+
+      tx.update(docRef, {
+        'endTime': Timestamp.fromDate(end),
+        'durationHours': durationHours,
+      });
+
+      closedSession = WorkSession(
+        id: sessionId,
+        clienteId: data['clienteId'] as String,
+        teikerId: (data['teikerId'] as String?) ?? '',
+        startTime: startTime,
+        endTime: end,
+        durationHours: durationHours,
+      );
     });
 
-    return WorkSession(
-      id: sessionId,
-      clienteId: data['clienteId'] as String,
-      teikerId: (data['teikerId'] as String?) ?? '',
-      startTime: startTime,
-      endTime: end,
-      durationHours: durationHours,
-    );
+    return closedSession;
   }
 
   @override
@@ -139,6 +226,9 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     required DateTime start,
     required DateTime end,
   }) async {
+    if (!end.isAfter(start)) {
+      throw Exception('A hora de fim deve ser posterior ao início.');
+    }
     final duration = end.difference(start).inMinutes / 60.0;
 
     final doc = await firestore.collection('workSessions').add({
@@ -164,54 +254,11 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     required String clienteId,
     required DateTime referenceDate,
   }) async {
-    final monthStart = DateTime(referenceDate.year, referenceDate.month, 1);
-    final nextMonth = DateTime(referenceDate.year, referenceDate.month + 1, 1);
-
-    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-
-    try {
-      final snapshot = await firestore
-          .collection('workSessions')
-          .where('clienteId', isEqualTo: clienteId)
-          .where(
-            'startTime',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
-          )
-          .where('startTime', isLessThan: Timestamp.fromDate(nextMonth))
-          .get();
-      docs = snapshot.docs;
-    } on FirebaseException catch (e) {
-      if (e.code != 'failed-precondition') rethrow;
-
-      // Fallback: fetch all sessions for clienteId and filter by date locally.
-      final snapshot = await firestore
-          .collection('workSessions')
-          .where('clienteId', isEqualTo: clienteId)
-          .get();
-
-      docs = snapshot.docs.where((doc) {
-        final start = (doc.data()['startTime'] as Timestamp?)?.toDate();
-        return start != null &&
-            !start.isBefore(monthStart) &&
-            start.isBefore(nextMonth);
-      });
-    }
-
-    double totalHours = 0;
-    for (final doc in docs) {
-      final data = doc.data();
-      double? duration = (data['durationHours'] as num?)?.toDouble();
-      final start = (data['startTime'] as Timestamp?)?.toDate();
-      final end = (data['endTime'] as Timestamp?)?.toDate();
-
-      duration ??= (start != null && end != null)
-          ? end.difference(start).inMinutes / 60.0
-          : null;
-
-      if (duration != null) {
-        totalHours += duration;
-      }
-    }
+    final docs = await _queryMonthlySessions(
+      clienteId: clienteId,
+      referenceDate: referenceDate,
+    );
+    final totalHours = _sumDurationHours(docs);
 
     await firestore.collection('clientes').doc(clienteId).update({
       'hourasCasa': totalHours,
@@ -226,57 +273,11 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     required String teikerId,
     required DateTime referenceDate,
   }) async {
-    final monthStart = DateTime(referenceDate.year, referenceDate.month, 1);
-    final nextMonth = DateTime(referenceDate.year, referenceDate.month + 1, 1);
-
-    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-
-    try {
-      final snapshot = await firestore
-          .collection('workSessions')
-          .where('clienteId', isEqualTo: clienteId)
-          .where('teikerId', isEqualTo: teikerId)
-          .where(
-            'startTime',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
-          )
-          .where('startTime', isLessThan: Timestamp.fromDate(nextMonth))
-          .get();
-      docs = snapshot.docs;
-    } on FirebaseException catch (e) {
-      if (e.code != 'failed-precondition') rethrow;
-
-      final snapshot = await firestore
-          .collection('workSessions')
-          .where('teikerId', isEqualTo: teikerId)
-          .get();
-
-      docs = snapshot.docs.where((doc) {
-        final data = doc.data();
-        if (data['clienteId'] != clienteId) return false;
-        final start = (data['startTime'] as Timestamp?)?.toDate();
-        return start != null &&
-            !start.isBefore(monthStart) &&
-            start.isBefore(nextMonth);
-      });
-    }
-
-    double totalHours = 0;
-    for (final doc in docs) {
-      final data = doc.data();
-      double? duration = (data['durationHours'] as num?)?.toDouble();
-      final start = (data['startTime'] as Timestamp?)?.toDate();
-      final end = (data['endTime'] as Timestamp?)?.toDate();
-
-      duration ??= (start != null && end != null)
-          ? end.difference(start).inMinutes / 60.0
-          : null;
-
-      if (duration != null) {
-        totalHours += duration;
-      }
-    }
-
-    return totalHours;
+    final docs = await _queryMonthlySessions(
+      clienteId: clienteId,
+      teikerId: teikerId,
+      referenceDate: referenceDate,
+    );
+    return _sumDurationHours(docs);
   }
 }

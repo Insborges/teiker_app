@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:teiker_app/Widgets/app_bottom_sheet_shell.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 class SingleTimePickerBottomSheet {
   static Future<TimeOfDay?> show(
@@ -63,37 +65,13 @@ class _SingleTimePickerSheetState extends State<_SingleTimePickerSheet> {
       selectedTime.minute,
     );
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+    return AppBottomSheetShell(
+      title: widget.title,
+      subtitle: widget.subtitle,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 5,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(50),
-              ),
-            ),
-          ),
-          Text(
-            widget.title,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            widget.subtitle,
-            style: const TextStyle(fontSize: 14, color: Colors.black54),
-          ),
-          const SizedBox(height: 20),
           SizedBox(
             height: 180,
             child: CupertinoDatePicker(
@@ -115,14 +93,14 @@ class _SingleTimePickerSheetState extends State<_SingleTimePickerSheet> {
               TextButton(
                 onPressed: () => Navigator.pop(context),
                 style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF044C20),
+                  foregroundColor: AppColors.primaryGreenHex,
                 ),
                 child: const Text('Cancelar'),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context, selectedTime),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF044C20),
+                  backgroundColor: AppColors.primaryGreenHex,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -141,23 +119,6 @@ class _SingleTimePickerSheetState extends State<_SingleTimePickerSheet> {
   Widget _timeChip(String label, TimeOfDay time) {
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.black45)),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            '$hour:$minute',
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-          ),
-        ),
-      ],
-    );
+    return AppLabeledValueChip(label: label, value: '$hour:$minute');
   }
 }

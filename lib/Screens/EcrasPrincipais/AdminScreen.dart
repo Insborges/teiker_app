@@ -2,13 +2,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:teiker_app/Screens/ClientesScreen.dart';
-import 'package:teiker_app/Screens/DefinicoesScreens/DefinicoesAdminScreen.dart';
+import 'package:teiker_app/Screens/DefinicoesScreens/DefinicoesScreen.dart';
 import 'package:teiker_app/Screens/HomeScreen.dart';
 import 'package:teiker_app/Screens/TeikersInfoScreen.dart';
 import 'package:teiker_app/Widgets/AppBottomNavBar.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
+import 'package:teiker_app/Widgets/AppTextInput.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 class Adminscreen extends StatefulWidget {
   const Adminscreen({super.key});
@@ -23,8 +25,8 @@ class _AdminscreenState extends State<Adminscreen> {
 
   final PageController controller = PageController();
 
-  static const Color primaryColor = Color.fromARGB(255, 4, 76, 32);
-  static const Color creamBackground = Color(0xFFF8F6EB);
+  static const Color primaryColor = AppColors.primaryGreen;
+  static const Color creamBackground = AppColors.creamBackground;
 
   @override
   void dispose() {
@@ -58,7 +60,7 @@ class _AdminscreenState extends State<Adminscreen> {
                 HomeScreen(),
                 TeikersInfoScreen(),
                 ClientesScreen(),
-                DefinicoesAdminScreen(),
+                DefinicoesScreen(role: SettingsRole.admin),
               ],
             ),
 
@@ -200,7 +202,7 @@ class _AdminscreenState extends State<Adminscreen> {
                     borderRadius: BorderRadius.circular(18),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(.08),
+                        color: Colors.black.withValues(alpha: .08),
                         blurRadius: 18,
                         offset: const Offset(0, 10),
                       ),
@@ -214,7 +216,9 @@ class _AdminscreenState extends State<Adminscreen> {
                         Row(
                           children: [
                             CircleAvatar(
-                              backgroundColor: primaryColor.withOpacity(.12),
+                              backgroundColor: primaryColor.withValues(
+                                alpha: .12,
+                              ),
                               child: Icon(
                                 Icons.person_add_alt_1,
                                 color: primaryColor,
@@ -472,7 +476,7 @@ class _AdminscreenState extends State<Adminscreen> {
                 borderRadius: BorderRadius.circular(18),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(.08),
+                    color: Colors.black.withValues(alpha: .08),
                     blurRadius: 18,
                     offset: const Offset(0, 10),
                   ),
@@ -486,7 +490,7 @@ class _AdminscreenState extends State<Adminscreen> {
                     Row(
                       children: [
                         CircleAvatar(
-                          backgroundColor: primaryColor.withOpacity(.12),
+                          backgroundColor: primaryColor.withValues(alpha: .12),
                           child: Icon(
                             Icons.home_work_outlined,
                             color: primaryColor,
@@ -565,8 +569,8 @@ class _AdminscreenState extends State<Adminscreen> {
                             onPressed: () async {
                               final name = nameController.text.trim();
                               final morada = moradaController.text.trim();
-                              final codigoPostal =
-                                  codigoPostalController.text.trim();
+                              final codigoPostal = codigoPostalController.text
+                                  .trim();
                               final telemovel = telemovelController.text.trim();
                               final email = emailController.text.trim();
                               final orcamento = orcamentoController.text.trim();
@@ -669,27 +673,15 @@ class _AdminscreenState extends State<Adminscreen> {
     TextInputType keyboard = TextInputType.text,
     bool obscure = false,
   }) {
-    return TextField(
+    return AppTextField(
+      label: label,
       controller: controller,
-      keyboardType: keyboard,
+      keyboard: keyboard,
       obscureText: obscure,
-      decoration: InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: Colors.grey.shade100,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: primaryColor.withOpacity(.2)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: primaryColor, width: 2),
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 12,
-        ),
-      ),
+      focusColor: primaryColor,
+      fillColor: Colors.grey.shade100,
+      borderColor: primaryColor.withValues(alpha: .2),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
     );
   }
 }

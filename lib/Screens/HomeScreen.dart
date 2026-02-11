@@ -12,6 +12,7 @@ import 'package:teiker_app/Widgets/modern_calendar.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/auth/auth_notifier.dart';
 import 'package:teiker_app/models/Clientes.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -27,12 +28,11 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   List<Clientes> _clientes = [];
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
-  final Color selectedColor = const Color.fromARGB(255, 4, 76, 32);
+  final Color selectedColor = AppColors.primaryGreen;
   String? _loadedUserId;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _teikerSubscription;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
-      _teikerSubscription;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
-      _adminRemindersSubscription;
+  _adminRemindersSubscription;
   bool _adminRemindersListening = false;
 
   DateTime _dayKey(DateTime d) => DateTime.utc(d.year, d.month, d.day);
@@ -157,7 +157,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       });
     }
 
-    if(!mounted) return;
+    if (!mounted) return;
 
     setState(() => teikersFerias = feriasProcessed);
   }
@@ -174,10 +174,10 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         .collection('teikers')
         .snapshots()
         .listen((_) {
-      _loadFerias();
-      _loadConsultas();
-      _loadClientes();
-    });
+          _loadFerias();
+          _loadConsultas();
+          _loadClientes();
+        });
   }
 
   void _startAdminRemindersListener(String userId) {
@@ -187,13 +187,14 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         .collection('admin_reminders')
         .snapshots()
         .listen((_) {
-      _loadReminders(userId);
-    });
+          _loadReminders(userId);
+        });
   }
 
   Future<void> _loadConsultas() async {
-    final consultasRaw =
-        await ref.read(authServiceProvider).getConsultasTeikers();
+    final consultasRaw = await ref
+        .read(authServiceProvider)
+        .getConsultasTeikers();
     final userId = ref.read(authStateProvider).asData?.value?.uid;
     final isAdmin = ref.read(isAdminProvider);
 
@@ -260,18 +261,18 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
           .doc(userId)
           .collection('items')
           .add({
-        'title': newEvent['title'],
-        'date': Timestamp.fromDate(newEvent['date']),
-        'start': newEvent['start'],
-        'end': newEvent['end'],
-        'done': newEvent['done'],
-        'clienteId': newEvent['clienteId'],
-        'clienteName': newEvent['clienteName'],
-        'createdAt': newEvent['createdAt'] != null
-            ? Timestamp.fromDate(newEvent['createdAt'])
-            : Timestamp.now(),
-        'adminReminderId': null,
-      });
+            'title': newEvent['title'],
+            'date': Timestamp.fromDate(newEvent['date']),
+            'start': newEvent['start'],
+            'end': newEvent['end'],
+            'done': newEvent['done'],
+            'clienteId': newEvent['clienteId'],
+            'clienteName': newEvent['clienteName'],
+            'createdAt': newEvent['createdAt'] != null
+                ? Timestamp.fromDate(newEvent['createdAt'])
+                : Timestamp.now(),
+            'adminReminderId': null,
+          });
       return doc.id;
     }
 
@@ -438,7 +439,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.35),
+      barrierColor: Colors.black.withValues(alpha: 0.35),
       builder: (context) => EventAddSheet(
         initialDate: _selectedDay,
         primaryColor: selectedColor,
@@ -520,13 +521,16 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
                       margin: const EdgeInsets.only(top: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: ModernCalendar(
-                        focusedDay: DateTime.now(),
+                        focusedDay: _focusedDay,
                         selectedDay: _selectedDay,
                         primaryColor: selectedColor,
                         todayColor: Colors.greenAccent,
                         events: calendarEvents,
                         onDaySelected: (day, month) {
-                          setState(() => _selectedDay = day);
+                          setState(() {
+                            _selectedDay = day;
+                            _focusedDay = DateTime(month.year, month.month, 1);
+                          });
                         },
                         teikersFerias: teikersFerias,
                       ),
@@ -590,11 +594,10 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
                                       event['isFerias'] == true;
                                   final bool isConsulta =
                                       event['isConsulta'] == true;
-                                  final bool readOnly =
-                                      isFerias || isConsulta;
+                                  final bool readOnly = isFerias || isConsulta;
                                   final color = (isFerias || isConsulta)
                                       ? (event['cor'] as Color? ??
-                                          selectedColor)
+                                            selectedColor)
                                       : selectedColor;
 
                                   return EventItem(

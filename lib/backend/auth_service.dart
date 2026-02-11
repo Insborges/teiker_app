@@ -9,10 +9,20 @@ import 'firebase_service.dart';
 class AuthService {
   final _firebase = FirebaseService();
 
+  Color _parseTeikerColor(dynamic corRaw) {
+    if (corRaw is int) return Color(corRaw);
+    if (corRaw is String && corRaw.isNotEmpty) {
+      return Color(int.tryParse(corRaw) ?? Colors.green.toARGB32());
+    }
+    return Colors.green;
+  }
+
+  String _normalizeEmail(String email) => email.trim().toLowerCase();
+
   // Registo
   Future<UserCredential> signUp(String email, String password) async {
     return await _firebase.auth.createUserWithEmailAndPassword(
-      email: email,
+      email: _normalizeEmail(email),
       password: password,
     );
   }
@@ -20,7 +30,7 @@ class AuthService {
   // Login
   Future<UserCredential> login(String email, String password) async {
     return _firebase.auth.signInWithEmailAndPassword(
-      email: email,
+      email: _normalizeEmail(email),
       password: password,
     );
   }
@@ -33,7 +43,9 @@ class AuthService {
   // Recuperação de password
   Future<void> resetPassword(String email) async {
     try {
-      await _firebase.auth.sendPasswordResetEmail(email: email);
+      await _firebase.auth.sendPasswordResetEmail(
+        email: _normalizeEmail(email),
+      );
     } on FirebaseAuthException catch (e) {
       throw e.message ?? "Erro a enviar email.";
     } catch (e) {
@@ -42,10 +54,11 @@ class AuthService {
   }
 
   //É admin ou não
-  bool get isCurrentUserAdmin => isAdminEmail(_firebase.auth.currentUser?.email);
+  bool get isCurrentUserAdmin =>
+      isAdminEmail(_firebase.auth.currentUser?.email);
 
-  static bool isAdminEmail(String? email){
-    if(email == null) return false;
+  static bool isAdminEmail(String? email) {
+    if (email == null) return false;
 
     return email.trim().endsWith("@teiker.ch");
   }
@@ -59,18 +72,39 @@ class AuthService {
     List<String>? clientesIds,
     Color? cor,
   }) async {
+    if (name.trim().isEmpty) {
+      throw Exception('Nome da teiker é obrigatório.');
+    }
+    final normalizedEmail = _normalizeEmail(email);
+    if (normalizedEmail.isEmpty) {
+      throw Exception('Email da teiker é obrigatório.');
+    }
+    if (password.trim().length < 6) {
+      throw Exception('A password deve ter pelo menos 6 caracteres.');
+    }
+    if (telemovel <= 0) {
+      throw Exception('Telemóvel inválido.');
+    }
+    if (horas < 0) {
+      throw Exception('Horas não pode ser negativo.');
+    }
+
     // Cria user no Auth
     final creatorAuth = await _firebase.secondaryAuth;
-    final userCredential = await creatorAuth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-    await creatorAuth.signOut();
+    UserCredential userCredential;
+    try {
+      userCredential = await creatorAuth.createUserWithEmailAndPassword(
+        email: normalizedEmail,
+        password: password,
+      );
+    } finally {
+      await creatorAuth.signOut();
+    }
 
     final teiker = Teiker(
       uid: userCredential.user!.uid,
       nameTeiker: name,
-      email: email,
+      email: normalizedEmail,
       telemovel: telemovel,
       horas: horas,
       clientesIds: clientesIds ?? [],
@@ -147,14 +181,7 @@ class AuthService {
       if (!admin && doc.id != user!.uid) continue;
 
       // Cor blindada: se falhar, aplica default
-      Color cor;
-      if (corRaw is int) {
-        cor = Color(corRaw);
-      } else if (corRaw is String && corRaw.isNotEmpty) {
-        cor = Color(int.parse(corRaw));
-      } else {
-        cor = Colors.green;
-      }
+      final cor = _parseTeikerColor(corRaw);
 
       // Gerar lista de dias das férias
       final dias = <DateTime>[];
@@ -192,14 +219,7 @@ class AuthService {
       final corRaw = data['cor'];
       final rawConsultas = data['consultas'] as List<dynamic>? ?? [];
 
-      Color cor;
-      if (corRaw is int) {
-        cor = Color(corRaw);
-      } else if (corRaw is String && corRaw.isNotEmpty) {
-        cor = Color(int.tryParse(corRaw) ?? Colors.green.value);
-      } else {
-        cor = Colors.green;
-      }
+      final cor = _parseTeikerColor(corRaw);
 
       for (final c in rawConsultas) {
         if (c is! Map<String, dynamic>) continue;
@@ -223,6 +243,9 @@ class AuthService {
   }
 
   Future<void> createCliente(Clientes cliente) async {
+    if (cliente.uid.trim().isEmpty) {
+      throw Exception('UID do cliente inválido.');
+    }
     await FirebaseFirestore.instance
         .collection("clientes")
         .doc(cliente.uid)
@@ -230,6 +253,9 @@ class AuthService {
   }
 
   Future<void> updateCliente(Clientes cliente) async {
+    if (cliente.uid.trim().isEmpty) {
+      throw Exception('UID do cliente inválido.');
+    }
     await FirebaseFirestore.instance
         .collection("clientes")
         .doc(cliente.uid)
@@ -241,6 +267,9 @@ class AuthService {
         .collection("clientes")
         .get();
 
-    return snapshot.docs.map((doc) => Clientes.fromMap(doc.data())).toList();
+    return snapshot.docs
+        .map((doc) => Clientes.fromMap({...doc.data(), 'uid': doc.id}))
+        .where((cliente) => cliente.uid.trim().isNotEmpty)
+        .toList();
   }
 }

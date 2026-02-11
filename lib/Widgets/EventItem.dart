@@ -35,7 +35,7 @@ class EventItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black12.withOpacity(0.03),
+            color: Colors.black12.withValues(alpha: 0.03),
             blurRadius: 6,
             offset: const Offset(0, 3),
           ),
@@ -67,10 +67,12 @@ class EventItem extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color:
-                              isDone ? Colors.green.shade900 : Colors.black87,
-                          decoration:
-                              isDone ? TextDecoration.lineThrough : null,
+                          color: isDone
+                              ? Colors.green.shade900
+                              : Colors.black87,
+                          decoration: isDone
+                              ? TextDecoration.lineThrough
+                              : null,
                         ),
                       ),
                     ),
@@ -90,10 +92,7 @@ class EventItem extends StatelessWidget {
                   if (event['subtitle'] != null) const SizedBox(height: 2),
                   Text(
                     "${event['start'] ?? ''}${(event['start'] != null && (event['end'] ?? '') != '') ? ' — ' : ''}${event['end'] ?? ''}",
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                 ],
               ],
@@ -158,7 +157,7 @@ class EventItem extends StatelessWidget {
       margin: const EdgeInsets.only(left: 8),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: selectedColor.withOpacity(.12),
+        color: selectedColor.withValues(alpha: .12),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(

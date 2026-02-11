@@ -21,7 +21,6 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
   Map<DateTime, double> _totalsByMonth = {};
   List<DateTime> _months = [];
   DateTime? _selectedMonth;
-  double _totalMes = 0;
   double _targetHoras = 0;
   late final PageController _pageController;
 
@@ -47,7 +46,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
 
     final clientes = await AuthService().getClientes();
     final Map<String, Clientes> clientesMap = {
-      for (final c in clientes) c.uid: c
+      for (final c in clientes) c.uid: c,
     };
     double targetHoras = 0;
     try {
@@ -115,7 +114,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
 
       totals.update(monthKey, (v) => v + dur, ifAbsent: () => dur);
       earliestMonth ??= monthKey;
-      if (monthKey.isBefore(earliestMonth!)) {
+      if (monthKey.isBefore(earliestMonth)) {
         earliestMonth = monthKey;
       }
     }
@@ -136,7 +135,9 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     }
 
     final initialIndex = months.indexOf(currentMonth);
-    final selectedMonth = initialIndex >= 0 ? months[initialIndex] : currentMonth;
+    final selectedMonth = initialIndex >= 0
+        ? months[initialIndex]
+        : currentMonth;
 
     if (!mounted) return;
     setState(() {
@@ -145,7 +146,6 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
       _months = months;
       _selectedMonth = selectedMonth;
       _hoursByDay = grouped[selectedMonth] ?? {};
-      _totalMes = totals[selectedMonth] ?? 0;
       _targetHoras = targetHoras;
       _loading = false;
     });
@@ -217,12 +217,11 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
                             ),
                           )
                         : ListView(
-                            children: (_hoursByDay.entries.toList()
-                                  ..sort(
-                                    (a, b) => b.key.compareTo(a.key),
-                                  ))
-                                .map((e) => _dayCard(e.key, e.value))
-                                .toList(),
+                            children:
+                                (_hoursByDay.entries.toList()
+                                      ..sort((a, b) => b.key.compareTo(a.key)))
+                                    .map((e) => _dayCard(e.key, e.value))
+                                    .toList(),
                           ),
                   ),
                 ],
@@ -242,7 +241,6 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     setState(() {
       _selectedMonth = month;
       _hoursByDay = _hoursByMonth[month] ?? {};
-      _totalMes = _totalsByMonth[month] ?? 0;
     });
   }
 
@@ -262,8 +260,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final month = monthsDesc[index];
-              final label =
-                  DateFormat('MMMM yyyy', 'pt_PT').format(month);
+              final label = DateFormat('MMMM yyyy', 'pt_PT').format(month);
               final total = _totalsByMonth[month] ?? 0;
               final isSelected = month == _selectedMonth;
               return ListTile(
@@ -309,7 +306,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
@@ -337,8 +334,9 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
                 Text(
                   "Total: ${total.toStringAsFixed(1)} h",
                   style: TextStyle(
-                    color:
-                        isPositive ? Colors.green.shade700 : Colors.red.shade700,
+                    color: isPositive
+                        ? Colors.green.shade700
+                        : Colors.red.shade700,
                     fontWeight: FontWeight.w700,
                     fontSize: 15,
                   ),
@@ -352,8 +350,10 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
   }
 
   Widget _dayCard(DateTime day, Map<String, double> clientes) {
-    final totalDia =
-        clientes.values.fold<double>(0, (previous, element) => previous + element);
+    final totalDia = clientes.values.fold<double>(
+      0,
+      (previous, element) => previous + element,
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -361,10 +361,10 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _primary.withOpacity(.1)),
+        border: Border.all(color: _primary.withValues(alpha: .1)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 12,
             offset: const Offset(0, 6),
           ),
@@ -385,10 +385,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
               ),
               Text(
                 "${totalDia.toStringAsFixed(1)} h",
-                style: TextStyle(
-                  color: _primary,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(color: _primary, fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -398,10 +395,12 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
             runSpacing: 8,
             children: clientes.entries.map((entry) {
               return Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: _primary.withOpacity(.05),
+                  color: _primary.withValues(alpha: .05),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(

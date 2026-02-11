@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
+import 'package:teiker_app/Widgets/AppTextInput.dart';
 
 Future<void> showResetPasswordDialog({
   required BuildContext context,
@@ -13,11 +14,10 @@ Future<void> showResetPasswordDialog({
 
   await showDialog(
     context: context,
+    barrierDismissible: false,
     builder: (dialogContext) {
       return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -33,14 +33,13 @@ Future<void> showResetPasswordDialog({
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 16),
-              TextFormField(
+              AppTextField(
+                label: "Email",
                 controller: emailCtrl,
-                decoration: InputDecoration(
-                  labelText: "Email",
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
+                keyboard: TextInputType.emailAddress,
+                prefixIcon: Icons.email_outlined,
+                focusColor: accentColor,
+                fillColor: Colors.white,
               ),
               const SizedBox(height: 24),
               Row(
@@ -60,6 +59,7 @@ Future<void> showResetPasswordDialog({
                       onPressed: () async {
                         final email = emailCtrl.text.trim();
                         if (email.isEmpty) {
+                          if (!rootContext.mounted) return;
                           AppSnackBar.show(
                             rootContext,
                             message: "Insere o email.",
@@ -73,6 +73,7 @@ Future<void> showResetPasswordDialog({
                           if (Navigator.canPop(dialogContext)) {
                             Navigator.pop(dialogContext);
                           }
+                          if (!rootContext.mounted) return;
                           AppSnackBar.show(
                             rootContext,
                             message: "Email enviado!",
@@ -80,6 +81,7 @@ Future<void> showResetPasswordDialog({
                             background: Colors.green.shade700,
                           );
                         } catch (e) {
+                          if (!rootContext.mounted) return;
                           AppSnackBar.show(
                             rootContext,
                             message: "Erro ao enviar email: $e",

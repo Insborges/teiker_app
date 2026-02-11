@@ -1,9 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:teiker_app/Screens/DetailsScreens.dart/TeikersDetais.dart';
+import 'package:teiker_app/Widgets/AppBottomNavBar.dart';
+import 'package:teiker_app/Widgets/app_search_bar.dart';
 import 'package:teiker_app/backend/TeikerService.dart';
-import 'package:teiker_app/backend/auth_service.dart';
-import '../models/Clientes.dart';
+import 'package:teiker_app/work_sessions/application/monthly_teiker_hours_service.dart';
 import '../models/Teikers.dart';
 import '../Widgets/AppBar.dart';
 
@@ -16,82 +16,28 @@ class TeikersInfoScreen extends StatefulWidget {
 
 class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
   final Map<String, Future<Map<String, double>>> _hoursCache = {};
-  Map<String, Clientes> _clientes = {};
+  final MonthlyTeikerHoursService _monthlyHoursService =
+      MonthlyTeikerHoursService();
+  final TextEditingController _searchController = TextEditingController();
+  late final Stream<List<Teiker>> _teikersStream;
 
   @override
   void initState() {
     super.initState();
-    _loadClientes();
+    _teikersStream = TeikerService().streamTeikers();
   }
 
-  Future<void> _loadClientes() async {
-    final all = await AuthService().getClientes();
-    if (!mounted) return;
-    setState(() {
-      _clientes = {for (final c in all) c.uid: c};
-    });
-  }
-
-  Future<Map<String, double>> _fetchTeikerHours(String teikerId) async {
-    final now = DateTime.now();
-    final monthStart = DateTime(now.year, now.month, 1);
-    final nextMonth = DateTime(now.year, now.month + 1, 1);
-
-    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('workSessions')
-          .where('teikerId', isEqualTo: teikerId)
-          .where(
-            'startTime',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
-          )
-          .where('startTime', isLessThan: Timestamp.fromDate(nextMonth))
-          .get();
-      docs = snapshot.docs;
-    } on FirebaseException catch (e) {
-      if (e.code != 'failed-precondition') rethrow;
-
-      // Fallback without composite index: single-field query + local filter.
-      final snapshot = await FirebaseFirestore.instance
-          .collection('workSessions')
-          .where('teikerId', isEqualTo: teikerId)
-          .get();
-      docs = snapshot.docs.where((doc) {
-        final start = (doc.data()['startTime'] as Timestamp?)?.toDate();
-        return start != null &&
-            !start.isBefore(monthStart) &&
-            start.isBefore(nextMonth);
-      });
-    }
-
-    final Map<String, double> hoursByCliente = {};
-
-    for (final doc in docs) {
-      final data = doc.data();
-      final clienteId = data['clienteId'] as String?;
-      if (clienteId == null) continue;
-
-      double? duration = (data['durationHours'] as num?)?.toDouble();
-      final start = (data['startTime'] as Timestamp?)?.toDate();
-      final end = (data['endTime'] as Timestamp?)?.toDate();
-
-      duration ??= (start != null && end != null)
-          ? end.difference(start).inMinutes / 60.0
-          : null;
-
-      if (duration != null) {
-        final dur = duration;
-        hoursByCliente.update(clienteId, (v) => v + dur, ifAbsent: () => dur);
-      }
-    }
-
-    return hoursByCliente;
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<Map<String, double>> _getTeikerHours(String teikerId) {
-    return _hoursCache.putIfAbsent(teikerId, () => _fetchTeikerHours(teikerId));
+    return _hoursCache.putIfAbsent(
+      teikerId,
+      () => _monthlyHoursService.fetchHoursByCliente(teikerId: teikerId),
+    );
   }
 
   Widget _teikerCard(Teiker teiker) {
@@ -111,7 +57,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 16,
               offset: const Offset(0, 8),
             ),
@@ -150,7 +96,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: primary.withOpacity(.08),
+                          color: primary.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: FutureBuilder<Map<String, double>>(
@@ -165,16 +111,19 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                                   child: SizedBox(
                                     width: 14,
                                     height: 14,
-                                    child:
-                                        CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   ),
                                 ),
                               );
                             }
 
                             final data = hoursSnap.data ?? {};
-                            final total =
-                                data.values.fold<double>(0, (a, b) => a + b);
+                            final total = data.values.fold<double>(
+                              0,
+                              (a, b) => a + b,
+                            );
 
                             return Text(
                               '${total.toStringAsFixed(1)}h',
@@ -204,7 +153,8 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                       _infoChip(
                         icon: Icons.event_note,
                         color: primary,
-                        text: '$consultasCount consulta${consultasCount == 1 ? '' : 's'}',
+                        text:
+                            '$consultasCount consulta${consultasCount == 1 ? '' : 's'}',
                       ),
                     ],
                   ),
@@ -226,7 +176,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -236,10 +186,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
           const SizedBox(width: 6),
           Text(
             text,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -248,28 +195,59 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: buildAppBar("As Teikers"),
-      body: StreamBuilder<List<Teiker>>(
-        stream: TeikerService().streamTeikers(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text("Erro ao carregar teikers"));
-          }
-          final teikers = snapshot.data ?? [];
+    return StreamBuilder<List<Teiker>>(
+      stream: _teikersStream,
+      builder: (context, snapshot) {
+        final listBottomInset =
+            AppBottomNavBar.barHeight +
+            MediaQuery.of(context).padding.bottom +
+            16;
 
-          return ListView.builder(
-            itemCount: teikers.length,
-            itemBuilder: (context, index) {
-              final teiker = teikers[index];
-              return _teikerCard(teiker);
-            },
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            appBar: buildAppBar("As Teikers"),
+            body: const Center(child: CircularProgressIndicator()),
           );
-        },
-      ),
+        }
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: buildAppBar("As Teikers"),
+            body: const Center(child: Text("Erro ao carregar teikers")),
+          );
+        }
+        final teikers = snapshot.data ?? [];
+        final query = _searchController.text.trim().toLowerCase();
+        final filteredTeikers = query.isEmpty
+            ? teikers
+            : teikers.where((teiker) {
+                return teiker.nameTeiker.toLowerCase().contains(query);
+              }).toList();
+
+        return Scaffold(
+          appBar: buildAppBar("As Teikers"),
+          body: Column(
+            children: [
+              AppSearchBar(
+                controller: _searchController,
+                hintText: 'Pesquisar teikers',
+                onChanged: (_) => setState(() {}),
+              ),
+              Expanded(
+                child: filteredTeikers.isEmpty
+                    ? const Center(child: Text("Nenhuma teiker encontrada"))
+                    : ListView.builder(
+                        padding: EdgeInsets.only(bottom: listBottomInset),
+                        itemCount: filteredTeikers.length,
+                        itemBuilder: (context, index) {
+                          final teiker = filteredTeikers[index];
+                          return _teikerCard(teiker);
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

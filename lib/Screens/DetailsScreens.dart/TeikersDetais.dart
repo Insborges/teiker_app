@@ -2,8 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/DatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/AppTextInput.dart';
 import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
 import 'package:teiker_app/Widgets/SingleTimePickerBottomSheet.dart';
+import 'package:teiker_app/work_sessions/application/monthly_teiker_hours_service.dart';
 import '../../models/Clientes.dart';
 import '../../models/Teikers.dart';
 import '../../Widgets/AppBar.dart';
@@ -22,6 +24,8 @@ class TeikersDetails extends StatefulWidget {
 
 class _TeikersDetailsState extends State<TeikersDetails> {
   final Color _primaryColor = const Color.fromARGB(255, 4, 76, 32);
+  final MonthlyTeikerHoursService _monthlyHoursService =
+      MonthlyTeikerHoursService();
   late TextEditingController _emailController;
   late TextEditingController _telemovelController;
   DateTime? _feriasInicio;
@@ -93,9 +97,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       await FirebaseFirestore.instance
           .collection('teikers')
           .doc(widget.teiker.uid)
-          .update({
-        'consultas': _consultas.map((c) => c.toMap()).toList(),
-      });
+          .update({'consultas': _consultas.map((c) => c.toMap()).toList()});
 
       if (!mounted) return;
       AppSnackBar.show(
@@ -151,66 +153,8 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     });
   }
 
-  Future<Map<String, double>> _fetchTeikerHours(String teikerId) async {
-    final now = DateTime.now();
-    final monthStart = DateTime(now.year, now.month, 1);
-    final nextMonth = DateTime(now.year, now.month + 1, 1);
-
-    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs;
-
-    try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('workSessions')
-          .where('teikerId', isEqualTo: teikerId)
-          .where(
-            'startTime',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
-          )
-          .where('startTime', isLessThan: Timestamp.fromDate(nextMonth))
-          .get();
-      docs = snapshot.docs;
-    } on FirebaseException catch (e) {
-      if (e.code != 'failed-precondition') rethrow;
-
-      final snapshot = await FirebaseFirestore.instance
-          .collection('workSessions')
-          .where('teikerId', isEqualTo: teikerId)
-          .get();
-
-      docs = snapshot.docs.where((doc) {
-        final start = (doc.data()['startTime'] as Timestamp?)?.toDate();
-        return start != null &&
-            !start.isBefore(monthStart) &&
-            start.isBefore(nextMonth);
-      });
-    }
-
-    final Map<String, double> hoursByCliente = {};
-
-    for (final doc in docs) {
-      final data = doc.data();
-      final clienteId = data['clienteId'] as String?;
-      if (clienteId == null) continue;
-
-      double? duration = (data['durationHours'] as num?)?.toDouble();
-      final start = (data['startTime'] as Timestamp?)?.toDate();
-      final end = (data['endTime'] as Timestamp?)?.toDate();
-
-      duration ??= (start != null && end != null)
-          ? end.difference(start).inMinutes / 60.0
-          : null;
-
-      if (duration != null) {
-        final dur = duration;
-        hoursByCliente.update(
-          clienteId,
-          (v) => v + dur,
-          ifAbsent: () => dur,
-        );
-      }
-    }
-
-    return hoursByCliente;
+  Future<Map<String, double>> _fetchTeikerHours(String teikerId) {
+    return _monthlyHoursService.fetchHoursByCliente(teikerId: teikerId);
   }
 
   Future<void> _openConsultaSheet({Consulta? consulta, int? index}) async {
@@ -219,10 +163,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return _ConsultaSheet(
-          consulta: consulta,
-          primaryColor: _primaryColor,
-        );
+        return _ConsultaSheet(consulta: consulta, primaryColor: _primaryColor);
       },
     );
 
@@ -237,8 +178,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     });
 
     await _saveConsultas(
-      successMessage:
-          index == null ? "Consulta adicionada." : "Consulta atualizada.",
+      successMessage: index == null
+          ? "Consulta adicionada."
+          : "Consulta atualizada.",
     );
   }
 
@@ -272,38 +214,6 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     await _saveConsultas(successMessage: "Consulta eliminada.");
   }
 
-  Widget _consultaChip({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _primaryColor.withOpacity(.3)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: _primaryColor),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final teiker = widget.teiker;
@@ -328,10 +238,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: OutlinedButton.icon(
-                    icon: Icon(
-                      Icons.save,
-                      color: _primaryColor,
-                    ),
+                    icon: Icon(Icons.save, color: _primaryColor),
                     label: Text(
                       "Guardar Alterações",
                       style: TextStyle(
@@ -340,10 +247,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       ),
                     ),
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(
-                        color: _primaryColor,
-                        width: 1.6,
-                      ),
+                      side: BorderSide(color: _primaryColor, width: 1.6),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
@@ -395,8 +299,10 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       );
                     }
 
-                    final total =
-                        data.values.fold<double>(0, (prev, e) => prev + e);
+                    final total = data.values.fold<double>(
+                      0,
+                      (prev, e) => prev + e,
+                    );
 
                     return SizedBox(
                       width: double.infinity,
@@ -410,8 +316,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                           const SizedBox(height: 8),
                           ...data.entries.map((entry) {
                             final clienteName =
-                                _clientes[entry.key]?.nameCliente ??
-                                    entry.key;
+                                _clientes[entry.key]?.nameCliente ?? entry.key;
                             return _buildInfoRow(
                               "$clienteName:",
                               "${entry.value.toStringAsFixed(1)}h",
@@ -443,10 +348,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                         .asMap()
                         .entries
                         .map(
-                          (entry) => _buildConsultaTile(
-                            entry.value,
-                            entry.key,
-                          ),
+                          (entry) => _buildConsultaTile(entry.value, entry.key),
                         )
                         .toList(),
                   ),
@@ -479,7 +381,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                   const Text(
                     "Ainda sem férias registadas.",
                     style: TextStyle(color: Colors.grey),
-                ),
+                  ),
                 const SizedBox(height: 12),
                 AppButton(
                   text: "Adicionar férias",
@@ -533,28 +435,14 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: TextField(
+      child: AppTextField(
+        label: label,
         controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon, color: _primaryColor),
-          filled: true,
-          fillColor: Colors.grey.shade100,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(
-              color: _primaryColor,
-              width: 1.2,
-            ),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(
-              color: _primaryColor,
-              width: 1.6,
-            ),
-          ),
-        ),
+        prefixIcon: icon,
+        focusColor: _primaryColor,
+        fillColor: Colors.grey.shade100,
+        borderColor: _primaryColor,
+        borderRadius: 10,
       ),
     );
   }
@@ -597,10 +485,10 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _primaryColor.withOpacity(.16)),
+        border: Border.all(color: _primaryColor.withValues(alpha: .16)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -612,7 +500,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: _primaryColor.withOpacity(.08),
+              color: _primaryColor.withValues(alpha: .08),
               shape: BoxShape.circle,
             ),
             child: Icon(Icons.event, color: _primaryColor),
@@ -643,13 +531,17 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: _primaryColor.withOpacity(.08),
+                        color: _primaryColor.withValues(alpha: .08),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.access_time, color: _primaryColor, size: 16),
+                          Icon(
+                            Icons.access_time,
+                            color: _primaryColor,
+                            size: 16,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             "$dia · $hora",
@@ -664,10 +556,8 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                     _consultaActionChip(
                       icon: Icons.edit_outlined,
                       label: "Editar",
-                      onTap: () => _openConsultaSheet(
-                        consulta: consulta,
-                        index: index,
-                      ),
+                      onTap: () =>
+                          _openConsultaSheet(consulta: consulta, index: index),
                     ),
                     _consultaActionChip(
                       icon: Icons.delete_outline,
@@ -698,7 +588,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
-          color: danger ? Colors.red.shade50 : _primaryColor.withOpacity(.08),
+          color: danger
+              ? Colors.red.shade50
+              : _primaryColor.withValues(alpha: .08),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
@@ -707,10 +599,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
             const SizedBox(width: 6),
             Text(
               label,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(color: color, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -740,7 +629,9 @@ class _ConsultaSheetState extends State<_ConsultaSheet> {
     final baseDate = widget.consulta?.data ?? DateTime.now();
     selectedDate = DateTime(baseDate.year, baseDate.month, baseDate.day);
     selectedHour = TimeOfDay.fromDateTime(baseDate);
-    descricaoCtrl = TextEditingController(text: widget.consulta?.descricao ?? '');
+    descricaoCtrl = TextEditingController(
+      text: widget.consulta?.descricao ?? '',
+    );
   }
 
   @override
@@ -794,10 +685,7 @@ class _ConsultaSheetState extends State<_ConsultaSheet> {
       selectedHour.minute,
     );
 
-    Navigator.pop(
-      context,
-      Consulta(data: date, descricao: descricao),
-    );
+    Navigator.pop(context, Consulta(data: date, descricao: descricao));
   }
 
   @override
@@ -818,7 +706,7 @@ class _ConsultaSheetState extends State<_ConsultaSheet> {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 18,
               offset: const Offset(0, 10),
             ),
@@ -849,28 +737,14 @@ class _ConsultaSheetState extends State<_ConsultaSheet> {
               ],
             ),
             const SizedBox(height: 10),
-            TextField(
+            AppTextField(
+              label: "Descricao",
               controller: descricaoCtrl,
-              decoration: InputDecoration(
-                labelText: "Descricao",
-                filled: true,
-                fillColor: Colors.grey.shade100,
-                prefixIcon: Icon(
-                  Icons.note_alt_outlined,
-                  color: widget.primaryColor,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: widget.primaryColor),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(
-                    color: widget.primaryColor,
-                    width: 2,
-                  ),
-                ),
-              ),
+              focusColor: widget.primaryColor,
+              prefixIcon: Icons.note_alt_outlined,
+              fillColor: Colors.grey.shade100,
+              borderColor: widget.primaryColor,
+              borderRadius: 14,
               maxLines: 2,
             ),
             const SizedBox(height: 12),
@@ -933,19 +807,14 @@ class _ConsultaSheetState extends State<_ConsultaSheet> {
         decoration: BoxDecoration(
           color: Colors.grey.shade100,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: widget.primaryColor.withOpacity(.3)),
+          border: Border.all(color: widget.primaryColor.withValues(alpha: .3)),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, color: widget.primaryColor),
             const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
+            Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
           ],
         ),
       ),

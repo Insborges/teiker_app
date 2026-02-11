@@ -8,6 +8,14 @@ DateTime? _parseDate(dynamic value) {
   return null;
 }
 
+Color _parseColor(dynamic value) {
+  if (value is int) return Color(value);
+  if (value is String && value.isNotEmpty) {
+    return Color(int.tryParse(value) ?? Colors.green.toARGB32());
+  }
+  return Colors.green;
+}
+
 class Teiker {
   final String uid;
   final String nameTeiker;
@@ -44,7 +52,7 @@ class Teiker {
       email: data['email'] ?? '',
       telemovel: data['telemovel'] ?? 0,
       horas: (data['horas'] ?? 0).toDouble(),
-      corIdentificadora: Color(data['cor'] ?? 0),
+      corIdentificadora: _parseColor(data['cor']),
       clientesIds: List<String>.from(data['clientesIds'] ?? []),
       consultas: (data['consultas'] as List<dynamic>? ?? [])
           .map((c) => Consulta.fromMap(c as Map<String, dynamic>? ?? {}))
@@ -64,7 +72,7 @@ class Teiker {
       'email': email,
       'telemovel': telemovel,
       'horas': horas,
-      'cor': corIdentificadora.value,
+      'cor': corIdentificadora.toARGB32(),
       'clientesIds': clientesIds,
       'consultas': consultas.map((c) => c.toMap()).toList(),
       'feriasInicio': feriasInicio?.toIso8601String(),
@@ -124,9 +132,6 @@ class Consulta {
   }
 
   Map<String, dynamic> toMap() {
-    return {
-      'data': data.toIso8601String(),
-      'descricao': descricao,
-    };
+    return {'data': data.toIso8601String(), 'descricao': descricao};
   }
 }

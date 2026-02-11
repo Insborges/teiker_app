@@ -52,7 +52,7 @@ class NotificationService {
     _fcm.onTokenRefresh.listen((_) => _saveFcmToken());
     FirebaseMessaging.onMessage.listen((message) {
       // Receber notificações em foreground
-      print("Notificação recebida: ${message.notification?.title}");
+      debugPrint("Notificação recebida: ${message.notification?.title}");
     });
 
     if (launchDetails?.didNotificationLaunchApp ?? false) {
@@ -104,7 +104,6 @@ class NotificationService {
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
-      androidAllowWhileIdle: true,
       matchDateTimeComponents: null,
       payload: payload,
     );
@@ -133,11 +132,6 @@ class NotificationService {
       if (clienteId == null) return;
 
       final sessionId = data['sessionId'] as String?;
-      final startIso = data['startTime'] as String?;
-
-      DateTime? startTime = startIso != null
-          ? DateTime.tryParse(startIso)
-          : null;
 
       final doc = await FirebaseFirestore.instance
           .collection('clientes')
@@ -196,15 +190,15 @@ class NotificationService {
     final email = user.email ?? '';
     final isAdmin = email.trim().endsWith("@teiker.ch");
 
-    await FirebaseFirestore.instance
-        .collection('fcm_tokens')
-        .doc(user.uid)
-        .set({
-      'token': token,
-      'updatedAt': Timestamp.now(),
-      'isAdmin': isAdmin,
-      'email': email,
-    }, SetOptions(merge: true));
+    await FirebaseFirestore.instance.collection('fcm_tokens').doc(user.uid).set(
+      {
+        'token': token,
+        'updatedAt': Timestamp.now(),
+        'isAdmin': isAdmin,
+        'email': email,
+      },
+      SetOptions(merge: true),
+    );
   }
 }
 

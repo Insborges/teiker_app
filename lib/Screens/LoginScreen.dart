@@ -4,14 +4,16 @@ import 'package:teiker_app/Screens/EcrasPrincipais/AdminScreen.dart';
 import 'package:teiker_app/Screens/EcrasPrincipais/TeikersMainScreen.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
+import 'package:teiker_app/Widgets/AppTextInput.dart';
 import 'package:teiker_app/Widgets/ResetPasswordDialog.dart';
 import 'package:teiker_app/auth/auth_notifier.dart';
 import 'package:teiker_app/auth/auth_state.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
-  final Color primaryColor = const Color.fromARGB(255, 4, 76, 32);
+  final Color primaryColor = AppColors.primaryGreen;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -46,16 +48,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 children: [
                   const SizedBox(height: 32),
 
-                  _input(
+                  AppTextField(
                     label: "Email",
                     controller: emailCtrl,
-                    icon: Icons.email_outlined,
                     keyboard: TextInputType.emailAddress,
+                    prefixIcon: Icons.email_outlined,
+                    focusColor: widget.primaryColor,
+                    fillColor: Colors.white,
                   ),
 
                   const SizedBox(height: 16),
 
-                  _inputPassword(),
+                  AppTextField(
+                    label: "Password",
+                    controller: passCtrl,
+                    obscureText: obscurePassword,
+                    prefixIcon: Icons.lock_outline,
+                    focusColor: widget.primaryColor,
+                    fillColor: Colors.white,
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        obscurePassword
+                            ? Icons.visibility_off
+                            : Icons.visibility,
+                      ),
+                      onPressed: () {
+                        setState(() => obscurePassword = !obscurePassword);
+                      },
+                    ),
+                  ),
 
                   Align(
                     alignment: Alignment.centerRight,
@@ -131,43 +152,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  Widget _input({
-    required String label,
-    required TextEditingController controller,
-    required IconData icon,
-    required TextInputType keyboard,
-  }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboard,
-      decoration: InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: Colors.white,
-        prefixIcon: Icon(icon, color: widget.primaryColor),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  Widget _inputPassword() {
-    return TextFormField(
-      controller: passCtrl,
-      obscureText: obscurePassword,
-      decoration: InputDecoration(
-        labelText: "Password",
-        filled: true,
-        fillColor: Colors.white,
-        prefixIcon: Icon(Icons.lock_outline, color: widget.primaryColor),
-        suffixIcon: IconButton(
-          icon: Icon(obscurePassword ? Icons.visibility_off : Icons.visibility),
-          onPressed: () => setState(() => obscurePassword = !obscurePassword),
-        ),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
   // --------------------
   // LÓGICA DE AÇÕES
   // --------------------
@@ -178,6 +162,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final authNotifier = ref.read(authProvider.notifier);
 
     final ok = await authNotifier.login(email, password);
+    if (!mounted) return;
 
     if (!ok) {
       final msg = ref.read(authProvider).errorMessage ?? "Erro inesperado";
@@ -201,12 +186,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (ref.read(authProvider).isAdmin) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => Adminscreen()),
+        MaterialPageRoute(builder: (_) => const Adminscreen()),
       );
     } else {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => TeikersMainscreen()),
+        MaterialPageRoute(builder: (_) => const TeikersMainscreen()),
       );
     }
   }

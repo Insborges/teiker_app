@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 class AppButton extends StatefulWidget {
   final String text;
@@ -15,7 +16,7 @@ class AppButton extends StatefulWidget {
     super.key,
     required this.text,
     required this.onPressed,
-    this.color = const Color.fromARGB(255, 4, 76, 32),
+    this.color = AppColors.primaryGreen,
     this.textColor = Colors.white,
     this.icon,
     this.enabled = true,

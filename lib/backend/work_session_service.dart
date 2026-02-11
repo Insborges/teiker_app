@@ -31,6 +31,13 @@ class WorkSessionService {
     required String clienteId,
     required String clienteName,
   }) async {
+    if (clienteId.trim().isEmpty) {
+      throw Exception('Cliente inválido.');
+    }
+    if (clienteName.trim().isEmpty) {
+      throw Exception('Nome do cliente inválido.');
+    }
+
     final teikerId = _requireUser();
 
     final existing = await _repository.findOpenSession(
@@ -67,8 +74,10 @@ class WorkSessionService {
       teikerId: teikerId,
     );
 
-    final total =
-        await _finishUseCase.execute(clienteId: clienteId, teikerId: teikerId);
+    final total = await _finishUseCase.execute(
+      clienteId: clienteId,
+      teikerId: teikerId,
+    );
 
     if (open != null) {
       await _notificationService.cancelPendingSessionReminder(open.id);
@@ -81,6 +90,13 @@ class WorkSessionService {
     required DateTime start,
     required DateTime end,
   }) async {
+    if (clienteId.trim().isEmpty) {
+      throw Exception('Cliente inválido.');
+    }
+    if (!end.isAfter(start)) {
+      throw Exception('A hora de fim deve ser posterior ao início.');
+    }
+
     final teikerId = _requireUser();
 
     await _repository.addManualSession(
@@ -113,6 +129,10 @@ class WorkSessionService {
     required String sessionId,
     required DateTime end,
   }) async {
+    if (clienteId.trim().isEmpty || sessionId.trim().isEmpty) {
+      throw Exception('Sessão inválida.');
+    }
+
     final teikerId = _requireUser();
 
     final session = await _repository.findOpenSession(
@@ -149,6 +169,16 @@ class WorkSessionService {
     required String sessionId,
     required DateTime startTime,
   }) async {
+    final teikerId = _requireUser();
+    final open = await _repository.findOpenSession(
+      clienteId: clienteId,
+      teikerId: teikerId,
+    );
+
+    if (open == null || open.id != sessionId) {
+      throw Exception('Não existe sessão iniciada para este cliente.');
+    }
+
     await _repository.closeSession(sessionId: sessionId, end: DateTime.now());
 
     await _notificationService.cancelPendingSessionReminder(sessionId);

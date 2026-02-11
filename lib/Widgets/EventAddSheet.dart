@@ -1,7 +1,8 @@
 import 'dart:ui';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:teiker_app/Widgets/AppTextInput.dart';
+import 'package:teiker_app/Widgets/cupertino_time_picker_sheet.dart';
 import 'package:teiker_app/models/Clientes.dart';
 
 class EventAddSheet extends StatefulWidget {
@@ -36,55 +37,23 @@ class _EventAddSheetState extends State<EventAddSheet> {
   }
 
   void pickCupertinoTime(bool isStart) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (builder) => Container(
-        height: 260,
-        color: Colors.white,
-        child: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              Container(
-                color: const Color(0xFFF2F2F2),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                alignment: Alignment.centerRight,
-                child: GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Text(
-                    "OK",
-                    style: TextStyle(
-                      color: widget.primaryColor,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: CupertinoDatePicker(
-                  mode: CupertinoDatePickerMode.time,
-                  use24hFormat: true,
-                  initialDateTime: DateTime.now(),
-                  onDateTimeChanged: (DateTime newTime) {
-                    setState(() {
-                      final t = TimeOfDay.fromDateTime(newTime);
-                      if (isStart) {
-                        _startTime = t;
-                      } else {
-                        _endTime = t;
-                      }
-                    });
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    final initialTime = isStart
+        ? (_startTime ?? TimeOfDay.now())
+        : (_endTime ?? TimeOfDay.now());
+
+    showCupertinoTimePickerSheet(
+      context,
+      initialTime: initialTime,
+      actionColor: widget.primaryColor,
+      onChanged: (time) {
+        setState(() {
+          if (isStart) {
+            _startTime = time;
+          } else {
+            _endTime = time;
+          }
+        });
+      },
     );
   }
 
@@ -143,36 +112,26 @@ class _EventAddSheetState extends State<EventAddSheet> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                TextField(
+                AppTextField(
+                  label: 'Título',
                   controller: _titleController,
-                  decoration: InputDecoration(
-                    hintText: 'Título do evento...',
-                    filled: true,
-                    fillColor: Colors.grey.shade100,
-                    prefixIcon: Icon(Icons.edit, color: widget.primaryColor),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: widget.primaryColor),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: widget.primaryColor,
-                        width: 2,
-                      ),
-                    ),
-                  ),
+                  prefixIcon: Icons.edit,
+                  focusColor: widget.primaryColor,
+                  fillColor: Colors.grey.shade100,
+                  borderColor: widget.primaryColor,
                 ),
                 const SizedBox(height: 12),
                 if (widget.clientes.isNotEmpty) ...[
                   DropdownButtonFormField<Clientes>(
-                    value: _selectedCliente,
+                    initialValue: _selectedCliente,
                     decoration: InputDecoration(
                       hintText: 'Selecionar cliente',
                       filled: true,
                       fillColor: Colors.grey.shade100,
-                      prefixIcon:
-                          Icon(Icons.people_outline, color: widget.primaryColor),
+                      prefixIcon: Icon(
+                        Icons.people_outline,
+                        color: widget.primaryColor,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(color: widget.primaryColor),
@@ -211,7 +170,10 @@ class _EventAddSheetState extends State<EventAddSheet> {
                           colorScheme: ColorScheme.light(
                             primary: widget.primaryColor,
                             onPrimary: Colors.white,
-                          ), dialogTheme: DialogThemeData(backgroundColor: Colors.white),
+                          ),
+                          dialogTheme: const DialogThemeData(
+                            backgroundColor: Colors.white,
+                          ),
                         ),
                         child: child!,
                       ),
@@ -262,7 +224,7 @@ class _EventAddSheetState extends State<EventAddSheet> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                  elevation: 6,
+                      elevation: 6,
                     ),
                     onPressed: () {
                       final text = _titleController.text.trim();

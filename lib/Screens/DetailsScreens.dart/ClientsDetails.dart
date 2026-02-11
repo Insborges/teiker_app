@@ -1,14 +1,16 @@
 import 'dart:ui';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
+import 'package:teiker_app/Widgets/AppTextInput.dart';
+import 'package:teiker_app/Widgets/cupertino_time_picker_sheet.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
 import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 import '../../models/Clientes.dart';
 
 class Clientsdetails extends StatefulWidget {
@@ -97,7 +99,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
       _abrirDialogAdicionarHoras(
         pendingSessionId: pending.id,
-        presentStart: start != null ? TimeOfDay.fromDateTime(start) : null,
+        presentStart: TimeOfDay.fromDateTime(start),
         defaultDate: start,
       );
     });
@@ -133,68 +135,11 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     TimeOfDay? startTime = presentStart;
     TimeOfDay? endTime = presentEnd;
 
-    void pickCupertinoTime(
-      BuildContext context,
-      bool isStart,
-      Function setModalState,
-    ) {
-      showCupertinoModalPopup(
-        context: context,
-        builder: (_) => Container(
-          height: 260,
-          color: Colors.white,
-          child: SafeArea(
-            top: false,
-            child: Column(
-              children: [
-                Container(
-                  color: const Color(0xFFF2F2F2),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  alignment: Alignment.centerRight,
-                  child: GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: const Text(
-                      "OK",
-                      style: TextStyle(
-                        color: Color.fromARGB(255, 4, 76, 32),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: CupertinoDatePicker(
-                    mode: CupertinoDatePickerMode.time,
-                    use24hFormat: true,
-                    initialDateTime: DateTime.now(),
-                    onDateTimeChanged: (newTime) {
-                      setModalState(() {
-                        final t = TimeOfDay.fromDateTime(newTime);
-                        if (isStart) {
-                          startTime = t;
-                        } else {
-                          endTime = t;
-                        }
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.35),
+      barrierColor: Colors.black.withValues(alpha: 0.35),
       builder: (context) {
         return ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -230,14 +175,28 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                         ),
                         const SizedBox(height: 16),
                         InkWell(
-                          onTap: () =>
-                              pickCupertinoTime(context, true, setModalState),
+                          onTap: () => showCupertinoTimePickerSheet(
+                            context,
+                            initialTime: startTime ?? TimeOfDay.now(),
+                            onChanged: (time) {
+                              setModalState(() {
+                                startTime = time;
+                              });
+                            },
+                          ),
                           child: _buildTimeInput("Hora de início", startTime),
                         ),
                         const SizedBox(height: 12),
                         InkWell(
-                          onTap: () =>
-                              pickCupertinoTime(context, false, setModalState),
+                          onTap: () => showCupertinoTimePickerSheet(
+                            context,
+                            initialTime: endTime ?? TimeOfDay.now(),
+                            onChanged: (time) {
+                              setModalState(() {
+                                endTime = time;
+                              });
+                            },
+                          ),
                           child: _buildTimeInput("Hora de fim", endTime),
                         ),
                         const SizedBox(height: 16),
@@ -306,10 +265,10 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                     final displayTotal = isAdmin == true
                                         ? total
                                         : await _workSessionService
-                                            .calculateMonthlyTotalForCurrentUser(
-                                              clienteId: widget.cliente.uid,
-                                              referenceDate: startDate,
-                                            );
+                                              .calculateMonthlyTotalForCurrentUser(
+                                                clienteId: widget.cliente.uid,
+                                                referenceDate: startDate,
+                                              );
                                     setState(() {
                                       _horasCasa = displayTotal;
                                       if (isAdmin == true) {
@@ -516,9 +475,10 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   //Layout Teiker
   Widget _buildTeikerLayout() {
     final primary = const Color.fromARGB(255, 4, 76, 32);
-    final fieldBorder = Colors.green.shade200;
-    final fieldLabel = Colors.green.shade200;
-    final fieldText = Colors.green.shade50;
+    const fieldBorder = AppColors.creamBackground;
+    final fieldLabel = AppColors.creamBackground.withValues(alpha: .88);
+    const fieldText = AppColors.creamBackground;
+    final fieldFill = AppColors.creamBackground.withValues(alpha: .14);
     const double buttonHeight = 52;
     const double curveHeight = 340;
 
@@ -554,6 +514,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     borderColor: fieldBorder,
                     labelColor: fieldLabel,
                     textColor: fieldText,
+                    fillColor: fieldFill,
                   ),
                   const SizedBox(height: 12),
                   _buildTextField(
@@ -563,6 +524,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     borderColor: fieldBorder,
                     labelColor: fieldLabel,
                     textColor: fieldText,
+                    fillColor: fieldFill,
                   ),
                   const SizedBox(height: 12),
                   _buildTextField(
@@ -572,6 +534,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     borderColor: fieldBorder,
                     labelColor: fieldLabel,
                     textColor: fieldText,
+                    fillColor: fieldFill,
                   ),
                   const SizedBox(height: buttonHeight / 2),
                 ],
@@ -643,34 +606,24 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     Color? borderColor,
     Color? labelColor,
     Color? textColor,
+    Color fillColor = Colors.white,
   }) {
-    return TextFormField(
+    return AppTextField(
+      label: label,
       controller: controller,
       readOnly: readOnly,
-      keyboardType: keyboard,
+      keyboard: keyboard,
+      focusColor: borderColor ?? Colors.grey.shade600,
+      fillColor: fillColor,
+      borderColor: borderColor ?? Colors.grey.shade400,
+      enableInteractiveSelection: !readOnly,
       style: textColor != null
           ? TextStyle(color: textColor, fontWeight: FontWeight.w600)
           : null,
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: labelColor != null
-            ? TextStyle(color: labelColor, fontWeight: FontWeight.w600)
-            : null,
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: borderColor ?? Colors.grey.shade400,
-            width: 1.2,
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(
-            color: borderColor ?? Colors.grey.shade600,
-            width: 1.4,
-          ),
-        ),
-      ),
+      labelStyle: labelColor != null
+          ? TextStyle(color: labelColor, fontWeight: FontWeight.w600)
+          : null,
+      borderRadius: 12,
     );
   }
 
@@ -757,5 +710,4 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       ),
     );
   }
-
 }

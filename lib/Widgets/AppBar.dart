@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 AppBar buildAppBar(
   String title, {
   List<Widget>? actions,
   bool seta = false,
-  Color bgColor = const Color.fromARGB(255, 4, 76, 32),
+  Color bgColor = AppColors.primaryGreen,
 }) {
   return AppBar(
     automaticallyImplyLeading: seta,
@@ -14,4 +15,3 @@ AppBar buildAppBar(
     actions: actions,
   );
 }
-  

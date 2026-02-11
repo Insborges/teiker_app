@@ -135,7 +135,7 @@ class _ModernCalendarState extends State<ModernCalendar> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: radius,
-            border: Border.all(color: Colors.white.withOpacity(.18)),
+            border: Border.all(color: Colors.white.withValues(alpha: .18)),
             boxShadow: [
               BoxShadow(
                 blurRadius: 20,
@@ -171,7 +171,7 @@ class _ModernCalendarState extends State<ModernCalendar> {
                           child: Text(
                             d,
                             style: TextStyle(
-                              color: Colors.black.withOpacity(.55),
+                              color: Colors.black.withValues(alpha: .55),
                               fontSize: 12,
                             ),
                           ),
@@ -234,7 +234,10 @@ class _ModernCalendarState extends State<ModernCalendar> {
                 primary: widget.primaryColor,
                 accent: widget.todayColor,
                 onTap: () {
-                  setState(() => _selected = d);
+                  setState(() {
+                    _selected = d;
+                    _visibleMonth = DateTime(d.year, d.month, 1);
+                  });
                   widget.onDaySelected(d, _visibleMonth);
                 },
               );
@@ -253,7 +256,7 @@ class _ModernCalendarState extends State<ModernCalendar> {
         height: 38,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white.withOpacity(.2),
+          color: Colors.white.withValues(alpha: .2),
           border: Border.all(color: Colors.white54),
         ),
         child: Icon(icon, color: widget.primaryColor),
@@ -308,7 +311,7 @@ class _Tile extends StatelessWidget {
 
     return InkWell(
       borderRadius: BorderRadius.circular(50),
-      onTap: inMonth ? onTap : null,
+      onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 220),
         alignment: Alignment.center,
@@ -316,18 +319,18 @@ class _Tile extends StatelessWidget {
           shape: BoxShape.circle,
           color: selected
               ? primary
-              : (today ? accent.withOpacity(.22) : Colors.transparent),
+              : (today ? accent.withValues(alpha: .22) : Colors.transparent),
           boxShadow: selected
               ? [
                   BoxShadow(
                     blurRadius: 12,
-                    color: primary.withOpacity(.28),
+                    color: primary.withValues(alpha: .28),
                     offset: const Offset(0, 6),
                   ),
                 ]
               : null,
           border: weekHighlight
-              ? Border.all(color: primary.withOpacity(.22), width: 1.3)
+              ? Border.all(color: primary.withValues(alpha: .22), width: 1.3)
               : null,
         ),
         child: Column(

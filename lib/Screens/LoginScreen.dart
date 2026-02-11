@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:teiker_app/Screens/EcrasPrincipais/AdminScreen.dart';
-import 'package:teiker_app/Screens/EcrasPrincipais/TeikersMainScreen.dart';
+import 'package:teiker_app/Screens/EcrasPrincipais/MainScreen.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/AppTextInput.dart';
@@ -182,18 +181,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       background: Colors.green.shade700,
     );
 
-    // Admin -> email termina @teiker.ch
-    if (ref.read(authProvider).isAdmin) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const Adminscreen()),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const TeikersMainscreen()),
-      );
-    }
+    final isAdmin = ref.read(authProvider).isAdmin;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) =>
+            MainScreen(role: isAdmin ? MainRole.admin : MainRole.teiker),
+      ),
+      (route) => false,
+    );
   }
 
   void _openResetDialog(BuildContext context, dynamic authNotifier) {

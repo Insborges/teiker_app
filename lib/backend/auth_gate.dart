@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:teiker_app/Screens/EcrasPrincipais/AdminScreen.dart';
-import 'package:teiker_app/Screens/EcrasPrincipais/TeikersMainScreen.dart';
+import 'package:teiker_app/Screens/EcrasPrincipais/MainScreen.dart';
 import 'package:teiker_app/Screens/LoginScreen.dart';
 import 'package:teiker_app/auth/auth_notifier.dart';
 
@@ -15,18 +14,15 @@ class AuthGate extends ConsumerWidget {
 
     return authState.when(
       loading: () =>
-          const Scaffold(body: Center(child: CircularProgressIndicator())
-      ),
+          const Scaffold(body: Center(child: CircularProgressIndicator())),
       error: (_, __) => const Scaffold(
         body: Center(child: Text("Erro ao carregar autenticação. ")),
       ),
       data: (user) {
         if (user == null) return LoginScreen();
 
-        if(isAdmin) return const Adminscreen();
-
-        return const TeikersMainscreen();
-      }
+        return MainScreen(role: isAdmin ? MainRole.admin : MainRole.teiker);
+      },
     );
   }
 }

@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:teiker_app/Screens/ClientesScreen.dart';
-import 'package:teiker_app/Screens/DefinicoesScreens/DefinicoesScreen.dart';
+import 'package:teiker_app/Screens/DefinicoesScreen.dart';
 import 'package:teiker_app/Screens/HomeScreen.dart';
 import 'package:teiker_app/Screens/TeikersInfoScreen.dart';
 import 'package:teiker_app/Widgets/AppBottomNavBar.dart';
@@ -12,21 +12,25 @@ import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
-class Adminscreen extends StatefulWidget {
-  const Adminscreen({super.key});
+enum MainRole { admin, teiker }
+
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key, required this.role});
+
+  final MainRole role;
+
+  bool get isAdmin => role == MainRole.admin;
 
   @override
-  State<Adminscreen> createState() => _AdminscreenState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
-class _AdminscreenState extends State<Adminscreen> {
+class _MainScreenState extends State<MainScreen> {
   int selected = 0;
   bool showOptions = false;
-
   final PageController controller = PageController();
 
-  static const Color primaryColor = AppColors.primaryGreen;
-  static const Color creamBackground = AppColors.creamBackground;
+  bool get _isAdmin => widget.isAdmin;
 
   @override
   void dispose() {
@@ -34,38 +38,92 @@ class _AdminscreenState extends State<Adminscreen> {
     super.dispose();
   }
 
-  // ---------------- NAV ----------------
-
   void _onNavTap(int index) {
     setState(() => selected = index);
     controller.jumpToPage(index);
   }
 
-  // ---------------- UI ----------------
+  List<Widget> _pages() {
+    if (_isAdmin) {
+      return const [
+        HomeScreen(),
+        TeikersInfoScreen(),
+        ClientesScreen(),
+        DefinicoesScreen(role: SettingsRole.admin),
+      ];
+    }
+
+    return const [
+      HomeScreen(),
+      ClientesScreen(),
+      DefinicoesScreen(role: SettingsRole.teiker),
+    ];
+  }
+
+  List<NavItemConfig> _navItems() {
+    if (_isAdmin) {
+      return const [
+        NavItemConfig(
+          icon: Icons.home_outlined,
+          activeIcon: Icons.home_filled,
+          label: 'Home',
+        ),
+        NavItemConfig(
+          icon: Icons.person_outline,
+          activeIcon: Icons.person,
+          label: 'Teikers',
+        ),
+        NavItemConfig(
+          icon: Icons.people_outline,
+          activeIcon: Icons.groups,
+          label: 'Clientes',
+        ),
+        NavItemConfig(
+          icon: Icons.settings_outlined,
+          activeIcon: Icons.settings,
+          label: 'Settings',
+        ),
+      ];
+    }
+
+    return const [
+      NavItemConfig(
+        icon: Icons.home_outlined,
+        activeIcon: Icons.home_filled,
+        label: 'Home',
+      ),
+      NavItemConfig(
+        icon: Icons.people_outline,
+        activeIcon: Icons.groups,
+        label: 'Clientes',
+      ),
+      NavItemConfig(
+        icon: Icons.settings_outlined,
+        activeIcon: Icons.settings,
+        label: 'Settings',
+      ),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: creamBackground,
+      backgroundColor: AppColors.creamBackground,
       resizeToAvoidBottomInset: false,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: showOptions ? () => setState(() => showOptions = false) : null,
+        onTap: (_isAdmin && showOptions)
+            ? () => setState(() => showOptions = false)
+            : null,
         child: Stack(
           children: [
             PageView(
               controller: controller,
               physics: const NeverScrollableScrollPhysics(),
-              children: const [
-                HomeScreen(),
-                TeikersInfoScreen(),
-                ClientesScreen(),
-                DefinicoesScreen(role: SettingsRole.admin),
-              ],
+              children: _pages(),
             ),
 
-            // FAB ACTIONS
-            if (showOptions)
+            if (_isAdmin && showOptions)
               Positioned(
                 right: 16,
                 bottom: 120,
@@ -74,17 +132,17 @@ class _AdminscreenState extends State<Adminscreen> {
                   children: [
                     _fabAction(
                       icon: Icons.person_add_alt_1,
-                      label: "Adicionar Teiker",
+                      label: 'Adicionar Teiker',
                       onTap: () {
                         setState(() => showOptions = false);
                         _teikerAdd();
                       },
-                      color: primaryColor,
+                      color: AppColors.primaryGreen,
                     ),
                     const SizedBox(height: 8),
                     _fabAction(
                       icon: Icons.home_work_outlined,
-                      label: "Adicionar Cliente",
+                      label: 'Adicionar Cliente',
                       onTap: () {
                         setState(() => showOptions = false);
                         _clienteAdd();
@@ -95,36 +153,17 @@ class _AdminscreenState extends State<Adminscreen> {
                 ),
               ),
 
-            // NAVBAR
             Align(
               alignment: Alignment.bottomCenter,
               child: AppBottomNavBar(
                 index: selected,
-                fabOpen: showOptions,
-                items: const [
-                  NavItemConfig(
-                    icon: Icons.home_outlined,
-                    activeIcon: Icons.home_filled,
-                    label: "Home",
-                  ),
-                  NavItemConfig(
-                    icon: Icons.person_outline,
-                    activeIcon: Icons.person,
-                    label: "Teikers",
-                  ),
-                  NavItemConfig(
-                    icon: Icons.people_outline,
-                    activeIcon: Icons.groups,
-                    label: "Clientes",
-                  ),
-                  NavItemConfig(
-                    icon: Icons.settings_outlined,
-                    activeIcon: Icons.settings,
-                    label: "Settings",
-                  ),
-                ],
+                fabOpen: _isAdmin ? showOptions : false,
+                showFab: _isAdmin,
+                items: _navItems(),
                 onTap: _onNavTap,
-                onFabTap: () => setState(() => showOptions = !showOptions),
+                onFabTap: _isAdmin
+                    ? () => setState(() => showOptions = !showOptions)
+                    : null,
               ),
             ),
           ],
@@ -132,8 +171,6 @@ class _AdminscreenState extends State<Adminscreen> {
       ),
     );
   }
-
-  // ---------------- FAB ACTION ----------------
 
   Widget _fabAction({
     required IconData icon,
@@ -169,8 +206,6 @@ class _AdminscreenState extends State<Adminscreen> {
       ),
     );
   }
-
-  // ---------------- FORMS ----------------
 
   void _teikerAdd() {
     Color selectedCor = Colors.green;
@@ -216,18 +251,17 @@ class _AdminscreenState extends State<Adminscreen> {
                         Row(
                           children: [
                             CircleAvatar(
-                              backgroundColor: primaryColor.withValues(
-                                alpha: .12,
-                              ),
-                              child: Icon(
+                              backgroundColor: AppColors.primaryGreen
+                                  .withValues(alpha: .12),
+                              child: const Icon(
                                 Icons.person_add_alt_1,
-                                color: primaryColor,
+                                color: AppColors.primaryGreen,
                               ),
                             ),
                             const SizedBox(width: 10),
                             const Expanded(
                               child: Text(
-                                "Adicionar Teiker",
+                                'Adicionar Teiker',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 18,
@@ -241,28 +275,28 @@ class _AdminscreenState extends State<Adminscreen> {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        _formInput("Nome", nameController),
+                        _formInput('Nome', nameController),
                         const SizedBox(height: 10),
                         _formInput(
-                          "Email",
+                          'Email',
                           emailController,
                           keyboard: TextInputType.emailAddress,
                         ),
                         const SizedBox(height: 10),
                         _formInput(
-                          "Password",
+                          'Password',
                           passwordController,
                           obscure: true,
                         ),
                         const SizedBox(height: 10),
                         _formInput(
-                          "Telemóvel",
+                          'Telemóvel',
                           telemovelController,
                           keyboard: TextInputType.number,
                         ),
                         const SizedBox(height: 10),
                         _formInput(
-                          "Horas",
+                          'Horas',
                           horasController,
                           keyboard: TextInputType.number,
                         ),
@@ -270,7 +304,7 @@ class _AdminscreenState extends State<Adminscreen> {
                         Row(
                           children: [
                             const Text(
-                              "Cor da Teiker",
+                              'Cor da Teiker',
                               style: TextStyle(fontWeight: FontWeight.w600),
                             ),
                             const SizedBox(width: 10),
@@ -280,7 +314,7 @@ class _AdminscreenState extends State<Adminscreen> {
                                 final picked = await showDialog<Color>(
                                   context: sheetContext,
                                   builder: (c) => AlertDialog(
-                                    title: const Text("Escolhe uma cor"),
+                                    title: const Text('Escolhe uma cor'),
                                     content: SingleChildScrollView(
                                       child: BlockPicker(
                                         pickerColor: tempColor,
@@ -292,12 +326,12 @@ class _AdminscreenState extends State<Adminscreen> {
                                     actions: [
                                       TextButton(
                                         onPressed: () => Navigator.pop(c, null),
-                                        child: const Text("Cancelar"),
+                                        child: const Text('Cancelar'),
                                       ),
                                       TextButton(
                                         onPressed: () =>
                                             Navigator.pop(c, tempColor),
-                                        child: const Text("Selecionar"),
+                                        child: const Text('Selecionar'),
                                       ),
                                     ],
                                   ),
@@ -327,13 +361,15 @@ class _AdminscreenState extends State<Adminscreen> {
                               child: OutlinedButton(
                                 onPressed: () => Navigator.pop(sheetContext),
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: primaryColor,
-                                  side: BorderSide(color: primaryColor),
+                                  foregroundColor: AppColors.primaryGreen,
+                                  side: const BorderSide(
+                                    color: AppColors.primaryGreen,
+                                  ),
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
                                   ),
                                 ),
-                                child: const Text("Cancelar"),
+                                child: const Text('Cancelar'),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -341,11 +377,11 @@ class _AdminscreenState extends State<Adminscreen> {
                               child: ElevatedButton.icon(
                                 icon: const Icon(Icons.check),
                                 label: const Text(
-                                  "Adicionar",
+                                  'Adicionar',
                                   style: TextStyle(fontWeight: FontWeight.bold),
                                 ),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: primaryColor,
+                                  backgroundColor: AppColors.primaryGreen,
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
                                     vertical: 12,
@@ -372,7 +408,7 @@ class _AdminscreenState extends State<Adminscreen> {
                                   ].any((e) => e.isEmpty)) {
                                     AppSnackBar.show(
                                       context,
-                                      message: "Preencha todos os campos",
+                                      message: 'Preencha todos os campos',
                                       icon: Icons.error,
                                       background: Colors.red.shade700,
                                     );
@@ -384,7 +420,7 @@ class _AdminscreenState extends State<Adminscreen> {
                                   ).hasMatch(telemovel)) {
                                     AppSnackBar.show(
                                       context,
-                                      message: "Telemóvel inválido",
+                                      message: 'Telemóvel inválido',
                                       icon: Icons.error,
                                       background: Colors.red.shade700,
                                     );
@@ -395,7 +431,7 @@ class _AdminscreenState extends State<Adminscreen> {
                                   if (horasValue == null) {
                                     AppSnackBar.show(
                                       context,
-                                      message: "Horas inválidas",
+                                      message: 'Horas inválidas',
                                       icon: Icons.error,
                                       background: Colors.red.shade700,
                                     );
@@ -418,7 +454,7 @@ class _AdminscreenState extends State<Adminscreen> {
                                     if (!mounted) return;
                                     AppSnackBar.show(
                                       context,
-                                      message: "Teiker criada com sucesso!",
+                                      message: 'Teiker criada com sucesso!',
                                       icon: Icons.check,
                                       background: Colors.green.shade700,
                                     );
@@ -426,7 +462,7 @@ class _AdminscreenState extends State<Adminscreen> {
                                     if (!mounted) return;
                                     AppSnackBar.show(
                                       context,
-                                      message: "Erro ao criar Teiker: $e",
+                                      message: 'Erro ao criar Teiker: $e',
                                       icon: Icons.error,
                                       background: Colors.red.shade700,
                                     );
@@ -490,16 +526,18 @@ class _AdminscreenState extends State<Adminscreen> {
                     Row(
                       children: [
                         CircleAvatar(
-                          backgroundColor: primaryColor.withValues(alpha: .12),
-                          child: Icon(
+                          backgroundColor: AppColors.primaryGreen.withValues(
+                            alpha: .12,
+                          ),
+                          child: const Icon(
                             Icons.home_work_outlined,
-                            color: primaryColor,
+                            color: AppColors.primaryGreen,
                           ),
                         ),
                         const SizedBox(width: 10),
                         const Expanded(
                           child: Text(
-                            "Adicionar Cliente",
+                            'Adicionar Cliente',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 18,
@@ -513,26 +551,26 @@ class _AdminscreenState extends State<Adminscreen> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    _formInput("Nome", nameController),
+                    _formInput('Nome', nameController),
                     const SizedBox(height: 10),
-                    _formInput("Morada", moradaController),
+                    _formInput('Morada', moradaController),
                     const SizedBox(height: 10),
-                    _formInput("Código Postal", codigoPostalController),
+                    _formInput('Código Postal', codigoPostalController),
                     const SizedBox(height: 10),
                     _formInput(
-                      "Telemóvel",
+                      'Telemóvel',
                       telemovelController,
                       keyboard: TextInputType.number,
                     ),
                     const SizedBox(height: 10),
                     _formInput(
-                      "Email",
+                      'Email',
                       emailController,
                       keyboard: TextInputType.emailAddress,
                     ),
                     const SizedBox(height: 10),
                     _formInput(
-                      "Preço/Hora (€)",
+                      'Preço/Hora (€)',
                       orcamentoController,
                       keyboard: TextInputType.number,
                     ),
@@ -543,11 +581,13 @@ class _AdminscreenState extends State<Adminscreen> {
                           child: OutlinedButton(
                             onPressed: () => Navigator.pop(sheetContext),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: primaryColor,
-                              side: BorderSide(color: primaryColor),
+                              foregroundColor: AppColors.primaryGreen,
+                              side: const BorderSide(
+                                color: AppColors.primaryGreen,
+                              ),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
-                            child: const Text("Cancelar"),
+                            child: const Text('Cancelar'),
                           ),
                         ),
                         const SizedBox(width: 10),
@@ -555,11 +595,11 @@ class _AdminscreenState extends State<Adminscreen> {
                           child: ElevatedButton.icon(
                             icon: const Icon(Icons.check),
                             label: const Text(
-                              "Adicionar",
+                              'Adicionar',
                               style: TextStyle(fontWeight: FontWeight.bold),
                             ),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryColor,
+                              backgroundColor: AppColors.primaryGreen,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 12),
                               shape: RoundedRectangleBorder(
@@ -585,7 +625,7 @@ class _AdminscreenState extends State<Adminscreen> {
                               ].any((e) => e.isEmpty)) {
                                 AppSnackBar.show(
                                   context,
-                                  message: "Preencha todos os campos",
+                                  message: 'Preencha todos os campos',
                                   icon: Icons.error,
                                   background: Colors.red.shade700,
                                 );
@@ -595,7 +635,7 @@ class _AdminscreenState extends State<Adminscreen> {
                               if (!RegExp(r'^[0-9]+$').hasMatch(telemovel)) {
                                 AppSnackBar.show(
                                   context,
-                                  message: "Telemóvel inválido",
+                                  message: 'Telemóvel inválido',
                                   icon: Icons.error,
                                   background: Colors.red.shade700,
                                 );
@@ -603,12 +643,12 @@ class _AdminscreenState extends State<Adminscreen> {
                               }
 
                               final double? orc = double.tryParse(
-                                orcamento.replaceAll(",", "."),
+                                orcamento.replaceAll(',', '.'),
                               );
                               if (orc == null) {
                                 AppSnackBar.show(
                                   context,
-                                  message: "Orçamento inválido",
+                                  message: 'Orçamento inválido',
                                   icon: Icons.error,
                                   background: Colors.red.shade700,
                                 );
@@ -618,7 +658,7 @@ class _AdminscreenState extends State<Adminscreen> {
                               try {
                                 final newCliente = Clientes(
                                   uid: FirebaseFirestore.instance
-                                      .collection("clientes")
+                                      .collection('clientes')
                                       .doc()
                                       .id,
                                   nameCliente: name,
@@ -639,7 +679,7 @@ class _AdminscreenState extends State<Adminscreen> {
                                 if (!mounted) return;
                                 AppSnackBar.show(
                                   context,
-                                  message: "Cliente criado com sucesso!",
+                                  message: 'Cliente criado com sucesso!',
                                   icon: Icons.check,
                                   background: Colors.green.shade700,
                                 );
@@ -647,7 +687,7 @@ class _AdminscreenState extends State<Adminscreen> {
                                 if (!mounted) return;
                                 AppSnackBar.show(
                                   context,
-                                  message: "Erro ao criar cliente: $e",
+                                  message: 'Erro ao criar cliente: $e',
                                   icon: Icons.error,
                                   background: Colors.red.shade700,
                                 );
@@ -678,9 +718,9 @@ class _AdminscreenState extends State<Adminscreen> {
       controller: controller,
       keyboard: keyboard,
       obscureText: obscure,
-      focusColor: primaryColor,
+      focusColor: AppColors.primaryGreen,
       fillColor: Colors.grey.shade100,
-      borderColor: primaryColor.withValues(alpha: .2),
+      borderColor: AppColors.primaryGreen.withValues(alpha: .2),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
     );
   }

@@ -5,7 +5,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:teiker_app/Screens/DefinicoesScreens/TeikerHorasScreen.dart';
+import 'package:teiker_app/Screens/TeikerHorasScreen.dart';
 import 'package:teiker_app/Screens/LoginScreen.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';

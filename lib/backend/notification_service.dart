@@ -31,7 +31,6 @@ class NotificationService {
   bool _adminReminderBaselineLoaded = false;
   final Set<String> _knownAdminReminderIds = <String>{};
   String? _birthdayNotificationUid;
-  String? _lastBirthdayShownKey;
 
   Future<void> init() async {
     if (_initialized) return;
@@ -55,6 +54,7 @@ class NotificationService {
       },
       onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
     );
+    await _requestLocalNotificationPermissions();
 
     await _fcm.requestPermission();
     await _saveFcmToken();
@@ -158,6 +158,29 @@ class NotificationService {
   int _teikerBirthdayNotificationId(String uid) =>
       ('teiker_birthday_$uid').hashCode & 0x7fffffff;
 
+  Future<void> _requestLocalNotificationPermissions() async {
+    if (Platform.isAndroid) {
+      final android = _local
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await android?.requestNotificationsPermission();
+      return;
+    }
+
+    final ios = _local
+        .resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin
+        >();
+    await ios?.requestPermissions(alert: true, badge: true, sound: true);
+
+    final macOs = _local
+        .resolvePlatformSpecificImplementation<
+          MacOSFlutterLocalNotificationsPlugin
+        >();
+    await macOs?.requestPermissions(alert: true, badge: true, sound: true);
+  }
+
   Future<void> _syncAdminReminderNotifications() async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -254,8 +277,8 @@ class NotificationService {
   DateTime _nextBirthdayAt({
     required DateTime birthDate,
     required DateTime now,
-    int hour = 9,
-    int minute = 0,
+    int hour = 0,
+    int minute = 10,
   }) {
     DateTime occurrence = DateTime(
       now.year,
@@ -345,32 +368,16 @@ class NotificationService {
     );
 
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final todayBirthday = DateTime(now.year, birthDate.month, birthDate.day);
-    if (today == todayBirthday) {
-      final shownKey = '${uid}_${today.toIso8601String()}';
-      if (_lastBirthdayShownKey != shownKey) {
-        _lastBirthdayShownKey = shownKey;
-        await _local.show(
-          _teikerBirthdayNotificationId(uid),
-          'Parabens da Teiker',
-          'A Teiker deseja-te um feliz aniversário',
-          details,
-          payload: jsonEncode({'tipo': 'teiker_birthday', 'uid': uid}),
-        );
-      }
-    }
-
     final nextBirthday = _nextBirthdayAt(birthDate: birthDate, now: now);
     final scheduleTime = tz.TZDateTime.from(nextBirthday, tz.local);
 
     await _local.zonedSchedule(
       _teikerBirthdayNotificationId(uid),
-      'Parabens da Teiker',
+      'Parabéns da Teiker',
       'A Teiker deseja-te um feliz aniversário',
       scheduleTime,
       details,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.dateAndTime,

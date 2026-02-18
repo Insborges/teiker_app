@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
+import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
 import 'package:teiker_app/Widgets/AppTextInput.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
@@ -14,8 +16,10 @@ import 'package:teiker_app/Widgets/app_bottom_sheet_shell.dart';
 import 'package:teiker_app/Widgets/monthly_hours_overview_card.dart';
 import 'package:teiker_app/Widgets/phone_number_input_row.dart';
 import 'package:teiker_app/backend/auth_service.dart';
+import 'package:teiker_app/backend/client_invoice_service.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
+import 'package:teiker_app/models/client_invoice.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import '../../models/Clientes.dart';
@@ -61,9 +65,13 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   bool? isAdmin;
   final WorkSessionService _workSessionService = WorkSessionService();
+  final ClientInvoiceService _clientInvoiceService = ClientInvoiceService();
   final MonthlyHoursOverviewService _hoursOverviewService =
       MonthlyHoursOverviewService();
+  final Set<String> _sharingInvoiceIds = <String>{};
+  final Set<String> _deletingInvoiceIds = <String>{};
   late Future<Map<DateTime, double>> _hoursOverviewFuture;
+  bool _issuingInvoice = false;
 
   @override
   void initState() {
@@ -92,7 +100,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
         widget.cliente.additionalServicePrices;
     _appliedServicePrices = Map<String, double>.fromEntries(
       monthServices.entries.where(
-        (entry) => _serviceCatalog.contains(entry.key),
+        (entry) => _serviceCatalog.contains(_serviceBaseName(entry.key)),
       ),
     );
 
@@ -116,6 +124,57 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   Map<String, double>? _collectServicePrices({required bool validate}) {
     return Map<String, double>.from(_appliedServicePrices);
+  }
+
+  String _serviceBaseName(String rawKey) {
+    final trimmed = rawKey.trim();
+    if (trimmed.isEmpty) return '';
+
+    final bySuffix = RegExp(r'^(.*?)[xX]\s*\d+$').firstMatch(trimmed);
+    if (bySuffix != null) {
+      return (bySuffix.group(1) ?? '').trim();
+    }
+
+    final byParenthesis = RegExp(r'^(.*?)\(\d+\s*[xX]\)$').firstMatch(trimmed);
+    if (byParenthesis != null) {
+      return (byParenthesis.group(1) ?? '').trim();
+    }
+
+    return trimmed;
+  }
+
+  int _serviceQuantityFromKey(String rawKey) {
+    final trimmed = rawKey.trim();
+    final bySuffix = RegExp(r'^[\s\S]*?[xX]\s*(\d+)$').firstMatch(trimmed);
+    if (bySuffix != null) {
+      final quantity = int.tryParse(bySuffix.group(1) ?? '');
+      if (quantity != null && quantity > 0) return quantity;
+    }
+
+    final byParenthesis = RegExp(
+      r'^[\s\S]*?\((\d+)\s*[xX]\)$',
+    ).firstMatch(trimmed);
+    if (byParenthesis != null) {
+      final quantity = int.tryParse(byParenthesis.group(1) ?? '');
+      if (quantity != null && quantity > 0) return quantity;
+    }
+
+    return 1;
+  }
+
+  String _serviceKeyWithQuantity(String baseName, int quantity) {
+    if (quantity <= 1) return baseName;
+    return '$baseName x$quantity';
+  }
+
+  MapEntry<String, double>? _findServiceEntryByBaseName(String baseName) {
+    final normalizedBase = baseName.trim().toLowerCase();
+    for (final entry in _appliedServicePrices.entries) {
+      if (_serviceBaseName(entry.key).toLowerCase() == normalizedBase) {
+        return entry;
+      }
+    }
+    return null;
   }
 
   Future<void> _persistAdditionalServices() async {
@@ -200,14 +259,32 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       builder: (context) => _ServicePriceSheet(
         serviceName: selectedService,
         primaryColor: AppColors.primaryGreen,
-        initialPrice: _appliedServicePrices[selectedService],
+        initialPrice: () {
+          final existing = _findServiceEntryByBaseName(selectedService);
+          if (existing == null) return null;
+          final quantity = _serviceQuantityFromKey(existing.key);
+          return existing.value / quantity;
+        }(),
       ),
     );
 
     if (!mounted) return;
     if (price == null) return;
     setState(() {
-      _appliedServicePrices[selectedService] = price;
+      final existing = _findServiceEntryByBaseName(selectedService);
+      if (existing == null) {
+        _appliedServicePrices[selectedService] = price;
+      } else {
+        final previousQuantity = _serviceQuantityFromKey(existing.key);
+        final nextQuantity = previousQuantity + 1;
+        final nextTotal = existing.value + price;
+        _appliedServicePrices.remove(existing.key);
+        _appliedServicePrices[_serviceKeyWithQuantity(
+              selectedService,
+              nextQuantity,
+            )] =
+            nextTotal;
+      }
     });
     try {
       await _persistAdditionalServices();
@@ -574,6 +651,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   }
 
   Future<void> emitirFaturas() async {
+    if (_issuingInvoice) return;
+
     final today = DateTime.now();
     final selectedDate = await SingleDatePickerBottomSheet.show(
       context,
@@ -585,11 +664,316 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
     if (selectedDate == null) return;
 
-    AppSnackBar.show(
-      context,
-      message: "Fatura Emitida(ainda em desenvolvimento)",
-      icon: Icons.file_download_done,
-      background: Colors.green.shade700,
+    setState(() => _issuingInvoice = true);
+    try {
+      final result = await _clientInvoiceService.issueInvoice(
+        cliente: widget.cliente,
+        invoiceDate: selectedDate,
+      );
+
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message:
+            'Fatura ${result.invoice.invoiceNumber} emitida. Partilha no card abaixo.',
+        icon: Icons.file_download_done,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro a emitir fatura: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _issuingInvoice = false);
+      }
+    }
+  }
+
+  Future<void> _shareInvoice(
+    ClientInvoice invoice, {
+    File? preGeneratedFile,
+  }) async {
+    if (_sharingInvoiceIds.contains(invoice.id)) return;
+
+    setState(() => _sharingInvoiceIds.add(invoice.id));
+    try {
+      await _clientInvoiceService.shareInvoiceDocument(
+        invoice,
+        preGeneratedFile: preGeneratedFile,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Nao foi possivel partilhar a fatura: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _sharingInvoiceIds.remove(invoice.id));
+      }
+    }
+  }
+
+  Future<void> _deleteInvoice(ClientInvoice invoice) async {
+    if (_deletingInvoiceIds.contains(invoice.id)) return;
+
+    final confirmed = await AppConfirmDialog.show(
+      context: context,
+      title: 'Apagar fatura?',
+      message:
+          'A fatura ${invoice.invoiceNumber} vai ser removida do histórico deste cliente.',
+      confirmLabel: 'Apagar',
+      confirmColor: Colors.red.shade700,
+    );
+    if (!confirmed) return;
+
+    setState(() => _deletingInvoiceIds.add(invoice.id));
+    try {
+      await _clientInvoiceService.deleteInvoice(
+        clientId: widget.cliente.uid,
+        invoiceId: invoice.id,
+      );
+
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Fatura ${invoice.invoiceNumber} apagada.',
+        icon: Icons.delete_outline_rounded,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Nao foi possivel apagar a fatura: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _deletingInvoiceIds.remove(invoice.id));
+      }
+    }
+  }
+
+  Widget _buildIssuedInvoicesCard({
+    required Color primaryColor,
+    required Color borderColor,
+  }) {
+    final money = NumberFormat.currency(locale: 'pt_PT', symbol: 'CHF ');
+    final dateFormat = DateFormat('dd/MM/yyyy');
+
+    return StreamBuilder<List<ClientInvoice>>(
+      stream: _clientInvoiceService.watchClientInvoices(widget.cliente.uid),
+      builder: (context, snapshot) {
+        final invoices = snapshot.data ?? const <ClientInvoice>[];
+        final totalIssued = invoices.fold<double>(
+          0,
+          (running, item) => running + item.total,
+        );
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: borderColor),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.receipt_long_rounded,
+                    color: primaryColor,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Faturas emitidas',
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    money.format(totalIssued),
+                    style: TextStyle(
+                      color: primaryColor,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                )
+              else if (snapshot.hasError)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.red.shade100),
+                  ),
+                  child: const Text(
+                    'Nao foi possivel carregar as faturas emitidas.',
+                    style: TextStyle(
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              else if (invoices.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: borderColor.withValues(alpha: .8),
+                    ),
+                  ),
+                  child: const Text(
+                    'Ainda nao existem faturas para este cliente.',
+                    style: TextStyle(
+                      color: Colors.black54,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              else
+                Column(
+                  children: invoices
+                      .map(
+                        (invoice) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Container(
+                            padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: borderColor.withValues(alpha: .85),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${invoice.clientName} • ${invoice.invoiceNumber}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${dateFormat.format(invoice.invoiceDate)} • ${invoice.periodLabel}',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.black54,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  money.format(invoice.total),
+                                  style: TextStyle(
+                                    color: primaryColor,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                SizedBox(
+                                  width: 30,
+                                  child: _sharingInvoiceIds.contains(invoice.id)
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : IconButton(
+                                          tooltip: 'Partilhar fatura',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          onPressed: () =>
+                                              _shareInvoice(invoice),
+                                          icon: Icon(
+                                            Icons.share_outlined,
+                                            color: primaryColor,
+                                            size: 20,
+                                          ),
+                                        ),
+                                ),
+                                const SizedBox(width: 6),
+                                SizedBox(
+                                  width: 30,
+                                  child:
+                                      _deletingInvoiceIds.contains(invoice.id)
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : IconButton(
+                                          tooltip: 'Apagar fatura',
+                                          padding: EdgeInsets.zero,
+                                          constraints: const BoxConstraints(),
+                                          onPressed: () =>
+                                              _deleteInvoice(invoice),
+                                          icon: const Icon(
+                                            Icons.delete_outline_rounded,
+                                            color: Colors.redAccent,
+                                            size: 20,
+                                          ),
+                                        ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -666,10 +1050,18 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                             onPressed: () => _abrirDialogAdicionarHoras(),
                           ),
                           const SizedBox(height: 12),
+                          _buildIssuedInvoicesCard(
+                            primaryColor: adminPrimary,
+                            borderColor: adminBorder,
+                          ),
+                          const SizedBox(height: 12),
                           AppButton(
-                            text: "Emitir Faturas",
+                            text: _issuingInvoice
+                                ? "A emitir fatura..."
+                                : "Emitir Faturas",
                             icon: Icons.file_copy,
                             color: adminPrimary,
+                            enabled: !_issuingInvoice,
                             onPressed: () => emitirFaturas(),
                           ),
                           const SizedBox(height: 12),

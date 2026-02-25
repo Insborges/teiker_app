@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:teiker_app/backend/auth_gate.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/backend/notification_service.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,14 +64,12 @@ class _MyAppState extends State<MyApp> {
         ),
 
         textButtonTheme: TextButtonThemeData(
-          style: TextButton.styleFrom(
-            foregroundColor: const Color.fromARGB(255, 4, 76, 32),
-          ),
+          style: TextButton.styleFrom(foregroundColor: AppColors.primaryGreen),
         ),
 
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color.fromARGB(255, 4, 76, 32),
+            backgroundColor: AppColors.primaryGreen,
             foregroundColor: Colors.white,
           ),
         ),

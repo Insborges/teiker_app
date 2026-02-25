@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:teiker_app/backend/cliente_repository.dart';
+import 'package:teiker_app/backend/teiker_agenda_repository.dart';
 import 'firebase_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/Teikers.dart';
@@ -8,52 +10,165 @@ import 'package:teiker_app/models/teiker_workload.dart';
 
 class AuthService {
   final _firebase = FirebaseService();
-
-  Color _parseTeikerColor(dynamic corRaw) {
-    if (corRaw is int) return Color(corRaw);
-    if (corRaw is String && corRaw.isNotEmpty) {
-      return Color(int.tryParse(corRaw) ?? Colors.green.toARGB32());
-    }
-    return Colors.green;
-  }
+  final ClienteRepository _clienteRepository = ClienteRepository();
+  final TeikerAgendaRepository _teikerAgendaRepository =
+      TeikerAgendaRepository();
+  CollectionReference<Map<String, dynamic>> get _teikersRef =>
+      FirebaseFirestore.instance.collection('teikers');
+  CollectionReference<Map<String, dynamic>> get _clientesRef =>
+      FirebaseFirestore.instance.collection('clientes');
+  CollectionReference<Map<String, dynamic>> get _workSessionsRef =>
+      FirebaseFirestore.instance.collection('workSessions');
 
   String _normalizeEmail(String email) => email.trim().toLowerCase();
 
-  DateTime? _parseDate(dynamic raw) {
-    if (raw is Timestamp) return raw.toDate();
-    if (raw is String && raw.isNotEmpty) return DateTime.tryParse(raw);
-    return null;
-  }
-
-  List<DateTime> _expandRangeDays(DateTime inicio, DateTime fim) {
-    final dias = <DateTime>[];
-    final seen = <DateTime>{};
-    var d = DateTime.utc(inicio.year, inicio.month, inicio.day);
-    final end = DateTime.utc(fim.year, fim.month, fim.day);
-    while (!d.isAfter(end)) {
-      if (seen.add(d)) dias.add(d);
-      d = d.add(const Duration(days: 1));
+  Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _findTeikerByEmail(
+    String normalizedEmail,
+  ) async {
+    final exactMatch = await _teikersRef
+        .where('email', isEqualTo: normalizedEmail)
+        .limit(1)
+        .get();
+    if (exactMatch.docs.isNotEmpty) {
+      return exactMatch.docs.first;
     }
-    return dias;
+
+    // Fallback for legacy docs with email casing/spacing inconsistencies.
+    final allTeikers = await _teikersRef.get();
+    for (final doc in allTeikers.docs) {
+      final rawEmail = doc.data()['email'];
+      final email = rawEmail is String ? rawEmail.trim().toLowerCase() : '';
+      if (email == normalizedEmail) {
+        return doc;
+      }
+    }
+    return null;
   }
 
   Future<bool?> _hasAccountForEmail(String email) async {
     try {
       if (isAdminEmail(email)) return null;
-      final snapshot = await FirebaseFirestore.instance
-          .collection('teikers')
-          .where('email', isEqualTo: email)
-          .limit(1)
-          .get();
-      return snapshot.docs.isNotEmpty;
+      final teiker = await _findTeikerByEmail(email);
+      return teiker != null;
     } catch (_) {
       return null;
     }
   }
 
+  Future<void> _migrateClienteTeikerIds({
+    required String oldTeikerId,
+    required String newTeikerId,
+  }) async {
+    final snapshot = await _clientesRef
+        .where('teikersIds', arrayContains: oldTeikerId)
+        .get();
+    if (snapshot.docs.isEmpty) return;
+
+    var batch = FirebaseFirestore.instance.batch();
+    var pending = 0;
+
+    for (final doc in snapshot.docs) {
+      final current = List<String>.from(doc.data()['teikersIds'] ?? const []);
+      final replaced = current
+          .map((id) => id == oldTeikerId ? newTeikerId : id)
+          .toList();
+      final deduped = <String>[];
+      final seen = <String>{};
+      for (final id in replaced) {
+        if (seen.add(id)) deduped.add(id);
+      }
+
+      batch.update(doc.reference, {'teikersIds': deduped});
+      pending++;
+      if (pending >= 450) {
+        await batch.commit();
+        batch = FirebaseFirestore.instance.batch();
+        pending = 0;
+      }
+    }
+
+    if (pending > 0) {
+      await batch.commit();
+    }
+  }
+
+  Future<void> _migrateWorkSessionsTeikerId({
+    required String oldTeikerId,
+    required String newTeikerId,
+  }) async {
+    final snapshot = await _workSessionsRef
+        .where('teikerId', isEqualTo: oldTeikerId)
+        .get();
+    if (snapshot.docs.isEmpty) return;
+
+    var batch = FirebaseFirestore.instance.batch();
+    var pending = 0;
+
+    for (final doc in snapshot.docs) {
+      batch.update(doc.reference, {'teikerId': newTeikerId});
+      pending++;
+      if (pending >= 450) {
+        await batch.commit();
+        batch = FirebaseFirestore.instance.batch();
+        pending = 0;
+      }
+    }
+
+    if (pending > 0) {
+      await batch.commit();
+    }
+  }
+
+  Future<bool> _ensureTeikerProfileByUidOrEmail({
+    required String uid,
+    required String normalizedEmail,
+  }) async {
+    final uidRef = _teikersRef.doc(uid);
+    final uidDoc = await uidRef.get();
+
+    if (uidDoc.exists) {
+      final currentEmail = (uidDoc.data()?['email'] as String?)
+          ?.trim()
+          .toLowerCase();
+      if (currentEmail != normalizedEmail) {
+        await uidRef.set({'email': normalizedEmail}, SetOptions(merge: true));
+      }
+      return true;
+    }
+
+    final legacyDoc = await _findTeikerByEmail(normalizedEmail);
+    if (legacyDoc == null) {
+      return false;
+    }
+
+    final legacyId = legacyDoc.id;
+    final legacyData = Map<String, dynamic>.from(legacyDoc.data());
+    legacyData['email'] = normalizedEmail;
+    await uidRef.set(legacyData, SetOptions(merge: true));
+
+    if (legacyId != uid) {
+      try {
+        await _migrateClienteTeikerIds(oldTeikerId: legacyId, newTeikerId: uid);
+        await _migrateWorkSessionsTeikerId(
+          oldTeikerId: legacyId,
+          newTeikerId: uid,
+        );
+        await legacyDoc.reference.set({
+          'migratedToUid': uid,
+          'migratedAt': DateTime.now().toIso8601String(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('Falha parcial na migracao de UID da teiker: $e');
+      }
+    }
+
+    return true;
+  }
+
   Future<String> _mapLoginErrorMessage({
     required String code,
     required String email,
+    String? fallbackMessage,
   }) async {
     switch (code) {
       case 'invalid-email':
@@ -66,6 +181,17 @@ class AuthService {
         return 'A palavra-passe nao corresponde ao email.';
       case 'too-many-requests':
         return 'Muitas tentativas seguidas. Tenta novamente daqui a pouco.';
+      case 'network-request-failed':
+        return 'Falha de ligacao ao Firebase (rede/firewall/VPN). Tenta novamente.';
+      case 'operation-not-allowed':
+        return 'Login com email/password nao esta ativo no Firebase.';
+      case 'invalid-api-key':
+      case 'app-not-authorized':
+        return 'Aplicacao nao autorizada no Firebase para este bundle ID.';
+      case 'internal-error':
+        return 'Erro interno de autenticacao. Tenta novamente em alguns segundos.';
+      case 'invalid-user':
+        return 'Conta inválida.';
       case 'invalid-credential':
         final hasAccount = await _hasAccountForEmail(email);
         if (hasAccount == false) {
@@ -76,6 +202,10 @@ class AuthService {
         }
         return 'Email ou palavra-passe incorretos.';
       default:
+        final raw = (fallbackMessage ?? '').trim();
+        if (raw.isNotEmpty) {
+          return raw;
+        }
         return 'Nao foi possivel iniciar sessao. Tenta novamente.';
     }
   }
@@ -92,34 +222,24 @@ class AuthService {
   Future<UserCredential> login(String email, String password) async {
     final normalizedEmail = _normalizeEmail(email);
     try {
-      if (!isAdminEmail(normalizedEmail)) {
-        final hasAccount = await _hasAccountForEmail(normalizedEmail);
-        if (hasAccount == false) {
-          throw FirebaseAuthException(
-            code: 'user-not-found',
-            message: 'Conta nao existente.',
-          );
-        }
-      }
-
       final credential = await _firebase.auth.signInWithEmailAndPassword(
         email: normalizedEmail,
         password: password,
       );
       if (!isAdminEmail(credential.user?.email)) {
-        final uid = credential.user?.uid;
-        if (uid == null) {
+        final user = credential.user;
+        if (user == null) {
           await _firebase.auth.signOut();
           throw FirebaseAuthException(
             code: 'invalid-user',
             message: 'Conta inválida.',
           );
         }
-        final teikerDoc = await FirebaseFirestore.instance
-            .collection('teikers')
-            .doc(uid)
-            .get();
-        if (!teikerDoc.exists) {
+        final ensured = await _ensureTeikerProfileByUidOrEmail(
+          uid: user.uid,
+          normalizedEmail: normalizedEmail,
+        );
+        if (!ensured) {
           await _firebase.auth.signOut();
           throw FirebaseAuthException(
             code: 'user-not-found',
@@ -129,11 +249,25 @@ class AuthService {
       }
       return credential;
     } on FirebaseAuthException catch (e) {
+      debugPrint('Login falhou no FirebaseAuth [${e.code}] ${e.message ?? ''}');
       final mappedMessage = await _mapLoginErrorMessage(
         code: e.code,
         email: normalizedEmail,
+        fallbackMessage: e.message,
       );
       throw FirebaseAuthException(code: e.code, message: mappedMessage);
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw Exception(
+          'Conta autenticada, mas sem permissao para aceder ao perfil. Contacta a administracao.',
+        );
+      }
+      final message = e.message?.trim();
+      throw Exception(
+        message == null || message.isEmpty
+            ? 'Falha ao validar perfil no Firestore.'
+            : message,
+      );
     }
   }
 
@@ -250,245 +384,51 @@ class AuthService {
   }
 
   Future<List<Map<String, dynamic>>> getFeriasTeikers() async {
-    final user = FirebaseAuth.instance.currentUser;
-    final admin = isCurrentUserAdmin;
-
-    final snapshot = await FirebaseFirestore.instance
-        .collection('teikers')
-        .get();
-
-    final ferias = <Map<String, dynamic>>[];
-
-    for (var doc in snapshot.docs) {
-      final data = doc.data();
-      final corRaw = data['cor'];
-
-      // Restringir para não-admin
-      if (!admin && doc.id != user!.uid) continue;
-
-      // Cor blindada: se falhar, aplica default
-      final cor = _parseTeikerColor(corRaw);
-
-      final dias = <DateTime>[];
-      final diasSet = <DateTime>{};
-      final periodos = <Map<String, dynamic>>[
-        ...(data['feriasPeriodos'] as List<dynamic>? ?? [])
-            .whereType<Map>()
-            .map((raw) => Map<String, dynamic>.from(raw)),
-      ];
-
-      final inicioLegacy = data['feriasInicio'];
-      final fimLegacy = data['feriasFim'];
-      if (inicioLegacy != null && fimLegacy != null) {
-        periodos.add({'inicio': inicioLegacy, 'fim': fimLegacy});
-      }
-
-      for (final periodo in periodos) {
-        final inicio = _parseDate(periodo['inicio']);
-        final fim = _parseDate(periodo['fim']);
-
-        if (inicio == null || fim == null) continue;
-        for (final day in _expandRangeDays(inicio, fim)) {
-          if (diasSet.add(day)) {
-            dias.add(day);
-          }
-        }
-      }
-
-      if (dias.isEmpty) continue;
-
-      ferias.add({
-        'uid': doc.id,
-        'nome': data['name'] ?? '',
-        'cor': cor,
-        'dias': dias,
-      });
-    }
-
-    return ferias;
+    return _teikerAgendaRepository.getFeriasTeikers();
   }
 
   Future<List<Map<String, dynamic>>> getBaixasTeikers() async {
-    final user = FirebaseAuth.instance.currentUser;
-    final admin = isCurrentUserAdmin;
-
-    final snapshot = await FirebaseFirestore.instance
-        .collection('teikers')
-        .get();
-
-    final baixas = <Map<String, dynamic>>[];
-
-    for (var doc in snapshot.docs) {
-      if (!admin && doc.id != user?.uid) continue;
-
-      final data = doc.data();
-      final periodos = (data['baixasPeriodos'] as List<dynamic>? ?? [])
-          .whereType<Map>()
-          .map((raw) => Map<String, dynamic>.from(raw))
-          .toList();
-      if (periodos.isEmpty) continue;
-
-      final dias = <DateTime>[];
-      final diasSet = <DateTime>{};
-
-      for (final periodo in periodos) {
-        final inicio = _parseDate(periodo['inicio']);
-        final fim = _parseDate(periodo['fim']);
-        if (inicio == null || fim == null) continue;
-
-        for (final day in _expandRangeDays(inicio, fim)) {
-          if (diasSet.add(day)) {
-            dias.add(day);
-          }
-        }
-      }
-
-      if (dias.isEmpty) continue;
-      baixas.add({
-        'uid': doc.id,
-        'nome': data['name'] ?? '',
-        'dias': dias,
-        'cor': Colors.red.shade700,
-      });
-    }
-
-    return baixas;
+    return _teikerAgendaRepository.getBaixasTeikers();
   }
 
   Future<List<Map<String, dynamic>>> getConsultasTeikers() async {
-    final user = FirebaseAuth.instance.currentUser;
-    final admin = isCurrentUserAdmin;
-
-    final snapshot = await FirebaseFirestore.instance
-        .collection('teikers')
-        .get();
-
-    final List<Map<String, dynamic>> consultas = [];
-
-    for (var doc in snapshot.docs) {
-      if (!admin && doc.id != user?.uid) continue;
-
-      final data = doc.data();
-      final corRaw = data['cor'];
-      final rawConsultas = data['consultas'] as List<dynamic>? ?? [];
-
-      final cor = _parseTeikerColor(corRaw);
-
-      for (final c in rawConsultas) {
-        if (c is! Map<String, dynamic>) continue;
-
-        try {
-          final consulta = Consulta.fromMap(c);
-          consultas.add({
-            'uid': doc.id,
-            'nome': data['name'] ?? '',
-            'descricao': consulta.descricao,
-            'data': consulta.data,
-            'cor': cor,
-          });
-        } catch (_) {
-          continue;
-        }
-      }
-    }
-
-    return consultas;
+    return _teikerAgendaRepository.getConsultasTeikers();
   }
 
   Future<void> createCliente(Clientes cliente) async {
-    if (cliente.uid.trim().isEmpty) {
-      throw Exception('UID do cliente inválido.');
-    }
-    cliente.isArchived = false;
-    cliente.archivedBy = null;
-    cliente.archivedAt = null;
-    await FirebaseFirestore.instance
-        .collection("clientes")
-        .doc(cliente.uid)
-        .set(cliente.toMap());
+    await _clienteRepository.createCliente(cliente);
   }
 
   Future<void> updateCliente(Clientes cliente) async {
-    if (cliente.uid.trim().isEmpty) {
-      throw Exception('UID do cliente inválido.');
-    }
-    await FirebaseFirestore.instance
-        .collection("clientes")
-        .doc(cliente.uid)
-        .update(cliente.toMap());
+    await _clienteRepository.updateCliente(cliente);
   }
 
   Future<List<Clientes>> getClientes({
     bool includeArchived = false,
     bool onlyArchived = false,
   }) async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection("clientes")
-        .get();
-
-    return snapshot.docs
-        .map((doc) => Clientes.fromMap({...doc.data(), 'uid': doc.id}))
-        .where((cliente) {
-          if (onlyArchived) return cliente.isArchived;
-          if (includeArchived) return true;
-          return !cliente.isArchived;
-        })
-        .where((cliente) => cliente.uid.trim().isNotEmpty)
-        .toList();
+    return _clienteRepository.getClientes(
+      includeArchived: includeArchived,
+      onlyArchived: onlyArchived,
+    );
   }
 
   Future<void> archiveClientes(
     List<String> clienteIds, {
     required String archivedBy,
   }) async {
-    final ids = clienteIds.where((id) => id.trim().isNotEmpty).toSet().toList();
-    if (ids.isEmpty) return;
-
-    final batch = FirebaseFirestore.instance.batch();
-    for (final id in ids) {
-      final ref = FirebaseFirestore.instance.collection('clientes').doc(id);
-      batch.update(ref, {
-        'isArchived': true,
-        'archivedBy': archivedBy,
-        'archivedAt': DateTime.now().toIso8601String(),
-      });
-    }
-    await batch.commit();
+    await _clienteRepository.archiveClientes(
+      clienteIds,
+      archivedBy: archivedBy,
+    );
   }
 
   Future<void> unarchiveClientes(List<String> clienteIds) async {
-    final ids = clienteIds.where((id) => id.trim().isNotEmpty).toSet().toList();
-    if (ids.isEmpty) return;
-
-    final batch = FirebaseFirestore.instance.batch();
-    for (final id in ids) {
-      final ref = FirebaseFirestore.instance.collection('clientes').doc(id);
-      batch.update(ref, {
-        'isArchived': false,
-        'archivedBy': null,
-        'archivedAt': null,
-      });
-    }
-    await batch.commit();
+    await _clienteRepository.unarchiveClientes(clienteIds);
   }
 
   Future<void> deleteClientes(List<String> clienteIds) async {
-    final ids = clienteIds.where((id) => id.trim().isNotEmpty).toSet().toList();
-    if (ids.isEmpty) return;
-
-    final batch = FirebaseFirestore.instance.batch();
-    for (final id in ids) {
-      final ref = FirebaseFirestore.instance.collection('clientes').doc(id);
-      batch.delete(ref);
-    }
-    await batch.commit();
-
-    final teikersSnapshot = await FirebaseFirestore.instance
-        .collection('teikers')
-        .get();
-    for (final doc in teikersSnapshot.docs) {
-      await doc.reference.update({'clientesIds': FieldValue.arrayRemove(ids)});
-    }
+    await _clienteRepository.deleteClientes(clienteIds);
   }
 
   Future<void> deleteTeikers(List<Teiker> teikers) async {

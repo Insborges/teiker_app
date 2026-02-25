@@ -83,6 +83,31 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
     _loadClientes();
     _loadTeikers();
     _startTeikerListener();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final initialUser = ref.read(authStateProvider).asData?.value;
+      _handleAuthenticatedUserChange(initialUser?.uid);
+    });
+  }
+
+  void _handleAuthenticatedUserChange(String? userId) {
+    final normalizedUserId = userId?.trim();
+    if (normalizedUserId == null || normalizedUserId.isEmpty) {
+      _loadedUserId = null;
+      _userRemindersListeningFor = null;
+      _userRemindersSubscription?.cancel();
+      _userRemindersSubscription = null;
+      return;
+    }
+    if (_loadedUserId == normalizedUserId) return;
+
+    _loadedUserId = normalizedUserId;
+    _startUserRemindersListener(normalizedUserId);
+    unawaited(_loadReminders(normalizedUserId));
+    unawaited(_loadFerias());
+    unawaited(_loadBaixas());
+    unawaited(_loadConsultas());
+    unawaited(_loadTeikers());
   }
 
   String _creatorNameForCurrentUser(bool isAdmin, String? userId) {
@@ -1154,18 +1179,14 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(authStateProvider, (_, next) {
+      final nextUser = next.asData?.value;
+      _handleAuthenticatedUserChange(nextUser?.uid);
+    });
+
     final authState = ref.watch(authStateProvider);
     final isAdmin = ref.watch(isAdminProvider);
     final user = authState.asData?.value;
-    if (user != null && user.uid != _loadedUserId) {
-      _loadedUserId = user.uid;
-      _startUserRemindersListener(user.uid);
-      _loadReminders(user.uid);
-      _loadFerias();
-      _loadBaixas();
-      _loadConsultas();
-      _loadTeikers();
-    }
     final dayKey = _dayKey(_selectedDay);
     final normalEvents = _events[dayKey] ?? [];
     final consultasEventsAll = _consultas[dayKey] ?? [];

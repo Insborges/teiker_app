@@ -12,16 +12,14 @@ import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
 import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
 import 'package:teiker_app/Widgets/SingleTimePickerBottomSheet.dart';
-import 'package:teiker_app/Widgets/app_bottom_sheet_shell.dart';
-import 'package:teiker_app/Widgets/monthly_hours_overview_card.dart';
+import 'package:teiker_app/Widgets/client_details_sections.dart';
+import 'package:teiker_app/Widgets/client_service_dialogs.dart';
 import 'package:teiker_app/Widgets/phone_number_input_row.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/client_invoice_service.dart';
-import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/models/client_invoice.dart';
 import 'package:teiker_app/theme/app_colors.dart';
-import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import '../../models/Clientes.dart';
 
 class Clientsdetails extends StatefulWidget {
@@ -66,11 +64,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   bool? isAdmin;
   final WorkSessionService _workSessionService = WorkSessionService();
   final ClientInvoiceService _clientInvoiceService = ClientInvoiceService();
-  final MonthlyHoursOverviewService _hoursOverviewService =
-      MonthlyHoursOverviewService();
   final Set<String> _sharingInvoiceIds = <String>{};
   final Set<String> _deletingInvoiceIds = <String>{};
-  late Future<Map<DateTime, double>> _hoursOverviewFuture;
   bool _issuingInvoice = false;
 
   @override
@@ -105,8 +100,6 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
 
     _horasCasa = widget.cliente.hourasCasa;
-    _hoursOverviewFuture = _buildHoursOverviewFuture();
-
     _checkPendingSessionReminder();
     _loadHorasParaTeiker();
   }
@@ -228,16 +221,16 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     }
 
     final options = _serviceCatalog
-        .map((service) => _ServicePickerOption(id: service, label: service))
+        .map((service) => ServicePickerOption(id: service, label: service))
         .toList();
 
-    final picked = await showModalBottomSheet<_ServicePickerOption>(
+    final picked = await showModalBottomSheet<ServicePickerOption>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => FractionallySizedBox(
         heightFactor: .78,
-        child: _ServiceSearchPickerSheet(
+        child: ServiceSearchPickerSheet(
           title: 'Selecionar serviço',
           subtitle: 'Procura e escolhe o serviço',
           searchHint: 'Pesquisar serviço',
@@ -256,7 +249,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _ServicePriceSheet(
+      builder: (context) => ServicePriceSheet(
         serviceName: selectedService,
         primaryColor: AppColors.primaryGreen,
         initialPrice: () {
@@ -313,21 +306,6 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
     if (!mounted) return;
     setState(() => _horasCasa = total);
-  }
-
-  Future<Map<DateTime, double>> _buildHoursOverviewFuture() {
-    final currentUserId = FirebaseService().currentUser?.uid;
-    final teikerId = isAdmin == true ? null : currentUserId;
-    return _hoursOverviewService.fetchMonthlyTotals(
-      teikerId: teikerId,
-      clienteId: widget.cliente.uid,
-    );
-  }
-
-  void _refreshHoursOverview() {
-    setState(() {
-      _hoursOverviewFuture = _buildHoursOverviewFuture();
-    });
   }
 
   Future<void> _checkPendingSessionReminder() async {
@@ -551,7 +529,6 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                         widget.cliente.hourasCasa = total;
                                       }
                                     });
-                                    _refreshHoursOverview();
                                     widget.onSessionClosed?.call();
 
                                     AppSnackBar.show(
@@ -763,220 +740,6 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     }
   }
 
-  Widget _buildIssuedInvoicesCard({
-    required Color primaryColor,
-    required Color borderColor,
-  }) {
-    final money = NumberFormat.currency(locale: 'pt_PT', symbol: 'CHF ');
-    final dateFormat = DateFormat('dd/MM/yyyy');
-
-    return StreamBuilder<List<ClientInvoice>>(
-      stream: _clientInvoiceService.watchClientInvoices(widget.cliente.uid),
-      builder: (context, snapshot) {
-        final invoices = snapshot.data ?? const <ClientInvoice>[];
-        final totalIssued = invoices.fold<double>(
-          0,
-          (running, item) => running + item.total,
-        );
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: borderColor),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.receipt_long_rounded,
-                    color: primaryColor,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Faturas emitidas',
-                      style: TextStyle(
-                        color: primaryColor,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    money.format(totalIssued),
-                    style: TextStyle(
-                      color: primaryColor,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              if (snapshot.connectionState == ConnectionState.waiting)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                )
-              else if (snapshot.hasError)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.red.shade100),
-                  ),
-                  child: const Text(
-                    'Nao foi possivel carregar as faturas emitidas.',
-                    style: TextStyle(
-                      color: Colors.redAccent,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                )
-              else if (invoices.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: borderColor.withValues(alpha: .8),
-                    ),
-                  ),
-                  child: const Text(
-                    'Ainda nao existem faturas para este cliente.',
-                    style: TextStyle(
-                      color: Colors.black54,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                )
-              else
-                Column(
-                  children: invoices
-                      .map(
-                        (invoice) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Container(
-                            padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade50,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: borderColor.withValues(alpha: .85),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '${invoice.clientName} • ${invoice.invoiceNumber}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '${dateFormat.format(invoice.invoiceDate)} • ${invoice.periodLabel}',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.black54,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  money.format(invoice.total),
-                                  style: TextStyle(
-                                    color: primaryColor,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                SizedBox(
-                                  width: 30,
-                                  child: _sharingInvoiceIds.contains(invoice.id)
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : IconButton(
-                                          tooltip: 'Partilhar fatura',
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          onPressed: () =>
-                                              _shareInvoice(invoice),
-                                          icon: Icon(
-                                            Icons.share_outlined,
-                                            color: primaryColor,
-                                            size: 20,
-                                          ),
-                                        ),
-                                ),
-                                const SizedBox(width: 6),
-                                SizedBox(
-                                  width: 30,
-                                  child:
-                                      _deletingInvoiceIds.contains(invoice.id)
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : IconButton(
-                                          tooltip: 'Apagar fatura',
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          onPressed: () =>
-                                              _deleteInvoice(invoice),
-                                          icon: const Icon(
-                                            Icons.delete_outline_rounded,
-                                            color: Colors.redAccent,
-                                            size: 20,
-                                          ),
-                                        ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (isAdmin == null) {
@@ -1037,10 +800,10 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     SingleChildScrollView(
                       child: Column(
                         children: [
-                          _buildOrcamentoCard(
-                            currentPricePerHour,
-                            _horasCasa,
-                            currentServicePrices,
+                          ClientOrcamentoSummaryCard(
+                            orcamento: currentPricePerHour,
+                            horas: _horasCasa,
+                            servicePrices: currentServicePrices,
                           ),
                           const SizedBox(height: 12),
                           AppButton(
@@ -1050,9 +813,15 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                             onPressed: () => _abrirDialogAdicionarHoras(),
                           ),
                           const SizedBox(height: 12),
-                          _buildIssuedInvoicesCard(
+                          ClientIssuedInvoicesCard(
                             primaryColor: adminPrimary,
                             borderColor: adminBorder,
+                            invoicesStream: _clientInvoiceService
+                                .watchClientInvoices(widget.cliente.uid),
+                            sharingInvoiceIds: _sharingInvoiceIds,
+                            deletingInvoiceIds: _deletingInvoiceIds,
+                            onShareInvoice: _shareInvoice,
+                            onDeleteInvoice: _deleteInvoice,
                           ),
                           const SizedBox(height: 12),
                           AppButton(
@@ -1065,9 +834,13 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                             onPressed: () => emitirFaturas(),
                           ),
                           const SizedBox(height: 12),
-                          _buildAdditionalServicesSection(
+                          ClientAdditionalServicesSection(
                             primaryColor: adminPrimary,
                             borderColor: adminBorder,
+                            serviceMonthLabel: _serviceMonthLabel,
+                            appliedServicePrices: _appliedServicePrices,
+                            onRemoveAppliedService: _removeAppliedService,
+                            onAddService: _openAddServiceDialog,
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -1141,8 +914,6 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                             color: adminPrimary,
                             onPressed: atualizarDadosCliente,
                           ),
-                          const SizedBox(height: 12),
-                          _buildMonthlyHoursSection(),
                           const SizedBox(height: 12),
                         ],
                       ),
@@ -1315,587 +1086,6 @@ class _ClientsdetailsState extends State<Clientsdetails> {
           ? TextStyle(color: labelColor, fontWeight: FontWeight.w600)
           : null,
       borderRadius: 12,
-    );
-  }
-
-  Widget _buildMonthlyHoursSection() {
-    return FutureBuilder<Map<DateTime, double>>(
-      future: _hoursOverviewFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: Center(
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.red.shade100),
-            ),
-            child: const Text(
-              'Não foi possível carregar o histórico de horas.',
-              style: TextStyle(color: Colors.redAccent),
-            ),
-          );
-        }
-
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: AppColors.primaryGreen.withValues(alpha: .14),
-            ),
-          ),
-          child: MonthlyHoursOverviewCard(
-            monthlyTotals: snapshot.data ?? const {},
-            primaryColor: const Color.fromARGB(255, 4, 76, 32),
-            title: 'Horas por mês',
-            emptyMessage: 'Sem horas registadas para esta casa.',
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildAdditionalServicesSection({
-    required Color primaryColor,
-    required Color borderColor,
-  }) {
-    final appliedEntries = _appliedServicePrices.entries.toList()
-      ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.add_business_outlined, color: primaryColor, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Serviços adicionais',
-                style: TextStyle(
-                  color: primaryColor,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Valores para $_serviceMonthLabel',
-            style: TextStyle(
-              color: Colors.black54,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (appliedEntries.isEmpty)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: borderColor.withValues(alpha: .7)),
-              ),
-              child: const Text(
-                'Ainda sem serviços adicionados neste mês.',
-                style: TextStyle(
-                  color: Colors.black54,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            )
-          else
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: borderColor),
-              ),
-              child: Column(
-                children: appliedEntries
-                    .map(
-                      (entry) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Container(
-                          padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: borderColor.withValues(alpha: .8),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '${entry.key} • ${entry.value.toStringAsFixed(2)} CHF',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: 'Remover serviço',
-                                onPressed: () =>
-                                    _removeAppliedService(entry.key),
-                                icon: const Icon(
-                                  Icons.delete_outline_rounded,
-                                  color: Colors.redAccent,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    )
-                    .toList(),
-              ),
-            ),
-          const SizedBox(height: 10),
-          AppButton(
-            text: 'Adicionar Serviço',
-            icon: Icons.add_rounded,
-            color: primaryColor,
-            onPressed: _openAddServiceDialog,
-            verticalPadding: 13,
-          ),
-        ],
-      ),
-    );
-  }
-
-  //Card Orçamento
-  Widget _buildOrcamentoCard(
-    double? orcamento,
-    double horas,
-    Map<String, double> servicePrices,
-  ) {
-    if (orcamento == null) return const SizedBox.shrink();
-    final totalHoras = horas * orcamento;
-    final totalServicos = servicePrices.values.fold<double>(
-      0,
-      (total, item) => total + item,
-    );
-    final totalFinal = totalHoras + totalServicos;
-    const primary = AppColors.primaryGreen;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: primary.withValues(alpha: .16), width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .03),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: primary.withValues(alpha: .10),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.payments_outlined,
-                  color: primary,
-                  size: 24,
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'Resumo de Horas & Preços',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: primary,
-                  ),
-                ),
-              ),
-              Text(
-                '${totalFinal.toStringAsFixed(2)} CHF',
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: primary,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _buildFinancialRow(
-            icon: Icons.timer_outlined,
-            label: 'Total Horas (${horas.toStringAsFixed(1)}h)',
-            value: '${totalHoras.toStringAsFixed(2)} CHF',
-            primary: primary,
-          ),
-          const SizedBox(height: 8),
-          _buildFinancialRow(
-            icon: Icons.add_business_outlined,
-            label: 'Preço Serviço',
-            value: '${totalServicos.toStringAsFixed(2)} CHF',
-            primary: primary,
-          ),
-          const SizedBox(height: 8),
-          _buildFinancialRow(
-            icon: Icons.payments_rounded,
-            label: 'Preço/Hora (${orcamento.toStringAsFixed(2)} CHF)',
-            value: '${totalFinal.toStringAsFixed(2)} CHF',
-            primary: primary,
-            strong: true,
-          ),
-          if (servicePrices.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: servicePrices.entries
-                  .map(
-                    (entry) => Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: primary.withValues(alpha: .08),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        '${entry.key}: ${entry.value.toStringAsFixed(2)} CHF',
-                        style: const TextStyle(
-                          color: primary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFinancialRow({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color primary,
-    bool strong = false,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: primary.withValues(alpha: strong ? .10 : .06),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: Colors.black87,
-                fontWeight: strong ? FontWeight.w700 : FontWeight.w600,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: TextStyle(color: primary, fontWeight: FontWeight.w800),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ServicePickerOption {
-  const _ServicePickerOption({required this.id, required this.label});
-
-  final String id;
-  final String label;
-}
-
-class _ServiceSearchPickerSheet extends StatefulWidget {
-  const _ServiceSearchPickerSheet({
-    required this.title,
-    required this.subtitle,
-    required this.searchHint,
-    required this.options,
-    required this.selectedId,
-    required this.primaryColor,
-  });
-
-  final String title;
-  final String subtitle;
-  final String searchHint;
-  final List<_ServicePickerOption> options;
-  final String? selectedId;
-  final Color primaryColor;
-
-  @override
-  State<_ServiceSearchPickerSheet> createState() =>
-      _ServiceSearchPickerSheetState();
-}
-
-class _ServiceSearchPickerSheetState extends State<_ServiceSearchPickerSheet> {
-  final TextEditingController _searchController = TextEditingController();
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final query = _searchController.text.trim().toLowerCase();
-    final filtered = widget.options.where((option) {
-      if (query.isEmpty) return true;
-      return option.label.toLowerCase().contains(query);
-    }).toList();
-
-    return AppBottomSheetShell(
-      title: widget.title,
-      subtitle: widget.subtitle,
-      child: SizedBox(
-        height: 420,
-        child: Column(
-          children: [
-            AppTextField(
-              label: widget.searchHint,
-              controller: _searchController,
-              prefixIcon: Icons.search,
-              focusColor: widget.primaryColor,
-              borderColor: widget.primaryColor.withValues(alpha: .25),
-              fillColor: Colors.grey.shade100,
-              onChanged: (_) => setState(() {}),
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: filtered.isEmpty
-                  ? Center(
-                      child: Text(
-                        'Sem resultados.',
-                        style: TextStyle(color: Colors.grey.shade600),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
-                      itemBuilder: (context, index) {
-                        final option = filtered[index];
-                        final selected = option.id == widget.selectedId;
-                        return InkWell(
-                          onTap: () => Navigator.pop(context, option),
-                          borderRadius: BorderRadius.circular(12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? widget.primaryColor.withValues(alpha: .12)
-                                  : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: selected
-                                    ? widget.primaryColor
-                                    : widget.primaryColor.withValues(
-                                        alpha: .15,
-                                      ),
-                              ),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    option.label,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                ),
-                                Icon(
-                                  selected
-                                      ? Icons.check_circle
-                                      : Icons.chevron_right_rounded,
-                                  color: selected
-                                      ? widget.primaryColor
-                                      : Colors.grey.shade600,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ServicePriceSheet extends StatefulWidget {
-  const _ServicePriceSheet({
-    required this.serviceName,
-    required this.primaryColor,
-    this.initialPrice,
-  });
-
-  final String serviceName;
-  final Color primaryColor;
-  final double? initialPrice;
-
-  @override
-  State<_ServicePriceSheet> createState() => _ServicePriceSheetState();
-}
-
-class _ServicePriceSheetState extends State<_ServicePriceSheet> {
-  late final TextEditingController _priceController;
-  String? _errorText;
-
-  @override
-  void initState() {
-    super.initState();
-    _priceController = TextEditingController(
-      text: widget.initialPrice == null
-          ? ''
-          : widget.initialPrice!.toStringAsFixed(2),
-    );
-  }
-
-  @override
-  void dispose() {
-    _priceController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final raw = _priceController.text.trim();
-    final parsed = double.tryParse(raw.replaceAll(',', '.'));
-    if (raw.isEmpty || parsed == null || parsed < 0) {
-      setState(() => _errorText = 'Define um valor válido para o serviço.');
-      return;
-    }
-    FocusScope.of(context).unfocus();
-    Navigator.of(context).pop(parsed);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 200),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
-      child: AppBottomSheetShell(
-        title: 'Preço do serviço',
-        subtitle: widget.serviceName,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AppTextField(
-              label: 'Preço (CHF)',
-              controller: _priceController,
-              keyboard: TextInputType.number,
-              prefixIcon: Icons.payments_outlined,
-              focusColor: widget.primaryColor,
-              borderColor: widget.primaryColor.withValues(alpha: .25),
-              fillColor: Colors.grey.shade100,
-            ),
-            if (_errorText != null) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _errorText!,
-                  style: TextStyle(
-                    color: Colors.red.shade700,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: AppButton(
-                    text: 'Cancelar',
-                    outline: true,
-                    color: widget.primaryColor,
-                    onPressed: () => Navigator.of(context).pop(),
-                    verticalPadding: 13,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: AppButton(
-                    text: 'Adicionar',
-                    icon: Icons.check_rounded,
-                    color: widget.primaryColor,
-                    onPressed: _submit,
-                    verticalPadding: 13,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

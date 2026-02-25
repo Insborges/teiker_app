@@ -6,6 +6,7 @@ import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/teiker_workload.dart';
+import 'package:teiker_app/theme/app_colors.dart';
 
 class TeikerHorasScreen extends StatefulWidget {
   const TeikerHorasScreen({super.key});
@@ -15,7 +16,7 @@ class TeikerHorasScreen extends StatefulWidget {
 }
 
 class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
-  final Color _primary = const Color.fromARGB(255, 4, 76, 32);
+  final Color _primary = AppColors.primaryGreen;
   bool _loading = true;
   Map<DateTime, Map<String, double>> _hoursByDay = {};
   Map<DateTime, Map<DateTime, Map<String, double>>> _hoursByMonth = {};

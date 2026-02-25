@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/AppTextInput.dart';
 import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/address_autocomplete_field.dart';
 import 'package:teiker_app/Widgets/app_color_palette_picker.dart';
 import 'package:teiker_app/Widgets/phone_number_input_row.dart';
 import 'package:teiker_app/models/teiker_workload.dart';
@@ -34,6 +35,7 @@ class ClienteFormData {
   const ClienteFormData({
     required this.name,
     required this.morada,
+    required this.cidade,
     required this.codigoPostal,
     required this.telemovel,
     required this.phoneCountryIso,
@@ -43,6 +45,7 @@ class ClienteFormData {
 
   final String name;
   final String morada;
+  final String cidade;
   final String codigoPostal;
   final int telemovel;
   final String phoneCountryIso;
@@ -94,12 +97,16 @@ Future<TeikerFormData?> showAddTeikerFormSheet(BuildContext context) async {
                 _formInput('Nome', nameController),
                 const SizedBox(height: 10),
                 _formInput(
-                  'Email',
+                  'Email (opcional)',
                   emailController,
                   keyboard: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 10),
-                _formInput('Password', passwordController, obscure: true),
+                _formInput(
+                  'Password (se tiver email)',
+                  passwordController,
+                  obscure: true,
+                ),
                 const SizedBox(height: 10),
                 PhoneNumberInputRow(
                   controller: telemovelController,
@@ -209,12 +216,18 @@ Future<TeikerFormData?> showAddTeikerFormSheet(BuildContext context) async {
                     final password = passwordController.text.trim();
                     final telemovel = telemovelController.text.trim();
 
-                    if (_hasEmpty([name, email, password, telemovel])) {
-                      showError('Preencha todos os campos');
+                    if (_hasEmpty([name, telemovel])) {
+                      showError('Preencha os campos obrigatórios');
                       return;
                     }
                     if (selectedBirthDate == null) {
                       showError('Seleciona a data de nascimento');
+                      return;
+                    }
+                    if (email.isNotEmpty && password.length < 6) {
+                      showError(
+                        'Se preencheres email, a password deve ter pelo menos 6 caracteres',
+                      );
                       return;
                     }
 
@@ -261,6 +274,7 @@ Future<ClienteFormData?> showAddClienteFormSheet(BuildContext context) async {
   String selectedPhoneCountryIso = 'PT';
   final nameController = TextEditingController();
   final moradaController = TextEditingController();
+  final cidadeController = TextEditingController();
   final codigoPostalPrefixController = TextEditingController();
   final codigoPostalSuffixController = TextEditingController();
   final telemovelController = TextEditingController();
@@ -299,7 +313,24 @@ Future<ClienteFormData?> showAddClienteFormSheet(BuildContext context) async {
                 const SizedBox(height: 10),
                 _formInput('Nome', nameController),
                 const SizedBox(height: 10),
-                _formInput('Morada', moradaController),
+                AddressAutocompleteField(
+                  label: 'Morada',
+                  addressController: moradaController,
+                  cityController: cidadeController,
+                  countryBias: const ['CH', 'PT'],
+                  onPostalCodeSelected: (postalCode) {
+                    _applyPostalCodeToSplitControllers(
+                      postalCode,
+                      prefixController: codigoPostalPrefixController,
+                      suffixController: codigoPostalSuffixController,
+                    );
+                  },
+                  focusColor: AppColors.primaryGreen,
+                  fillColor: Colors.white,
+                  borderColor: AppColors.primaryGreen.withValues(alpha: .18),
+                ),
+                const SizedBox(height: 10),
+                _formInput('Cidade', cidadeController),
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -323,7 +354,7 @@ Future<ClienteFormData?> showAddClienteFormSheet(BuildContext context) async {
                     ),
                     Expanded(
                       child: _formInput(
-                        'Sufixo',
+                        'Sufixo (até 4)',
                         codigoPostalSuffixController,
                         keyboard: TextInputType.number,
                       ),
@@ -360,6 +391,7 @@ Future<ClienteFormData?> showAddClienteFormSheet(BuildContext context) async {
                   onConfirm: () {
                     final name = nameController.text.trim();
                     final morada = moradaController.text.trim();
+                    final cidade = cidadeController.text.trim();
                     final codigoPostalPrefix = codigoPostalPrefixController.text
                         .trim();
                     final codigoPostalSuffix = codigoPostalSuffixController.text
@@ -371,25 +403,34 @@ Future<ClienteFormData?> showAddClienteFormSheet(BuildContext context) async {
                     if (_hasEmpty([
                       name,
                       morada,
+                      cidade,
                       codigoPostalPrefix,
-                      codigoPostalSuffix,
-                      telemovel,
-                      email,
                       orcamento,
                     ])) {
                       showError('Preencha todos os campos');
                       return;
                     }
 
-                    if (!_isDigits(telemovel)) {
+                    if (telemovel.isEmpty && email.isEmpty) {
+                      showError('Preencha o telemóvel ou o email');
+                      return;
+                    }
+
+                    if (telemovel.isNotEmpty && !_isDigits(telemovel)) {
                       showError('Telemóvel inválido');
                       return;
                     }
 
                     if (!_isDigits(codigoPostalPrefix) ||
-                        !_isDigits(codigoPostalSuffix) ||
-                        codigoPostalPrefix.length != 4 ||
-                        codigoPostalSuffix.length != 3) {
+                        codigoPostalPrefix.length != 4) {
+                      showError('Código postal inválido');
+                      return;
+                    }
+
+                    if (codigoPostalSuffix.isNotEmpty &&
+                        (!_isDigits(codigoPostalSuffix) ||
+                            codigoPostalSuffix.length < 3 ||
+                            codigoPostalSuffix.length > 4)) {
                       showError('Código postal inválido');
                       return;
                     }
@@ -406,9 +447,13 @@ Future<ClienteFormData?> showAddClienteFormSheet(BuildContext context) async {
                         ClienteFormData(
                           name: name,
                           morada: morada,
-                          codigoPostal:
-                              '$codigoPostalPrefix-$codigoPostalSuffix',
-                          telemovel: int.parse(telemovel),
+                          cidade: cidade,
+                          codigoPostal: codigoPostalSuffix.isEmpty
+                              ? codigoPostalPrefix
+                              : '$codigoPostalPrefix-$codigoPostalSuffix',
+                          telemovel: telemovel.isEmpty
+                              ? 0
+                              : int.parse(telemovel),
                           phoneCountryIso: selectedPhoneCountryIso,
                           email: email,
                           orcamento: orc,
@@ -427,6 +472,7 @@ Future<ClienteFormData?> showAddClienteFormSheet(BuildContext context) async {
     _disposeControllersDeferred([
       nameController,
       moradaController,
+      cidadeController,
       codigoPostalPrefixController,
       codigoPostalSuffixController,
       telemovelController,
@@ -558,6 +604,32 @@ Widget _sheetActions({
 bool _hasEmpty(List<String> values) => values.any((value) => value.isEmpty);
 
 bool _isDigits(String value) => RegExp(r'^[0-9]+$').hasMatch(value);
+
+void _applyPostalCodeToSplitControllers(
+  String postalCode, {
+  required TextEditingController prefixController,
+  required TextEditingController suffixController,
+}) {
+  final normalized = postalCode.trim();
+  if (normalized.isEmpty) return;
+
+  final cleaned = normalized.replaceAll(RegExp(r'[^0-9-]'), '');
+  if (cleaned.isEmpty) return;
+
+  final hyphenMatch = RegExp(r'^(\d{4})-(\d{1,4})$').firstMatch(cleaned);
+  if (hyphenMatch != null) {
+    prefixController.text = hyphenMatch.group(1) ?? '';
+    suffixController.text = hyphenMatch.group(2) ?? '';
+    return;
+  }
+
+  final digitsOnly = cleaned.replaceAll('-', '');
+  if (digitsOnly.length >= 4) {
+    prefixController.text = digitsOnly.substring(0, 4);
+    final suffix = digitsOnly.length > 4 ? digitsOnly.substring(4) : '';
+    suffixController.text = suffix.length > 4 ? suffix.substring(0, 4) : suffix;
+  }
+}
 
 Widget _formInput(
   String label,

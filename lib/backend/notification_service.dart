@@ -7,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:teiker_app/Screens/DetailsScreens.dart/ClientsDetails.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -27,10 +28,34 @@ class NotificationService {
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _adminRemindersSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _userMarcacoesSubscription;
   String? _adminReminderListenerUid;
+  String? _userMarcacoesListenerUid;
   bool _adminReminderBaselineLoaded = false;
+  bool _userMarcacoesBaselineLoaded = false;
   final Set<String> _knownAdminReminderIds = <String>{};
+  final Set<String> _knownUserMarcacaoReminderIds = <String>{};
   String? _birthdayNotificationUid;
+  final StreamController<String> _managerEventOpenController =
+      StreamController<String>.broadcast();
+  String? _pendingManagerEventReminderId;
+
+  Stream<String> get managerEventOpenRequests =>
+      _managerEventOpenController.stream;
+
+  String? consumePendingManagerEventReminderId() {
+    final pending = _pendingManagerEventReminderId;
+    _pendingManagerEventReminderId = null;
+    return pending;
+  }
+
+  void _emitManagerEventOpenRequest(String reminderId) {
+    final normalized = reminderId.trim();
+    if (normalized.isEmpty) return;
+    _pendingManagerEventReminderId = normalized;
+    _managerEventOpenController.add(normalized);
+  }
 
   Future<void> init() async {
     if (_initialized) return;
@@ -62,9 +87,11 @@ class NotificationService {
     _authSubscription ??= _auth.authStateChanges().listen((_) async {
       await _saveFcmToken();
       await _syncAdminReminderNotifications();
+      await _syncUserMarcacaoNotifications();
       await _syncTeikerBirthdayNotification();
     });
     await _syncAdminReminderNotifications();
+    await _syncUserMarcacaoNotifications();
     await _syncTeikerBirthdayNotification();
     FirebaseMessaging.onMessage.listen((message) {
       // Receber notificações em foreground
@@ -155,6 +182,8 @@ class NotificationService {
   int _notificationId(String sessionId) => sessionId.hashCode & 0x7fffffff;
   int _adminReminderNotificationId(String reminderId) =>
       ('admin_reminder_$reminderId').hashCode & 0x7fffffff;
+  int _userMarcacaoNotificationId(String reminderId) =>
+      ('user_marcacao_$reminderId').hashCode & 0x7fffffff;
   int _teikerBirthdayNotificationId(String uid) =>
       ('teiker_birthday_$uid').hashCode & 0x7fffffff;
 
@@ -188,9 +217,8 @@ class NotificationService {
       return;
     }
 
-    final email = (user.email ?? '').trim().toLowerCase();
-    final isAdmin = email.endsWith('@teiker.ch');
-    if (!isAdmin) {
+    final role = AppUserRoleResolver.fromEmail(user.email);
+    if (!role.isPrivileged) {
       await _stopAdminReminderNotifications();
       return;
     }
@@ -198,14 +226,14 @@ class NotificationService {
     await _startAdminReminderNotifications(user.uid);
   }
 
-  Future<void> _startAdminReminderNotifications(String adminUid) async {
-    if (_adminReminderListenerUid == adminUid &&
+  Future<void> _startAdminReminderNotifications(String managerUid) async {
+    if (_adminReminderListenerUid == managerUid &&
         _adminRemindersSubscription != null) {
       return;
     }
 
     await _stopAdminReminderNotifications();
-    _adminReminderListenerUid = adminUid;
+    _adminReminderListenerUid = managerUid;
     _adminReminderBaselineLoaded = false;
     _adminRemindersSubscription = FirebaseFirestore.instance
         .collection('admin_reminders')
@@ -231,28 +259,39 @@ class NotificationService {
             if (data == null) continue;
 
             final tag = (data['tag'] as String?)?.trim() ?? 'Lembrete';
-            if (tag != 'Lembrete') continue;
-
             final createdById = (data['createdById'] as String?)?.trim();
-            if (createdById == null ||
-                createdById.isEmpty ||
-                createdById == adminUid) {
+            if (createdById == null || createdById.isEmpty) {
               continue;
             }
 
-            final teikerName =
+            final creatorName =
                 (data['createdByName'] as String?)?.trim().isNotEmpty == true
                 ? (data['createdByName'] as String).trim()
                 : 'Teiker';
-            final clienteName = (data['clienteName'] as String?)?.trim();
-            final title = (data['title'] as String?)?.trim();
+            if (tag == 'Lembrete') {
+              if (createdById == managerUid) continue;
+              final clienteName = (data['clienteName'] as String?)?.trim();
+              final title = (data['title'] as String?)?.trim();
+              _showAdminReminderAddedNotification(
+                reminderId: id,
+                teikerName: creatorName,
+                clienteName: clienteName,
+                reminderTitle: title,
+              );
+              continue;
+            }
 
-            _showAdminReminderAddedNotification(
-              reminderId: id,
-              teikerName: teikerName,
-              clienteName: clienteName,
-              reminderTitle: title,
-            );
+            if (tag == 'Acontecimento') {
+              final creatorRole = (data['createdByRole'] as String?)
+                  ?.trim()
+                  .toLowerCase();
+              if (creatorRole == 'admin' || creatorRole == 'hr') {
+                _showManagerEventAddedNotification(
+                  notificationId: id,
+                  creatorName: creatorName,
+                );
+              }
+            }
           }
         });
   }
@@ -263,6 +302,95 @@ class NotificationService {
     _knownAdminReminderIds.clear();
     await _adminRemindersSubscription?.cancel();
     _adminRemindersSubscription = null;
+  }
+
+  bool _isTeikerMarcacaoReminderTag(String? rawTag) {
+    final normalized = (rawTag ?? '').trim().toLowerCase();
+    return normalized == 'reunião de trabalho' ||
+        normalized == 'reuniao de trabalho' ||
+        normalized == 'acompanhamento';
+  }
+
+  Future<void> _syncUserMarcacaoNotifications() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      await _stopUserMarcacaoNotifications();
+      return;
+    }
+    await _startUserMarcacaoNotifications(user.uid);
+  }
+
+  Future<void> _startUserMarcacaoNotifications(String uid) async {
+    if (_userMarcacoesListenerUid == uid &&
+        _userMarcacoesSubscription != null) {
+      return;
+    }
+
+    await _stopUserMarcacaoNotifications();
+    _userMarcacoesListenerUid = uid;
+    _userMarcacoesBaselineLoaded = false;
+
+    _userMarcacoesSubscription = FirebaseFirestore.instance
+        .collection('reminders')
+        .doc(uid)
+        .collection('items')
+        .snapshots()
+        .listen((snapshot) {
+          if (!_userMarcacoesBaselineLoaded) {
+            for (final doc in snapshot.docs) {
+              _knownUserMarcacaoReminderIds.add(doc.id);
+            }
+            _userMarcacoesBaselineLoaded = true;
+            return;
+          }
+
+          for (final change in snapshot.docChanges) {
+            if (change.type != DocumentChangeType.added) continue;
+
+            final doc = change.doc;
+            final reminderId = doc.id;
+            if (_knownUserMarcacaoReminderIds.contains(reminderId)) continue;
+            _knownUserMarcacaoReminderIds.add(reminderId);
+
+            final data = doc.data();
+            if (data == null) continue;
+
+            final tag = (data['tag'] as String?)?.trim();
+            if (!_isTeikerMarcacaoReminderTag(tag)) continue;
+
+            final createdById = (data['createdById'] as String?)?.trim();
+            if (createdById != null &&
+                createdById.isNotEmpty &&
+                createdById == uid) {
+              continue;
+            }
+
+            _showUserMarcacaoAddedNotification(
+              reminderId: reminderId,
+              tag: tag,
+            );
+          }
+        });
+  }
+
+  Future<void> _stopUserMarcacaoNotifications() async {
+    _userMarcacoesListenerUid = null;
+    _userMarcacoesBaselineLoaded = false;
+    _knownUserMarcacaoReminderIds.clear();
+    await _userMarcacoesSubscription?.cancel();
+    _userMarcacoesSubscription = null;
+  }
+
+  String _userMarcacaoNotificationBody(String? tag) {
+    final normalized = (tag ?? '').trim().toLowerCase();
+    if (normalized == 'acompanhamento') {
+      return 'Um acompanhamento foi marcado.';
+    }
+    if (normalized == 'reunião de trabalho' ||
+        normalized == 'reuniao de trabalho') {
+      return 'Uma reunião foi marcada.';
+    }
+    return 'Nova marcação agendada.';
   }
 
   DateTime? _parseBirthDate(dynamic raw) {
@@ -312,9 +440,8 @@ class NotificationService {
       return;
     }
 
-    final email = (user.email ?? '').trim().toLowerCase();
-    final isAdmin = email.endsWith('@teiker.ch');
-    if (isAdmin) {
+    final role = AppUserRoleResolver.fromEmail(user.email);
+    if (role.isPrivileged) {
       if (_birthdayNotificationUid != null) {
         await _local.cancel(
           _teikerBirthdayNotificationId(_birthdayNotificationUid!),
@@ -419,6 +546,60 @@ class NotificationService {
     );
   }
 
+  Future<void> _showUserMarcacaoAddedNotification({
+    required String reminderId,
+    required String? tag,
+  }) async {
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'teiker_marcacoes',
+        'Marcações da teiker',
+        channelDescription:
+            'Notificações quando é marcada uma reunião/acompanhamento.',
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      ),
+      iOS: const DarwinNotificationDetails(),
+    );
+
+    await _local.show(
+      _userMarcacaoNotificationId(reminderId),
+      'Nova Marcação',
+      _userMarcacaoNotificationBody(tag),
+      details,
+    );
+  }
+
+  Future<void> _showManagerEventAddedNotification({
+    required String notificationId,
+    required String creatorName,
+  }) async {
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'manager_new_events',
+        'Novos acontecimentos',
+        channelDescription:
+            'Notificações quando admin/RH adicionam acontecimentos.',
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      ),
+      iOS: const DarwinNotificationDetails(),
+    );
+
+    await _local.show(
+      _adminReminderNotificationId('evento_$notificationId'),
+      'Novo acontecimento',
+      'A $creatorName acabou de adicionar um acontecimento',
+      details,
+      payload: jsonEncode({
+        'tipo': 'manager_event',
+        'reminderId': notificationId,
+      }),
+    );
+  }
+
   Future<void> _handleNotificationTap(String? payload) async {
     if (payload == null) return;
 
@@ -430,7 +611,15 @@ class NotificationService {
 
     try {
       final data = jsonDecode(payload) as Map<String, dynamic>;
-      if (data['tipo'] != 'session_reminder') return;
+      final type = (data['tipo'] as String?)?.trim();
+      if (type == 'manager_event') {
+        final reminderId = (data['reminderId'] as String?)?.trim();
+        if (reminderId == null || reminderId.isEmpty) return;
+        _emitManagerEventOpenRequest(reminderId);
+        return;
+      }
+
+      if (type != 'session_reminder') return;
 
       final clienteId = data['clienteId'] as String?;
       if (clienteId == null) return;
@@ -492,17 +681,19 @@ class NotificationService {
     if (token == null) return;
 
     final email = user.email ?? '';
-    final isAdmin = email.trim().endsWith("@teiker.ch");
+    final role = AppUserRoleResolver.fromEmail(email);
 
-    await FirebaseFirestore.instance.collection('fcm_tokens').doc(user.uid).set(
-      {
-        'token': token,
-        'updatedAt': Timestamp.now(),
-        'isAdmin': isAdmin,
-        'email': email,
-      },
-      SetOptions(merge: true),
-    );
+    await FirebaseFirestore.instance
+        .collection('fcm_tokens')
+        .doc(user.uid)
+        .set({
+          'token': token,
+          'updatedAt': Timestamp.now(),
+          'isAdmin': role.isAdmin,
+          'isPrivileged': role.isPrivileged,
+          'role': role.name,
+          'email': email,
+        }, SetOptions(merge: true));
   }
 }
 

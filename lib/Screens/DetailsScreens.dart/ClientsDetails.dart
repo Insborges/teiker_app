@@ -14,6 +14,7 @@ import 'package:teiker_app/Widgets/SingleTimePickerBottomSheet.dart';
 import 'package:teiker_app/Widgets/app_pill_tab_bar.dart';
 import 'package:teiker_app/Widgets/client_service_dialogs.dart';
 import 'package:teiker_app/Widgets/client_details_tab_contents.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/client_invoice_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
@@ -50,6 +51,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   // Controllers
   late TextEditingController _nameController;
   late TextEditingController _moradaController;
+  late TextEditingController _cidadeController;
   late TextEditingController _codigoPostalController;
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
@@ -60,22 +62,30 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   late double _horasCasa;
   late String _phoneCountryIso;
 
-  bool? isAdmin;
+  AppUserRole? _role;
+  List<String> _associatedTeikerNames = const <String>[];
   final WorkSessionService _workSessionService = WorkSessionService();
   final ClientInvoiceService _clientInvoiceService = ClientInvoiceService();
   final Set<String> _sharingInvoiceIds = <String>{};
   final Set<String> _deletingInvoiceIds = <String>{};
   bool _issuingInvoice = false;
 
+  bool get _isAdmin => _role == AppUserRole.admin;
+  bool get _isHr => _role == AppUserRole.hr;
+  bool get _isPrivileged => _role?.isPrivileged == true;
+
   @override
   void initState() {
     super.initState();
 
-    isAdmin = AuthService().isCurrentUserAdmin;
+    _role = AuthService().currentUserRole;
 
     _nameController = TextEditingController(text: widget.cliente.nameCliente);
     _moradaController = TextEditingController(
       text: widget.cliente.moradaCliente,
+    );
+    _cidadeController = TextEditingController(
+      text: widget.cliente.cidadeCliente,
     );
     _codigoPostalController = TextEditingController(
       text: widget.cliente.codigoPostal,
@@ -99,6 +109,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
 
     _horasCasa = widget.cliente.hourasCasa;
+    _loadAssociatedTeikerNames();
     _checkPendingSessionReminder();
     _loadHorasParaTeiker();
   }
@@ -107,6 +118,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   void dispose() {
     _nameController.dispose();
     _moradaController.dispose();
+    _cidadeController.dispose();
     _codigoPostalController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
@@ -116,6 +128,41 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   Map<String, double>? _collectServicePrices({required bool validate}) {
     return Map<String, double>.from(_appliedServicePrices);
+  }
+
+  Future<void> _loadAssociatedTeikerNames() async {
+    if (!_isAdmin) {
+      if (!mounted) return;
+      setState(() => _associatedTeikerNames = const <String>[]);
+      return;
+    }
+
+    final ids = widget.cliente.teikersIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toList();
+    if (ids.isEmpty) {
+      if (!mounted) return;
+      setState(() => _associatedTeikerNames = const <String>[]);
+      return;
+    }
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('teikers')
+          .get();
+      final byId = <String, String>{};
+      for (final doc in snapshot.docs) {
+        final raw = (doc.data()['name'] as String?)?.trim();
+        byId[doc.id] = (raw == null || raw.isEmpty) ? doc.id : raw;
+      }
+      final names = ids.map((id) => byId[id] ?? id).toList()..sort();
+      if (!mounted) return;
+      setState(() => _associatedTeikerNames = names);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _associatedTeikerNames = ids);
+    }
   }
 
   String _serviceBaseName(String rawKey) {
@@ -298,7 +345,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       DateFormat('MMMM yyyy', 'pt_PT').format(DateTime.now());
 
   Future<void> _loadHorasParaTeiker() async {
-    if (isAdmin == true) return;
+    if (_isPrivileged) return;
     final total = await _workSessionService.calculateMonthlyTotalForCurrentUser(
       clienteId: widget.cliente.uid,
       referenceDate: DateTime.now(),
@@ -308,7 +355,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   }
 
   Future<void> _checkPendingSessionReminder() async {
-    if (isAdmin == true) return;
+    if (_isPrivileged) return;
 
     final pending = await _workSessionService.findOpenSession(
       widget.cliente.uid,
@@ -515,7 +562,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                       endDate,
                                       pendingSessionId: pendingSessionId,
                                     );
-                                    final displayTotal = isAdmin == true
+                                    final displayTotal = _isPrivileged
                                         ? total
                                         : await _workSessionService
                                               .calculateMonthlyTotalForCurrentUser(
@@ -524,7 +571,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                               );
                                     setState(() {
                                       _horasCasa = displayTotal;
-                                      if (isAdmin == true) {
+                                      if (_isPrivileged) {
                                         widget.cliente.hourasCasa = total;
                                       }
                                     });
@@ -570,6 +617,29 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   void atualizarDadosCliente() async {
     final additionalServicePrices = _collectServicePrices(validate: true);
     if (additionalServicePrices == null) return;
+    final phone = _phoneController.text.trim();
+    final email = _emailController.text.trim();
+
+    if (phone.isEmpty && email.isEmpty) {
+      AppSnackBar.show(
+        context,
+        message: 'Preenche o telemóvel ou o email.',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
+
+    if (phone.isNotEmpty && int.tryParse(phone) == null) {
+      AppSnackBar.show(
+        context,
+        message: 'Telemóvel inválido.',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
+
     final additionalServicePricesByMonth =
         Map<String, Map<String, double>>.from(
           widget.cliente.additionalServicePricesByMonth,
@@ -582,12 +652,13 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       uid: widget.cliente.uid,
       nameCliente: _nameController.text,
       moradaCliente: _moradaController.text,
+      cidadeCliente: _cidadeController.text,
       codigoPostal: _codigoPostalController.text,
-      telemovel: int.tryParse(_phoneController.text) ?? 0,
+      telemovel: int.tryParse(phone) ?? 0,
       phoneCountryIso: _phoneCountryIso,
       additionalServicePrices: additionalServicePrices,
       additionalServicePricesByMonth: additionalServicePricesByMonth,
-      email: _emailController.text,
+      email: email,
       orcamento: double.tryParse(_orcamentoController.text) ?? 0,
       hourasCasa: _horasCasa,
       teikersIds: widget.cliente.teikersIds,
@@ -607,6 +678,17 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       );
 
       setState(() {
+        widget.cliente.nameCliente = _nameController.text;
+        widget.cliente.moradaCliente = _moradaController.text;
+        widget.cliente.cidadeCliente = _cidadeController.text;
+        widget.cliente.codigoPostal = _codigoPostalController.text;
+        widget.cliente.telemovel = int.tryParse(phone) ?? 0;
+        widget.cliente.phoneCountryIso = _phoneCountryIso;
+        widget.cliente.email = email;
+        widget.cliente.orcamento =
+            double.tryParse(_orcamentoController.text.replaceAll(',', '.')) ??
+            0;
+        widget.cliente.hourasCasa = _horasCasa;
         widget.cliente.teikersIds = List.from(widget.cliente.teikersIds);
         widget.cliente.additionalServicePrices = Map<String, double>.from(
           additionalServicePrices,
@@ -741,11 +823,11 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   @override
   Widget build(BuildContext context) {
-    if (isAdmin == null) {
+    if (_role == null) {
       return Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    return isAdmin! ? _buildAdminLayout() : _buildTeikerLayout();
+    return _isPrivileged ? _buildAdminLayout() : _buildTeikerLayout();
   }
 
   //Admin Layout
@@ -786,8 +868,10 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                       horasCasa: _horasCasa,
                       currentServicePrices: currentServicePrices,
                       onAddHoras: _abrirDialogAdicionarHoras,
+                      canAddHoras: !_isHr,
                       issuingInvoice: _issuingInvoice,
                       onEmitirFaturas: emitirFaturas,
+                      canEmitirFaturas: _isAdmin,
                       invoicesStream: _clientInvoiceService.watchClientInvoices(
                         widget.cliente.uid,
                       ),
@@ -795,16 +879,20 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                       deletingInvoiceIds: _deletingInvoiceIds,
                       onShareInvoice: _shareInvoice,
                       onDeleteInvoice: _deleteInvoice,
+                      canShareInvoices: true,
+                      canDeleteInvoices: _isAdmin,
                       serviceMonthLabel: _serviceMonthLabel,
                       appliedServicePrices: _appliedServicePrices,
                       onRemoveAppliedService: _removeAppliedService,
                       onAddService: _openAddServiceDialog,
+                      canManageAdditionalServices: _isAdmin,
                     ),
                     ClientDetailsAdminInfoTab(
                       primaryColor: adminPrimary,
                       borderColor: adminBorder,
                       nameController: _nameController,
                       moradaController: _moradaController,
+                      cidadeController: _cidadeController,
                       codigoPostalController: _codigoPostalController,
                       phoneController: _phoneController,
                       phoneCountryIso: _phoneCountryIso,
@@ -814,6 +902,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                       emailController: _emailController,
                       orcamentoController: _orcamentoController,
                       onSave: atualizarDadosCliente,
+                      readOnly: !_isAdmin,
+                      associatedTeikerNames: _associatedTeikerNames,
                     ),
                   ],
                 ),
@@ -832,8 +922,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     final fieldLabel = AppColors.creamBackground.withValues(alpha: .88);
     const fieldText = AppColors.creamBackground;
     final fieldFill = AppColors.creamBackground.withValues(alpha: .14);
-    const double buttonHeight = 52;
-    const double curveHeight = 340;
+    const double buttonHeight = 56;
+    const double curveHeight = 410;
 
     return Scaffold(
       appBar: buildAppBar(widget.cliente.nameCliente, seta: true),
@@ -852,14 +942,14 @@ class _ClientsdetailsState extends State<Clientsdetails> {
               ),
             ),
             SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               child: Column(
                 children: [
                   const Align(
                     alignment: Alignment.center,
                     child: Icon(Icons.person, color: Colors.white, size: 100),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 10),
                   ClientDetailsStyledField(
                     label: 'Nome',
                     controller: _nameController,
@@ -872,7 +962,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                   ),
                   const SizedBox(height: 12),
                   ClientDetailsStyledField(
-                    label: 'Morada',
+                    label: 'Rua',
                     controller: _moradaController,
                     readOnly: true,
                     borderColor: fieldBorder,
@@ -892,13 +982,25 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     textColor: fieldText,
                     fillColor: fieldFill,
                   ),
-                  const SizedBox(height: buttonHeight / 2),
+                  const SizedBox(height: 12),
+                  ClientDetailsStyledField(
+                    label: 'Cidade',
+                    controller: _cidadeController,
+                    readOnly: true,
+                    borderColor: fieldBorder,
+                    prefixIcon: Icons.location_city_outlined,
+                    labelColor: fieldLabel,
+                    textColor: fieldText,
+                    fillColor: fieldFill,
+                  ),
+                  const SizedBox(height: buttonHeight + 12),
                 ],
               ),
             ),
             Positioned(
               left: 16,
               right: 16,
+              // metade do botão dentro da área verde e metade fora
               top: curveHeight - (buttonHeight / 2),
               child: SizedBox(
                 height: buttonHeight,

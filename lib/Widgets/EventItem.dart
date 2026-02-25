@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:intl/intl.dart';
 
 class EventItem extends StatelessWidget {
   final Map<String, dynamic> event;
   final Color selectedColor;
   final VoidCallback onDelete;
   final VoidCallback onToggleDone;
+  final VoidCallback? onTap;
+  final Widget? trailingWidget;
   final bool showHours; // NOVO: controla se mostra horas
   final bool readOnly;
   final String? tag;
@@ -16,6 +19,8 @@ class EventItem extends StatelessWidget {
     required this.selectedColor,
     required this.onDelete,
     required this.onToggleDone,
+    this.onTap,
+    this.trailingWidget,
     this.showHours = true, // padrão true para compatibilidade
     this.readOnly = false,
     this.tag,
@@ -25,11 +30,18 @@ class EventItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDone = event['done'] ?? false;
     final rawTag = tag ?? event['tag'] as String?;
+    final isAcontecimento =
+        event['isAcontecimento'] == true || rawTag?.trim() == 'Acontecimento';
     final tagText = rawTag?.trim();
     final subtitle = (event['subtitle'] as String?)?.trim();
     final start = (event['start'] ?? '').toString();
     final end = (event['end'] ?? '').toString();
     final hasHours = start.isNotEmpty || end.isNotEmpty;
+    final createdAt = event['createdAt'] as DateTime?;
+    final createdAtLabel = createdAt == null
+        ? 'Data de criação indisponível'
+        : DateFormat('dd/MM/yyyy • HH:mm', 'pt_PT').format(createdAt);
+    final statusLabel = isDone ? 'Resolvido' : 'Por resolver';
 
     final card = AnimatedContainer(
       duration: const Duration(milliseconds: 350),
@@ -81,11 +93,34 @@ class EventItem extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (tagText != null && tagText.isNotEmpty)
+                    if (!isAcontecimento &&
+                        tagText != null &&
+                        tagText.isNotEmpty)
                       _tagChip(tagText),
                   ],
                 ),
-                if (subtitle != null && subtitle.isNotEmpty) ...[
+                if (isAcontecimento) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    'Adicionado: $createdAtLabel',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Estado: $statusLabel',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isDone
+                          ? Colors.green.shade800
+                          : Colors.orange.shade800,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ] else if (subtitle != null && subtitle.isNotEmpty) ...[
                   const SizedBox(height: 3),
                   Text(
                     subtitle,
@@ -107,6 +142,10 @@ class EventItem extends StatelessWidget {
               ],
             ),
           ),
+          if (trailingWidget != null) ...[
+            const SizedBox(width: 8),
+            trailingWidget!,
+          ],
           if (!readOnly)
             GestureDetector(
               onTap: onToggleDone,
@@ -133,10 +172,21 @@ class EventItem extends StatelessWidget {
       ),
     );
 
+    final tappableChild = onTap == null
+        ? card
+        : Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onTap,
+              child: card,
+            ),
+          );
+
     if (readOnly) {
       return Padding(
         padding: const EdgeInsets.only(top: 10, bottom: 8),
-        child: card,
+        child: tappableChild,
       );
     }
 
@@ -156,7 +206,7 @@ class EventItem extends StatelessWidget {
             ),
           ],
         ),
-        child: card,
+        child: tappableChild,
       ),
     );
   }

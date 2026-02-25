@@ -14,6 +14,8 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
     required this.deletingInvoiceIds,
     required this.onShareInvoice,
     required this.onDeleteInvoice,
+    this.canShareInvoices = true,
+    this.canDeleteInvoices = true,
   });
 
   final Color primaryColor;
@@ -23,6 +25,8 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
   final Set<String> deletingInvoiceIds;
   final Future<void> Function(ClientInvoice invoice) onShareInvoice;
   final Future<void> Function(ClientInvoice invoice) onDeleteInvoice;
+  final bool canShareInvoices;
+  final bool canDeleteInvoices;
 
   @override
   Widget build(BuildContext context) {
@@ -173,54 +177,59 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                const SizedBox(width: 4),
-                                SizedBox(
-                                  width: 30,
-                                  child: sharingInvoiceIds.contains(invoice.id)
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
+                                if (canShareInvoices) ...[
+                                  const SizedBox(width: 4),
+                                  SizedBox(
+                                    width: 30,
+                                    child: sharingInvoiceIds.contains(invoice.id)
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : IconButton(
+                                            tooltip: 'Partilhar fatura',
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () =>
+                                                onShareInvoice(invoice),
+                                            icon: Icon(
+                                              Icons.share_outlined,
+                                              color: primaryColor,
+                                              size: 20,
+                                            ),
                                           ),
-                                        )
-                                      : IconButton(
-                                          tooltip: 'Partilhar fatura',
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          onPressed: () =>
-                                              onShareInvoice(invoice),
-                                          icon: Icon(
-                                            Icons.share_outlined,
-                                            color: primaryColor,
-                                            size: 20,
+                                  ),
+                                ],
+                                if (canDeleteInvoices) ...[
+                                  const SizedBox(width: 6),
+                                  SizedBox(
+                                    width: 30,
+                                    child:
+                                        deletingInvoiceIds.contains(invoice.id)
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : IconButton(
+                                            tooltip: 'Apagar fatura',
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () =>
+                                                onDeleteInvoice(invoice),
+                                            icon: const Icon(
+                                              Icons.delete_outline_rounded,
+                                              color: Colors.redAccent,
+                                              size: 20,
+                                            ),
                                           ),
-                                        ),
-                                ),
-                                const SizedBox(width: 6),
-                                SizedBox(
-                                  width: 30,
-                                  child: deletingInvoiceIds.contains(invoice.id)
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : IconButton(
-                                          tooltip: 'Apagar fatura',
-                                          padding: EdgeInsets.zero,
-                                          constraints: const BoxConstraints(),
-                                          onPressed: () =>
-                                              onDeleteInvoice(invoice),
-                                          icon: const Icon(
-                                            Icons.delete_outline_rounded,
-                                            color: Colors.redAccent,
-                                            size: 20,
-                                          ),
-                                        ),
-                                ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -245,6 +254,7 @@ class ClientAdditionalServicesSection extends StatelessWidget {
     required this.appliedServicePrices,
     required this.onRemoveAppliedService,
     required this.onAddService,
+    this.readOnly = false,
   });
 
   final Color primaryColor;
@@ -253,6 +263,7 @@ class ClientAdditionalServicesSection extends StatelessWidget {
   final Map<String, double> appliedServicePrices;
   final Future<void> Function(String serviceKey) onRemoveAppliedService;
   final VoidCallback onAddService;
+  final bool readOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -344,15 +355,16 @@ class ClientAdditionalServicesSection extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              IconButton(
-                                tooltip: 'Remover serviço',
-                                onPressed: () =>
-                                    onRemoveAppliedService(entry.key),
-                                icon: const Icon(
-                                  Icons.delete_outline_rounded,
-                                  color: Colors.redAccent,
+                              if (!readOnly)
+                                IconButton(
+                                  tooltip: 'Remover serviço',
+                                  onPressed: () =>
+                                      onRemoveAppliedService(entry.key),
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: Colors.redAccent,
+                                  ),
                                 ),
-                              ),
                             ],
                           ),
                         ),
@@ -361,14 +373,16 @@ class ClientAdditionalServicesSection extends StatelessWidget {
                     .toList(),
               ),
             ),
-          const SizedBox(height: 10),
-          AppButton(
-            text: 'Adicionar Serviço',
-            icon: Icons.add_rounded,
-            color: primaryColor,
-            onPressed: onAddService,
-            verticalPadding: 13,
-          ),
+          if (!readOnly) ...[
+            const SizedBox(height: 10),
+            AppButton(
+              text: 'Adicionar Serviço',
+              icon: Icons.add_rounded,
+              color: primaryColor,
+              onPressed: onAddService,
+              verticalPadding: 13,
+            ),
+          ],
         ],
       ),
     );

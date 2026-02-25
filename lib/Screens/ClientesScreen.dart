@@ -8,6 +8,7 @@ import 'package:teiker_app/Widgets/AppCard.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
 import 'package:teiker_app/Widgets/app_search_bar.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/theme/app_colors.dart';
@@ -38,6 +39,8 @@ class _ClientesScreenState extends State<ClientesScreen> {
   final TextEditingController _searchController = TextEditingController();
   late Future<List<Clientes>> _clientesFuture;
   late final bool _isAdmin;
+  late final bool _isHr;
+  late final bool _isPrivileged;
   late final String? _currentUserId;
 
   bool _showFilters = false;
@@ -52,7 +55,10 @@ class _ClientesScreenState extends State<ClientesScreen> {
   @override
   void initState() {
     super.initState();
-    _isAdmin = _authService.isCurrentUserAdmin;
+    final role = _authService.currentUserRole;
+    _isAdmin = role.isAdmin;
+    _isHr = role.isHr;
+    _isPrivileged = role.isPrivileged;
     _currentUserId = FirebaseAuth.instance.currentUser?.uid;
     _clientesFuture = _loadClientes();
   }
@@ -64,9 +70,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }
 
   Future<List<Clientes>> _loadClientes() async {
-    final clientes = await _authService.getClientes(includeArchived: _isAdmin);
+    final clientes = await _authService.getClientes(
+      includeArchived: _isPrivileged,
+    );
 
-    if (_isAdmin) return clientes;
+    if (_isPrivileged) return clientes;
 
     final now = DateTime.now();
     final totals = await Future.wait(
@@ -90,7 +98,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
     return _hoursByClienteFuture.putIfAbsent(
       clienteId,
       () => _monthlyHoursOverviewService.fetchMonthlyTotals(
-        teikerId: _isAdmin ? null : _currentUserId,
+        teikerId: _isPrivileged ? null : _currentUserId,
         clienteId: clienteId,
       ),
     );
@@ -142,7 +150,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }
 
   Future<void> _updateClienteHours(Clientes cliente) async {
-    if (!_isAdmin) {
+    if (!_isPrivileged) {
       final total = await _workSessionService
           .calculateMonthlyTotalForCurrentUser(
             clienteId: cliente.uid,
@@ -174,6 +182,19 @@ class _ClientesScreenState extends State<ClientesScreen> {
       _hoursByClienteFuture.clear();
       _currentMonthHoursCache.clear();
     });
+  }
+
+  AppBar _buildClientesAppBar() {
+    return buildAppBar(
+      'Os Clientes Teiker',
+      actions: [
+        IconButton(
+          onPressed: _refreshClientes,
+          icon: const Icon(Icons.refresh_rounded),
+          tooltip: 'Atualizar',
+        ),
+      ],
+    );
   }
 
   void _toggleSelected(String clienteId) {
@@ -346,7 +367,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Scaffold(
-            appBar: buildAppBar('Os Clientes Teiker'),
+            appBar: _buildClientesAppBar(),
             body: const Center(child: CircularProgressIndicator()),
           );
         }
@@ -364,7 +385,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
         }
 
         return Scaffold(
-          appBar: buildAppBar('Os Clientes Teiker'),
+          appBar: _buildClientesAppBar(),
           body: Column(
             children: [
               Row(
@@ -377,13 +398,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
                       onChanged: (_) => setState(() {}),
                     ),
                   ),
-                  if (_isAdmin)
+                  if (_isPrivileged)
                     _iconBox(
                       icon: Icons.filter_alt_outlined,
                       active: _showFilters,
                       onTap: () => setState(() => _showFilters = !_showFilters),
                     ),
-                  if (_isAdmin) const SizedBox(width: 6),
+                  if (_isPrivileged) const SizedBox(width: 6),
                   if (_isAdmin)
                     _iconBox(
                       icon: Icons.archive_outlined,
@@ -407,7 +428,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      if (_isAdmin)
+                      if (_isPrivileged)
                         ChoiceChip(
                           label: Text(_onlyArchived ? 'Arquivados' : 'Todos'),
                           selected: _onlyArchived,
@@ -577,7 +598,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                               InkWell(
                                                 onTap: _isAdmin
                                                     ? () =>
-                                                          _toggleArchiveStatus(
+                                _toggleArchiveStatus(
                                                             cliente,
                                                             false,
                                                           )
@@ -667,7 +688,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                     ],
                                   ),
                                 ),
-                                if (!_isSelecting && !_onlyArchived) ...[
+                                if (!_isSelecting &&
+                                    !_onlyArchived &&
+                                    !_isHr) ...[
                                   const SizedBox(height: 10),
                                   Row(
                                     children: [

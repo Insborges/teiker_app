@@ -1,12 +1,33 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/backend/cliente_repository.dart';
 import 'package:teiker_app/backend/teiker_agenda_repository.dart';
 import 'firebase_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/Teikers.dart';
 import 'package:teiker_app/models/teiker_workload.dart';
+
+class TeikerProfileAdminUpdateResult {
+  const TeikerProfileAdminUpdateResult({
+    this.warningMessage,
+    this.authEmailSynced = false,
+  });
+
+  final String? warningMessage;
+  final bool authEmailSynced;
+}
+
+class _TeikerAuthEmailSyncAttempt {
+  const _TeikerAuthEmailSyncAttempt({
+    required this.synced,
+    this.warningMessage,
+  });
+
+  final bool synced;
+  final String? warningMessage;
+}
 
 class AuthService {
   final _firebase = FirebaseService();
@@ -21,6 +42,8 @@ class AuthService {
       FirebaseFirestore.instance.collection('workSessions');
 
   String _normalizeEmail(String email) => email.trim().toLowerCase();
+  bool _looksLikeEmail(String value) =>
+      RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.trim());
 
   Future<QueryDocumentSnapshot<Map<String, dynamic>>?> _findTeikerByEmail(
     String normalizedEmail,
@@ -47,7 +70,7 @@ class AuthService {
 
   Future<bool?> _hasAccountForEmail(String email) async {
     try {
-      if (isAdminEmail(email)) return null;
+      if (isPrivilegedEmail(email)) return null;
       final teiker = await _findTeikerByEmail(email);
       return teiker != null;
     } catch (_) {
@@ -226,7 +249,7 @@ class AuthService {
         email: normalizedEmail,
         password: password,
       );
-      if (!isAdminEmail(credential.user?.email)) {
+      if (!isPrivilegedEmail(credential.user?.email)) {
         final user = credential.user;
         if (user == null) {
           await _firebase.auth.signOut();
@@ -292,11 +315,26 @@ class AuthService {
   //É admin ou não
   bool get isCurrentUserAdmin =>
       isAdminEmail(_firebase.auth.currentUser?.email);
+  bool get isCurrentUserHr => isHrEmail(_firebase.auth.currentUser?.email);
+  bool get isCurrentUserPrivileged =>
+      isPrivilegedEmail(_firebase.auth.currentUser?.email);
+  AppUserRole get currentUserRole =>
+      roleForEmail(_firebase.auth.currentUser?.email);
 
   static bool isAdminEmail(String? email) {
-    if (email == null) return false;
+    return AppUserRoleResolver.isAdminEmail(email);
+  }
 
-    return email.trim().endsWith("@teiker.ch");
+  static bool isHrEmail(String? email) {
+    return AppUserRoleResolver.isHrEmail(email);
+  }
+
+  static bool isPrivilegedEmail(String? email) {
+    return AppUserRoleResolver.isPrivilegedEmail(email);
+  }
+
+  static AppUserRole roleForEmail(String? email) {
+    return AppUserRoleResolver.fromEmail(email);
   }
 
   Future<void> createTeiker({
@@ -314,11 +352,14 @@ class AuthService {
       throw Exception('Nome da teiker é obrigatório.');
     }
     final normalizedEmail = _normalizeEmail(email);
-    if (normalizedEmail.isEmpty) {
-      throw Exception('Email da teiker é obrigatório.');
+    final hasLoginEmail = normalizedEmail.isNotEmpty;
+    if (hasLoginEmail && !_looksLikeEmail(normalizedEmail)) {
+      throw Exception('Email da teiker inválido.');
     }
-    if (password.trim().length < 6) {
-      throw Exception('A password deve ter pelo menos 6 caracteres.');
+    if (hasLoginEmail && password.trim().length < 6) {
+      throw Exception(
+        'Se a teiker tiver email, a password deve ter pelo menos 6 caracteres.',
+      );
     }
     if (telemovel <= 0) {
       throw Exception('Telemóvel inválido.');
@@ -328,14 +369,21 @@ class AuthService {
     }
     final weeklyHours = TeikerWorkload.weeklyHoursForPercentage(workPercentage);
 
-    final creatorAuth = await _firebase.secondaryAuth;
-    final userCredential = await creatorAuth.createUserWithEmailAndPassword(
-      email: normalizedEmail,
-      password: password,
-    );
+    UserCredential? userCredential;
+    String teikerUid;
+    if (hasLoginEmail) {
+      final creatorAuth = await _firebase.secondaryAuth;
+      userCredential = await creatorAuth.createUserWithEmailAndPassword(
+        email: normalizedEmail,
+        password: password,
+      );
+      teikerUid = userCredential.user!.uid;
+    } else {
+      teikerUid = FirebaseFirestore.instance.collection("teikers").doc().id;
+    }
 
     final teiker = Teiker(
-      uid: userCredential.user!.uid,
+      uid: teikerUid,
       nameTeiker: name,
       email: normalizedEmail,
       birthDate: birthDate,
@@ -356,11 +404,113 @@ class AuthService {
           .doc(teiker.uid)
           .set(teiker.toMap());
     } catch (e) {
-      try {
-        await userCredential.user?.delete();
-      } catch (_) {}
+      if (userCredential != null) {
+        try {
+          await userCredential.user?.delete();
+        } catch (_) {}
+      }
       throw Exception('Conta criada, mas falhou ao guardar dados: $e');
     }
+  }
+
+  Future<_TeikerAuthEmailSyncAttempt> _trySyncTeikerAuthEmail({
+    required String teikerUid,
+    required String previousEmail,
+    required String newEmail,
+  }) async {
+    final normalizedPrevious = _normalizeEmail(previousEmail);
+    final normalizedNew = _normalizeEmail(newEmail);
+
+    if (normalizedNew.isEmpty || normalizedNew == normalizedPrevious) {
+      return const _TeikerAuthEmailSyncAttempt(synced: false);
+    }
+
+    if (normalizedPrevious.isEmpty) {
+      return const _TeikerAuthEmailSyncAttempt(
+        synced: false,
+        warningMessage:
+            'Email da teiker atualizado no perfil. A conta de login ainda não foi criada automaticamente.',
+      );
+    }
+
+    final secondaryAuth = await _firebase.secondaryAuth;
+    final secondaryUser = secondaryAuth.currentUser;
+    if (secondaryUser == null || secondaryUser.uid != teikerUid) {
+      return const _TeikerAuthEmailSyncAttempt(
+        synced: false,
+        warningMessage:
+            'Email do perfil atualizado. A conta de login não foi sincronizada automaticamente nesta app.',
+      );
+    }
+
+    try {
+      await secondaryUser.verifyBeforeUpdateEmail(normalizedNew);
+      return const _TeikerAuthEmailSyncAttempt(
+        synced: false,
+        warningMessage:
+            'Email do perfil atualizado. Foi pedido email de verificação para concluir a alteração do login.',
+      );
+    } on FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'email-already-in-use':
+          throw Exception('Este email já está a ser usado noutra conta.');
+        case 'invalid-email':
+          throw Exception('Email inválido.');
+        case 'requires-recent-login':
+        case 'credential-too-old-login-again':
+          return const _TeikerAuthEmailSyncAttempt(
+            synced: false,
+            warningMessage:
+                'Email do perfil atualizado. A conta de login precisa de sessão recente da própria teiker para sincronizar.',
+          );
+        default:
+          return _TeikerAuthEmailSyncAttempt(
+            synced: false,
+            warningMessage:
+                'Email do perfil atualizado, mas a conta de login não foi sincronizada (${e.code}).',
+          );
+      }
+    } catch (e) {
+      return _TeikerAuthEmailSyncAttempt(
+        synced: false,
+        warningMessage:
+            'Email do perfil atualizado, mas a conta de login não foi sincronizada: $e',
+      );
+    }
+  }
+
+  Future<TeikerProfileAdminUpdateResult> updateTeikerProfileByAdmin({
+    required Teiker teiker,
+    required String previousEmail,
+  }) async {
+    final normalizedEmail = _normalizeEmail(teiker.email);
+    if (normalizedEmail.isNotEmpty && !_looksLikeEmail(normalizedEmail)) {
+      throw Exception('Email inválido.');
+    }
+
+    final normalizedPreviousEmail = _normalizeEmail(previousEmail);
+    if (normalizedPreviousEmail.isNotEmpty && normalizedEmail.isEmpty) {
+      throw Exception(
+        'Não é possível remover o email de login desta teiker a partir desta ação.',
+      );
+    }
+
+    final syncAttempt = await _trySyncTeikerAuthEmail(
+      teikerUid: teiker.uid,
+      previousEmail: normalizedPreviousEmail,
+      newEmail: normalizedEmail,
+    );
+
+    final updatedTeiker = teiker.copyWith(email: normalizedEmail);
+    await FirebaseFirestore.instance
+        .collection("teikers")
+        .doc(updatedTeiker.uid)
+        .update(updatedTeiker.toMap());
+
+    return TeikerProfileAdminUpdateResult(
+      warningMessage: syncAttempt.warningMessage,
+      authEmailSynced: syncAttempt.synced,
+    );
   }
 
   Future<void> updateTeikerContact({

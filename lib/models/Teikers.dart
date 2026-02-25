@@ -61,6 +61,119 @@ class BaixaPeriodo {
   }
 }
 
+enum TeikerMarcacaoTipo {
+  reuniaoTrabalho,
+  acompanhamento;
+
+  String get label {
+    switch (this) {
+      case TeikerMarcacaoTipo.reuniaoTrabalho:
+        return 'Reunião de trabalho';
+      case TeikerMarcacaoTipo.acompanhamento:
+        return 'Acompanhamento';
+    }
+  }
+
+  String get storageValue {
+    switch (this) {
+      case TeikerMarcacaoTipo.reuniaoTrabalho:
+        return 'reuniao_trabalho';
+      case TeikerMarcacaoTipo.acompanhamento:
+        return 'acompanhamento';
+    }
+  }
+
+  static TeikerMarcacaoTipo fromStorageValue(String? raw) {
+    switch ((raw ?? '').trim().toLowerCase()) {
+      case 'reuniao_trabalho':
+      case 'reuniao':
+      case 'reunião':
+        return TeikerMarcacaoTipo.reuniaoTrabalho;
+      case 'acompanhamento':
+        return TeikerMarcacaoTipo.acompanhamento;
+      default:
+        return TeikerMarcacaoTipo.reuniaoTrabalho;
+    }
+  }
+}
+
+class TeikerMarcacao {
+  const TeikerMarcacao({
+    required this.id,
+    required this.data,
+    required this.tipo,
+    this.createdAt,
+    this.createdById,
+    this.createdByName,
+    this.reminderId,
+    this.adminReminderId,
+  });
+
+  final String id;
+  final DateTime data;
+  final TeikerMarcacaoTipo tipo;
+  final DateTime? createdAt;
+  final String? createdById;
+  final String? createdByName;
+  final String? reminderId;
+  final String? adminReminderId;
+
+  factory TeikerMarcacao.fromMap(Map<String, dynamic> map) {
+    final parsedDate =
+        _parseDate(map['data']) ?? _parseDate(map['date']) ?? DateTime.now();
+    final id = (map['id'] as String?)?.trim();
+    return TeikerMarcacao(
+      id: (id != null && id.isNotEmpty)
+          ? id
+          : parsedDate.microsecondsSinceEpoch.toString(),
+      data: parsedDate,
+      tipo: TeikerMarcacaoTipo.fromStorageValue(
+        (map['tipo'] as String?)?.trim(),
+      ),
+      createdAt: _parseDate(map['createdAt']),
+      createdById: (map['createdById'] as String?)?.trim(),
+      createdByName: (map['createdByName'] as String?)?.trim(),
+      reminderId: (map['reminderId'] as String?)?.trim(),
+      adminReminderId: (map['adminReminderId'] as String?)?.trim(),
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'data': data.toIso8601String(),
+      'tipo': tipo.storageValue,
+      'createdAt': createdAt?.toIso8601String(),
+      'createdById': createdById,
+      'createdByName': createdByName,
+      'reminderId': reminderId,
+      'adminReminderId': adminReminderId,
+    };
+  }
+
+  TeikerMarcacao copyWith({
+    String? id,
+    DateTime? data,
+    TeikerMarcacaoTipo? tipo,
+    DateTime? createdAt,
+    String? createdById,
+    String? createdByName,
+    String? reminderId,
+    String? adminReminderId,
+  }) {
+    return TeikerMarcacao(
+      id: id ?? this.id,
+      data: data ?? this.data,
+      tipo: tipo ?? this.tipo,
+      createdAt: createdAt ?? this.createdAt,
+      createdById: createdById ?? this.createdById,
+      createdByName: createdByName ?? this.createdByName,
+      reminderId: reminderId ?? this.reminderId,
+      adminReminderId: adminReminderId ?? this.adminReminderId,
+    );
+  }
+}
+
 class Teiker {
   final String uid;
   final String nameTeiker;
@@ -72,6 +185,7 @@ class Teiker {
   final int workPercentage;
   final List<String> clientesIds;
   final List<Consulta> consultas;
+  final List<TeikerMarcacao> marcacoes;
   final DateTime? feriasInicio;
   final DateTime? feriasFim;
   final List<FeriasPeriodo> feriasPeriodos;
@@ -91,6 +205,7 @@ class Teiker {
     this.workPercentage = TeikerWorkload.fullTime,
     required this.clientesIds,
     required this.consultas,
+    this.marcacoes = const [],
     required this.corIdentificadora,
     required this.isWorking,
     this.feriasInicio,
@@ -156,6 +271,12 @@ class Teiker {
       consultas: (data['consultas'] as List<dynamic>? ?? [])
           .map((c) => Consulta.fromMap(c as Map<String, dynamic>? ?? {}))
           .toList(),
+      marcacoes:
+          (data['marcacoes'] as List<dynamic>? ?? [])
+              .whereType<Map>()
+              .map((m) => TeikerMarcacao.fromMap(Map<String, dynamic>.from(m)))
+              .toList()
+            ..sort((a, b) => a.data.compareTo(b.data)),
 
       feriasInicio: _parseDate(data['feriasInicio']),
       feriasFim: _parseDate(data['feriasFim']),
@@ -179,6 +300,7 @@ class Teiker {
       'cor': corIdentificadora.toARGB32(),
       'clientesIds': clientesIds,
       'consultas': consultas.map((c) => c.toMap()).toList(),
+      'marcacoes': marcacoes.map((m) => m.toMap()).toList(),
       'feriasInicio': feriasInicio?.toIso8601String(),
       'feriasFim': feriasFim?.toIso8601String(),
       'feriasPeriodos': feriasPeriodos.map((p) => p.toMap()).toList(),
@@ -199,6 +321,7 @@ class Teiker {
     int? workPercentage,
     List<String>? clientesIds,
     List<Consulta>? consultas,
+    List<TeikerMarcacao>? marcacoes,
     DateTime? feriasInicio,
     DateTime? feriasFim,
     List<FeriasPeriodo>? feriasPeriodos,
@@ -218,6 +341,7 @@ class Teiker {
       workPercentage: workPercentage ?? this.workPercentage,
       clientesIds: clientesIds ?? this.clientesIds,
       consultas: consultas ?? this.consultas,
+      marcacoes: marcacoes ?? this.marcacoes,
       feriasInicio: feriasInicio ?? this.feriasInicio,
       feriasFim: feriasFim ?? this.feriasFim,
       feriasPeriodos: feriasPeriodos ?? this.feriasPeriodos,

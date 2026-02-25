@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../domain/work_session.dart';
+import '../domain/fixed_holiday_hours_policy.dart';
 import '../domain/work_session_repository.dart';
 
 class FirestoreWorkSessionRepository implements WorkSessionRepository {
@@ -163,11 +164,30 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     var duration = (data['durationHours'] as num?)?.toDouble();
     if (duration != null) return duration;
 
+    final rawStored = (data['rawDurationHours'] as num?)?.toDouble();
     final start = (data['startTime'] as Timestamp?)?.toDate();
+    if (rawStored != null) {
+      final storedMultiplier = (data['durationMultiplier'] as num?)?.toDouble();
+      if (storedMultiplier != null && storedMultiplier > 0) {
+        return rawStored * storedMultiplier;
+      }
+      if (start != null) {
+        return FixedHolidayHoursPolicy.applyToHours(
+          workDate: start,
+          rawHours: rawStored,
+        );
+      }
+      return rawStored;
+    }
+
     final end = (data['endTime'] as Timestamp?)?.toDate();
     if (start == null || end == null) return null;
 
-    return end.difference(start).inMinutes / 60.0;
+    final rawHours = end.difference(start).inMinutes / 60.0;
+    return FixedHolidayHoursPolicy.applyToHours(
+      workDate: start,
+      rawHours: rawHours,
+    );
   }
 
   @override
@@ -226,11 +246,18 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
         throw Exception('A hora de fim deve ser posterior ao início.');
       }
 
-      final durationHours = end.difference(startTime).inMinutes / 60.0;
+      final rawDurationHours = end.difference(startTime).inMinutes / 60.0;
+      final durationMultiplier = FixedHolidayHoursPolicy.multiplierFor(
+        startTime,
+      );
+      final durationHours = rawDurationHours * durationMultiplier;
 
       tx.update(docRef, {
         'endTime': Timestamp.fromDate(end),
         'durationHours': durationHours,
+        'rawDurationHours': rawDurationHours,
+        'durationMultiplier': durationMultiplier,
+        'isFixedHolidayRateApplied': durationMultiplier > 1,
       });
 
       closedSession = WorkSession(
@@ -256,7 +283,9 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     if (!end.isAfter(start)) {
       throw Exception('A hora de fim deve ser posterior ao início.');
     }
-    final duration = end.difference(start).inMinutes / 60.0;
+    final rawDuration = end.difference(start).inMinutes / 60.0;
+    final durationMultiplier = FixedHolidayHoursPolicy.multiplierFor(start);
+    final duration = rawDuration * durationMultiplier;
 
     final doc = await firestore.collection('workSessions').add({
       'clienteId': clienteId,
@@ -264,6 +293,9 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       'startTime': Timestamp.fromDate(start),
       'endTime': Timestamp.fromDate(end),
       'durationHours': duration,
+      'rawDurationHours': rawDuration,
+      'durationMultiplier': durationMultiplier,
+      'isFixedHolidayRateApplied': durationMultiplier > 1,
     });
 
     return WorkSession(

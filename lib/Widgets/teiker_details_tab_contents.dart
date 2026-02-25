@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/app_section_card.dart';
 import 'package:teiker_app/Widgets/consulta_item_card.dart';
@@ -14,7 +15,9 @@ class TeikerDetailsInfoTab extends StatelessWidget {
     required this.teiker,
     required this.primaryColor,
     required this.hoursSectionTitle,
+    required this.emailController,
     required this.telemovelController,
+    required this.canEditPersonalInfo,
     required this.phoneCountryIso,
     required this.onPhoneCountryChanged,
     required this.onSaveChanges,
@@ -24,7 +27,9 @@ class TeikerDetailsInfoTab extends StatelessWidget {
   final Teiker teiker;
   final Color primaryColor;
   final String hoursSectionTitle;
+  final TextEditingController emailController;
   final TextEditingController telemovelController;
+  final bool canEditPersonalInfo;
   final String phoneCountryIso;
   final ValueChanged<String> onPhoneCountryChanged;
   final VoidCallback onSaveChanges;
@@ -43,21 +48,26 @@ class TeikerDetailsInfoTab extends StatelessWidget {
             children: [
               TeikerPersonalInfoContent(
                 birthDate: teiker.birthDate,
+                emailController: emailController,
                 telemovelController: telemovelController,
+                readOnly: !canEditPersonalInfo,
                 phoneCountryIso: phoneCountryIso,
                 onPhoneCountryChanged: onPhoneCountryChanged,
                 primaryColor: primaryColor,
               ),
             ],
           ),
-          const SizedBox(height: 13),
-          AppButton(
-            text: 'Guardar Alterações',
-            icon: Icons.save_rounded,
-            color: primaryColor,
-            onPressed: onSaveChanges,
-          ),
-          const SizedBox(height: 20),
+          if (canEditPersonalInfo) ...[
+            const SizedBox(height: 13),
+            AppButton(
+              text: 'Guardar Alterações',
+              icon: Icons.save_rounded,
+              color: primaryColor,
+              onPressed: onSaveChanges,
+            ),
+            const SizedBox(height: 20),
+          ] else
+            const SizedBox(height: 12),
           AppSectionCard(
             title: hoursSectionTitle,
             titleColor: primaryColor,
@@ -130,6 +140,8 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
   const TeikerDetailsMarcacoesTab({
     super.key,
     required this.primaryColor,
+    required this.marcacoes,
+    required this.onAddMarcacao,
     required this.baixasPeriodos,
     required this.baixasDaysCount,
     required this.onAddBaixa,
@@ -147,6 +159,8 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
   });
 
   final Color primaryColor;
+  final List<TeikerMarcacao> marcacoes;
+  final VoidCallback onAddMarcacao;
   final List<BaixaPeriodo> baixasPeriodos;
   final int baixasDaysCount;
   final VoidCallback onAddBaixa;
@@ -164,10 +178,43 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sortedMarcacoes = List<TeikerMarcacao>.from(marcacoes)
+      ..sort((a, b) => a.data.compareTo(b.data));
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          AppSectionCard(
+            title: 'Reuniões / Acompanhamentos',
+            titleIcon: Icons.groups_2_outlined,
+            titleColor: primaryColor,
+            children: [
+              if (marcacoes.isEmpty)
+                const Text(
+                  'Nenhuma marcação registada.',
+                  style: TextStyle(color: Colors.grey),
+                )
+              else
+                Column(
+                  children: sortedMarcacoes
+                      .map(
+                        (marcacao) => _TeikerMarcacaoListTile(
+                          marcacao: marcacao,
+                          primaryColor: primaryColor,
+                        ),
+                      )
+                      .toList(),
+                ),
+              const SizedBox(height: 12),
+              AppButton(
+                text: 'Adicionar marcação',
+                color: primaryColor,
+                icon: Icons.add_task_rounded,
+                onPressed: onAddMarcacao,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
           AppSectionCard(
             title: 'Baixas',
             titleIcon: Icons.healing_outlined,
@@ -244,6 +291,133 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _TeikerMarcacaoListTile extends StatelessWidget {
+  const _TeikerMarcacaoListTile({
+    required this.marcacao,
+    required this.primaryColor,
+  });
+
+  final TeikerMarcacao marcacao;
+  final Color primaryColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final dia = DateFormat('dd MMM yyyy', 'pt_PT').format(marcacao.data);
+    final hora = DateFormat('HH:mm', 'pt_PT').format(marcacao.data);
+    final isReuniao = marcacao.tipo == TeikerMarcacaoTipo.reuniaoTrabalho;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: primaryColor.withValues(alpha: .18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: primaryColor.withValues(alpha: .2)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isReuniao
+                          ? Icons.groups_2_outlined
+                          : Icons.support_agent_outlined,
+                      size: 16,
+                      color: primaryColor,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      marcacao.tipo.label,
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _MarcacaoMetaChip(
+                  icon: Icons.calendar_today_rounded,
+                  label: dia,
+                  primaryColor: primaryColor,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _MarcacaoMetaChip(
+                  icon: Icons.schedule_rounded,
+                  label: hora,
+                  primaryColor: primaryColor,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MarcacaoMetaChip extends StatelessWidget {
+  const _MarcacaoMetaChip({
+    required this.icon,
+    required this.label,
+    required this.primaryColor,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color primaryColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: primaryColor.withValues(alpha: .12)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 16, color: primaryColor),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );

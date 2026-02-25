@@ -11,7 +11,7 @@ import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
-enum MainRole { admin, teiker }
+enum MainRole { admin, hr, teiker }
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key, required this.role});
@@ -19,6 +19,8 @@ class MainScreen extends StatefulWidget {
   final MainRole role;
 
   bool get isAdmin => role == MainRole.admin;
+  bool get isHr => role == MainRole.hr;
+  bool get isPrivileged => role == MainRole.admin || role == MainRole.hr;
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -31,6 +33,9 @@ class _MainScreenState extends State<MainScreen> {
   final AuthService _authService = AuthService();
 
   bool get _isAdmin => widget.isAdmin;
+  bool get _isHr => widget.isHr;
+  bool get _isPrivileged => widget.isPrivileged;
+  bool get _canAddEntities => _isAdmin;
 
   @override
   void dispose() {
@@ -53,6 +58,15 @@ class _MainScreenState extends State<MainScreen> {
       ];
     }
 
+    if (_isHr) {
+      return const [
+        HomeScreen(),
+        TeikersInfoScreen(),
+        ClientesScreen(),
+        DefinicoesScreen(role: SettingsRole.hr),
+      ];
+    }
+
     return const [
       HomeScreen(),
       ClientesScreen(),
@@ -61,7 +75,7 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   List<NavItemConfig> _navItems() {
-    if (_isAdmin) {
+    if (_isPrivileged) {
       return const [
         NavItemConfig(
           icon: Icons.home_outlined,
@@ -112,7 +126,7 @@ class _MainScreenState extends State<MainScreen> {
       resizeToAvoidBottomInset: false,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: (_isAdmin && showOptions)
+        onTap: (_canAddEntities && showOptions)
             ? () => setState(() => showOptions = false)
             : null,
         child: Stack(
@@ -123,7 +137,7 @@ class _MainScreenState extends State<MainScreen> {
               children: _pages(),
             ),
 
-            if (_isAdmin && showOptions)
+            if (_canAddEntities && showOptions)
               Positioned(
                 right: 16,
                 bottom: 120,
@@ -157,11 +171,11 @@ class _MainScreenState extends State<MainScreen> {
               alignment: Alignment.bottomCenter,
               child: AppBottomNavBar(
                 index: selected,
-                fabOpen: _isAdmin ? showOptions : false,
-                showFab: _isAdmin,
+                fabOpen: _canAddEntities ? showOptions : false,
+                showFab: _canAddEntities,
                 items: _navItems(),
                 onTap: _onNavTap,
-                onFabTap: _isAdmin
+                onFabTap: _canAddEntities
                     ? () => setState(() => showOptions = !showOptions)
                     : null,
               ),
@@ -224,7 +238,11 @@ class _MainScreenState extends State<MainScreen> {
         cor: data.cor,
       );
       if (!mounted) return;
-      _showSuccess('Teiker criada com sucesso!');
+      _showSuccess(
+        data.email.trim().isEmpty
+            ? 'Teiker criada com sucesso (sem conta de login ainda).'
+            : 'Teiker criada com sucesso!',
+      );
     } catch (e) {
       if (!mounted) return;
       _showError('Erro ao criar Teiker: $e');
@@ -241,6 +259,7 @@ class _MainScreenState extends State<MainScreen> {
         uid: FirebaseFirestore.instance.collection('clientes').doc().id,
         nameCliente: data.name,
         moradaCliente: data.morada,
+        cidadeCliente: data.cidade,
         codigoPostal: data.codigoPostal,
         telemovel: data.telemovel,
         phoneCountryIso: data.phoneCountryIso,

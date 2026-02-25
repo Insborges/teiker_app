@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/models/Teikers.dart';
 
 class TeikerAgendaRepository {
@@ -11,10 +12,8 @@ class TeikerAgendaRepository {
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
 
-  bool _isAdminEmail(String? email) =>
-      email?.trim().endsWith('@teiker.ch') ?? false;
-
-  bool get _isCurrentUserAdmin => _isAdminEmail(_auth.currentUser?.email);
+  bool get _isCurrentUserPrivileged =>
+      AppUserRoleResolver.isPrivilegedEmail(_auth.currentUser?.email);
 
   Color _parseTeikerColor(dynamic corRaw) {
     if (corRaw is int) return Color(corRaw);
@@ -44,7 +43,7 @@ class TeikerAgendaRepository {
 
   Future<List<Map<String, dynamic>>> getFeriasTeikers() async {
     final user = _auth.currentUser;
-    final admin = _isCurrentUserAdmin;
+    final admin = _isCurrentUserPrivileged;
     final snapshot = await _firestore.collection('teikers').get();
 
     final ferias = <Map<String, dynamic>>[];
@@ -94,7 +93,7 @@ class TeikerAgendaRepository {
 
   Future<List<Map<String, dynamic>>> getBaixasTeikers() async {
     final user = _auth.currentUser;
-    final admin = _isCurrentUserAdmin;
+    final admin = _isCurrentUserPrivileged;
     final snapshot = await _firestore.collection('teikers').get();
 
     final baixas = <Map<String, dynamic>>[];
@@ -136,7 +135,7 @@ class TeikerAgendaRepository {
 
   Future<List<Map<String, dynamic>>> getConsultasTeikers() async {
     final user = _auth.currentUser;
-    final admin = _isCurrentUserAdmin;
+    final admin = _isCurrentUserPrivileged;
     final snapshot = await _firestore.collection('teikers').get();
 
     final consultas = <Map<String, dynamic>>[];

@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:teiker_app/Screens/AdminInvoicesScreen.dart';
+import 'package:teiker_app/Screens/AllTeikersHoursScreen.dart';
 import 'package:teiker_app/Screens/TeikerHorasScreen.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
@@ -16,7 +17,7 @@ import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
-enum SettingsRole { admin, teiker }
+enum SettingsRole { admin, hr, teiker }
 
 class DefinicoesScreen extends StatefulWidget {
   const DefinicoesScreen({super.key, required this.role});
@@ -24,6 +25,8 @@ class DefinicoesScreen extends StatefulWidget {
   final SettingsRole role;
 
   bool get isAdmin => role == SettingsRole.admin;
+  bool get isHr => role == SettingsRole.hr;
+  bool get isPrivileged => isAdmin || isHr;
 
   @override
   State<DefinicoesScreen> createState() => _DefinicoesScreenState();
@@ -39,7 +42,7 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
   String _displayName = '';
   String _displaySubtitle = '';
 
-  String get _collection => widget.isAdmin ? 'admins' : 'teikers';
+  String get _collection => widget.isPrivileged ? 'admins' : 'teikers';
   Color get _mainColor => AppColors.primaryGreen;
 
   @override
@@ -78,6 +81,9 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
       if (widget.isAdmin) {
         _displayName = 'Sónia Pereira';
         _displaySubtitle = 'Gestora da Teiker';
+      } else if (widget.isHr) {
+        _displayName = 'Mary Borges';
+        _displaySubtitle = 'Recursos Humanos';
       } else {
         _displayName =
             data['name'] as String? ??
@@ -142,7 +148,7 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
     showResetPasswordDialog(
       context: context,
       onSubmit: (email) => _authService.resetPassword(email),
-      initialEmail: widget.isAdmin ? null : _displaySubtitle,
+      initialEmail: widget.isPrivileged ? null : _displaySubtitle,
       accentColor: _mainColor,
     );
   }
@@ -166,6 +172,20 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AdminInvoicesScreen()),
+            );
+          },
+          color: _mainColor,
+        ),
+      );
+    } else if (widget.isHr) {
+      buttons.add(
+        SettingsOptionCard(
+          icon: Icons.insights_outlined,
+          label: 'Horas de todas as teikers',
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AllTeikersHoursScreen()),
             );
           },
           color: _mainColor,

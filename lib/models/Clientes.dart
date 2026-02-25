@@ -4,6 +4,7 @@ class Clientes {
   String uid;
   String nameCliente;
   String moradaCliente;
+  String cidadeCliente;
   String codigoPostal;
   double hourasCasa;
   int telemovel;
@@ -21,6 +22,7 @@ class Clientes {
     required this.uid,
     required this.nameCliente,
     required this.moradaCliente,
+    required this.cidadeCliente,
     required this.codigoPostal,
     required this.hourasCasa,
     required this.telemovel,
@@ -41,6 +43,7 @@ class Clientes {
       'uid': uid,
       'nameCliente': nameCliente,
       'moradaCliente': moradaCliente,
+      'cidadeCliente': cidadeCliente,
       'codigoPostal': codigoPostal,
       'hourasCasa': hourasCasa,
       'telemovel': telemovel,
@@ -119,7 +122,8 @@ class Clientes {
       uid: map['uid'] as String? ?? '',
       nameCliente: map['nameCliente'] as String? ?? '',
       moradaCliente: map['moradaCliente'] as String? ?? '',
-      codigoPostal: map['codigoPostal'] ?? '',
+      cidadeCliente: _resolveCidadeCliente(map),
+      codigoPostal: _resolveCodigoPostal(map),
       hourasCasa: (map['hourasCasa'] as num?)?.toDouble() ?? 0.0,
       telemovel: telemovel,
       phoneCountryIso: (map['phoneCountryIso'] as String? ?? 'PT')
@@ -134,5 +138,34 @@ class Clientes {
       archivedBy: archivedBy,
       archivedAt: archivedAt,
     );
+  }
+
+  static String _resolveCidadeCliente(Map<String, dynamic> map) {
+    final explicit = (map['cidadeCliente'] as String?)?.trim() ?? '';
+    if (explicit.isNotEmpty) return explicit;
+
+    final rawPostal = map['codigoPostal']?.toString().trim() ?? '';
+    final match = RegExp(
+      r'^([0-9]{4,5}(?:-[0-9]{3,4})?)\s+(.+)$',
+    ).firstMatch(rawPostal);
+    if (match == null) return '';
+
+    final possibleCity = (match.group(2) ?? '').trim();
+    if (!RegExp(r'[A-Za-zÀ-ÿ]').hasMatch(possibleCity)) return '';
+    return possibleCity;
+  }
+
+  static String _resolveCodigoPostal(Map<String, dynamic> map) {
+    final rawPostal = map['codigoPostal']?.toString().trim() ?? '';
+    if (rawPostal.isEmpty) return '';
+
+    final match = RegExp(
+      r'^([0-9]{4,5}(?:-[0-9]{3,4})?)\s+(.+)$',
+    ).firstMatch(rawPostal);
+    if (match == null) return rawPostal;
+
+    final possibleCity = (match.group(2) ?? '').trim();
+    if (!RegExp(r'[A-Za-zÀ-ÿ]').hasMatch(possibleCity)) return rawPostal;
+    return (match.group(1) ?? '').trim();
   }
 }

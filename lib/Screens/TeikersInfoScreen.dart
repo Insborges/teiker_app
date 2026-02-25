@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:teiker_app/Screens/DetailsScreens.dart/TeikersDetais.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
@@ -5,6 +6,7 @@ import 'package:teiker_app/Widgets/AppBottomNavBar.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
 import 'package:teiker_app/Widgets/app_search_bar.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/backend/TeikerService.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/theme/app_colors.dart';
@@ -28,7 +30,10 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
   final AuthService _authService = AuthService();
   final TextEditingController _searchController = TextEditingController();
   late final Stream<List<Teiker>> _teikersStream;
+  late final String? _currentUserUid;
   late final bool _isAdmin;
+  late final bool _isHr;
+  late final bool _isPrivileged;
 
   bool _showFilters = false;
   bool _selectionMode = false;
@@ -38,7 +43,10 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
   @override
   void initState() {
     super.initState();
+    _currentUserUid = FirebaseAuth.instance.currentUser?.uid;
     _isAdmin = _authService.isCurrentUserAdmin;
+    _isHr = _authService.isCurrentUserHr;
+    _isPrivileged = _authService.isCurrentUserPrivileged;
     _teikersStream = TeikerService().streamTeikers();
   }
 
@@ -72,6 +80,28 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
             setState(() => _totalHoursCache[teiker.uid] = 0);
           });
     }
+  }
+
+  Future<void> _refreshTeikers() async {
+    if (!mounted) return;
+    setState(() {
+      _hoursCache.clear();
+      _totalHoursCache.clear();
+      _selectedTeikers.clear();
+    });
+  }
+
+  AppBar _buildTeikersAppBar() {
+    return buildAppBar(
+      'As Teikers',
+      actions: [
+        IconButton(
+          onPressed: _refreshTeikers,
+          icon: const Icon(Icons.refresh_rounded),
+          tooltip: 'Atualizar',
+        ),
+      ],
+    );
   }
 
   void _toggleSelected(String teikerId) {
@@ -131,6 +161,11 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
   List<Teiker> _applyFilters(List<Teiker> input) {
     final query = _searchController.text.trim().toLowerCase();
     final filtered = input.where((teiker) {
+      if (_isHr &&
+          _currentUserUid != null &&
+          teiker.uid.trim() == _currentUserUid.trim()) {
+        return false;
+      }
       if (query.isEmpty) return true;
       return teiker.nameTeiker.toLowerCase().contains(query);
     }).toList();
@@ -186,6 +221,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
   Widget _teikerCard(Teiker teiker) {
     final selected = _selectedTeikers.contains(teiker.uid);
     final primary = teiker.corIdentificadora;
+    final isHrEntry = AppUserRoleResolver.isHrEmail(teiker.email);
     final consultasCount = teiker.consultas.length;
     final feriasPeriodos = teiker.feriasPeriodos;
     final feriasDays = _countFeriasDays(
@@ -203,7 +239,10 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
         }
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => TeikersDetails(teiker: teiker)),
+          MaterialPageRoute(
+            builder: (_) =>
+                TeikersDetails(teiker: teiker, canEditPersonalInfo: _isAdmin),
+          ),
         );
       },
       child: Container(
@@ -261,6 +300,31 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                           ),
                         ),
                       ),
+                      if (_isAdmin && isHrEntry)
+                        Container(
+                          margin: const EdgeInsets.only(left: 8),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryGreen.withValues(alpha: .1),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: AppColors.primaryGreen.withValues(
+                                alpha: .25,
+                              ),
+                            ),
+                          ),
+                          child: const Text(
+                            'Recursos Humanos',
+                            style: TextStyle(
+                              color: AppColors.primaryGreen,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -290,17 +354,19 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    currentMonthHours == null
-                        ? '...h'
-                        : '${currentMonthHours.toStringAsFixed(1)}h',
-                    style: TextStyle(
-                      color: primary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
+                  if (!isHrEntry) ...[
+                    Text(
+                      currentMonthHours == null
+                          ? '...h'
+                          : '${currentMonthHours.toStringAsFixed(1)}h',
+                      style: TextStyle(
+                        color: primary,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
+                    const SizedBox(width: 6),
+                  ],
                   const Icon(Icons.chevron_right, color: Colors.grey),
                 ],
               ),
@@ -374,13 +440,13 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
 
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Scaffold(
-            appBar: buildAppBar('As Teikers'),
+            appBar: _buildTeikersAppBar(),
             body: const Center(child: CircularProgressIndicator()),
           );
         }
         if (snapshot.hasError) {
           return Scaffold(
-            appBar: buildAppBar('As Teikers'),
+            appBar: _buildTeikersAppBar(),
             body: const Center(child: Text('Erro ao carregar teikers')),
           );
         }
@@ -390,7 +456,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
         final filteredTeikers = _applyFilters(teikers);
 
         return Scaffold(
-          appBar: buildAppBar('As Teikers'),
+          appBar: _buildTeikersAppBar(),
           body: Column(
             children: [
               Row(
@@ -403,13 +469,13 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                       onChanged: (_) => setState(() {}),
                     ),
                   ),
-                  if (_isAdmin)
+                  if (_isPrivileged)
                     _iconBox(
                       icon: Icons.filter_alt_outlined,
                       active: _showFilters,
                       onTap: () => setState(() => _showFilters = !_showFilters),
                     ),
-                  if (_isAdmin) const SizedBox(width: 6),
+                  if (_isPrivileged) const SizedBox(width: 6),
                   if (_isAdmin)
                     _iconBox(
                       icon: Icons.delete_outline,
@@ -422,7 +488,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                   if (_isAdmin) const SizedBox(width: 12),
                 ],
               ),
-              if (_showFilters)
+              if (_isPrivileged && _showFilters)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                   child: Wrap(

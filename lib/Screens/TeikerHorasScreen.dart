@@ -7,6 +7,7 @@ import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/teiker_workload.dart';
 import 'package:teiker_app/theme/app_colors.dart';
+import 'package:teiker_app/work_sessions/domain/fixed_holiday_hours_policy.dart';
 
 class TeikerHorasScreen extends StatefulWidget {
   const TeikerHorasScreen({super.key});
@@ -113,8 +114,22 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
       final start = (data['startTime'] as Timestamp?)?.toDate();
       final end = (data['endTime'] as Timestamp?)?.toDate();
       double? duration = (data['durationHours'] as num?)?.toDouble();
+      final rawStored = (data['rawDurationHours'] as num?)?.toDouble();
+      if (duration == null && rawStored != null && start != null) {
+        final storedMultiplier = (data['durationMultiplier'] as num?)
+            ?.toDouble();
+        duration = storedMultiplier != null && storedMultiplier > 0
+            ? rawStored * storedMultiplier
+            : FixedHolidayHoursPolicy.applyToHours(
+                workDate: start,
+                rawHours: rawStored,
+              );
+      }
       duration ??= (start != null && end != null)
-          ? end.difference(start).inMinutes / 60.0
+          ? FixedHolidayHoursPolicy.applyToHours(
+              workDate: start,
+              rawHours: end.difference(start).inMinutes / 60.0,
+            )
           : null;
 
       if (duration == null || start == null) continue;

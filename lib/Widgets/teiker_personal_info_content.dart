@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:teiker_app/Widgets/AppTextInput.dart';
 import 'package:teiker_app/Widgets/phone_number_input_row.dart';
 
 class TeikerPersonalInfoContent extends StatelessWidget {
   const TeikerPersonalInfoContent({
     super.key,
     required this.birthDate,
+    required this.emailController,
     required this.telemovelController,
+    this.readOnly = false,
     required this.phoneCountryIso,
     required this.onPhoneCountryChanged,
     required this.primaryColor,
   });
 
   final DateTime? birthDate;
+  final TextEditingController emailController;
   final TextEditingController telemovelController;
+  final bool readOnly;
   final String phoneCountryIso;
   final ValueChanged<String> onPhoneCountryChanged;
   final Color primaryColor;
@@ -67,12 +72,25 @@ class TeikerPersonalInfoContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
+        AppTextField(
+          label: 'Email (login)',
+          controller: emailController,
+          keyboard: TextInputType.emailAddress,
+          readOnly: readOnly,
+          focusColor: primaryColor,
+          prefixIcon: Icons.alternate_email_rounded,
+          fillColor: Colors.grey.shade100,
+          borderColor: primaryColor,
+        ),
+        const SizedBox(height: 10),
         PhoneNumberInputRow(
           controller: telemovelController,
           countryIso: phoneCountryIso,
-          onCountryChanged: onPhoneCountryChanged,
+          onCountryChanged: readOnly ? (_) {} : onPhoneCountryChanged,
           primaryColor: primaryColor,
           label: 'Telemóvel',
+          readOnlyNumber: readOnly,
+          allowCountryPicker: !readOnly,
           fillColor: Colors.grey.shade100,
           borderColor: primaryColor,
         ),

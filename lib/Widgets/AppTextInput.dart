@@ -20,6 +20,7 @@ class AppTextField extends StatelessWidget {
   final double borderRadius;
   final int maxLines;
   final bool? enableInteractiveSelection;
+  final FocusNode? focusNode;
 
   const AppTextField({
     super.key,
@@ -41,6 +42,7 @@ class AppTextField extends StatelessWidget {
     this.borderRadius = 12,
     this.maxLines = 1,
     this.enableInteractiveSelection,
+    this.focusNode,
   });
 
   @override
@@ -56,6 +58,7 @@ class AppTextField extends StatelessWidget {
 
     return TextFormField(
       controller: controller,
+      focusNode: focusNode,
       keyboardType: keyboard,
       obscureText: obscureText,
       readOnly: readOnly,

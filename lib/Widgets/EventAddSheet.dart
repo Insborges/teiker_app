@@ -22,6 +22,12 @@ class EventAddSheet extends StatefulWidget {
     this.showClienteSelector = true,
     this.showTeikerSelector = false,
     this.eventTag,
+    this.showDescriptionField = false,
+    this.descriptionLabel = 'Descrição',
+    this.initialTitle = '',
+    this.initialDescription = '',
+    this.initialTeikerId,
+    this.initialClienteId,
   });
 
   final DateTime initialDate;
@@ -35,6 +41,12 @@ class EventAddSheet extends StatefulWidget {
   final bool showClienteSelector;
   final bool showTeikerSelector;
   final String? eventTag;
+  final bool showDescriptionField;
+  final String descriptionLabel;
+  final String initialTitle;
+  final String initialDescription;
+  final String? initialTeikerId;
+  final String? initialClienteId;
 
   @override
   State<EventAddSheet> createState() => _EventAddSheetState();
@@ -42,6 +54,7 @@ class EventAddSheet extends StatefulWidget {
 
 class _EventAddSheetState extends State<EventAddSheet> {
   final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
   late DateTime _sheetDate;
   Clientes? _selectedCliente;
   Map<String, String>? _selectedTeiker;
@@ -49,16 +62,38 @@ class _EventAddSheetState extends State<EventAddSheet> {
   @override
   void initState() {
     super.initState();
+    _titleController.text = widget.initialTitle;
+    _descriptionController.text = widget.initialDescription;
     _sheetDate = DateTime(
       widget.initialDate.year,
       widget.initialDate.month,
       widget.initialDate.day,
     );
+    if (widget.initialClienteId != null) {
+      for (final cliente in widget.clientes) {
+        if (cliente.uid == widget.initialClienteId) {
+          _selectedCliente = cliente;
+          break;
+        }
+      }
+    }
+    if (widget.initialTeikerId != null) {
+      for (final teiker in widget.teikers) {
+        if ((teiker['uid'] ?? '') == widget.initialTeikerId) {
+          _selectedTeiker = {
+            'uid': teiker['uid'] ?? '',
+            'name': teiker['name'] ?? '',
+          };
+          break;
+        }
+      }
+    }
   }
 
   @override
   void dispose() {
     _titleController.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -224,6 +259,18 @@ class _EventAddSheetState extends State<EventAddSheet> {
                   fillColor: Colors.grey.shade100,
                   borderColor: widget.primaryColor.withValues(alpha: .25),
                 ),
+                if (widget.showDescriptionField) ...[
+                  const SizedBox(height: 12),
+                  AppTextField(
+                    label: widget.descriptionLabel,
+                    controller: _descriptionController,
+                    prefixIcon: Icons.notes_rounded,
+                    focusColor: widget.primaryColor,
+                    fillColor: Colors.grey.shade100,
+                    borderColor: widget.primaryColor.withValues(alpha: .25),
+                    maxLines: 4,
+                  ),
+                ],
                 if (widget.showClienteSelector) ...[
                   const SizedBox(height: 12),
                   _selectorField(
@@ -270,7 +317,17 @@ class _EventAddSheetState extends State<EventAddSheet> {
                     ),
                     onPressed: () {
                       final text = _titleController.text.trim();
+                      final description = _descriptionController.text.trim();
                       if (text.isEmpty) return;
+                      if (widget.showDescriptionField && description.isEmpty) {
+                        AppSnackBar.show(
+                          context,
+                          message: 'Preenche a descrição.',
+                          icon: Icons.info_outline,
+                          background: Colors.red.shade700,
+                        );
+                        return;
+                      }
 
                       if (widget.showClienteSelector &&
                           _selectedCliente == null) {
@@ -297,6 +354,7 @@ class _EventAddSheetState extends State<EventAddSheet> {
                       final now = DateTime.now();
                       widget.onAddEvent({
                         'title': text,
+                        'description': description,
                         'done': false,
                         'start': '',
                         'end': '',

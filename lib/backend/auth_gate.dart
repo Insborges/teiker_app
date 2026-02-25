@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:teiker_app/Screens/EcrasPrincipais/MainScreen.dart';
 import 'package:teiker_app/Screens/LoginScreen.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/auth/auth_notifier.dart';
 
 class AuthGate extends ConsumerWidget {
@@ -13,7 +14,7 @@ class AuthGate extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authState = ref.watch(authStateProvider);
-    final isAdmin = ref.watch(isAdminProvider);
+    final role = ref.watch(userRoleProvider);
 
     return authState.when(
       loading: () =>
@@ -24,8 +25,11 @@ class AuthGate extends ConsumerWidget {
       data: (user) {
         if (user == null) return LoginScreen();
 
-        if (isAdmin) {
+        if (role == AppUserRole.admin) {
           return MainScreen(role: MainRole.admin);
+        }
+        if (role == AppUserRole.hr) {
+          return MainScreen(role: MainRole.hr);
         }
 
         return _TeikerFirestoreGuard(user: user);

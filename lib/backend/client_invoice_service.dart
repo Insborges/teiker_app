@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:teiker_app/backend/invoice_docx_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/client_invoice.dart';
+import 'package:teiker_app/work_sessions/domain/fixed_holiday_hours_policy.dart';
 
 class IssuedClientInvoice {
   const IssuedClientInvoice({
@@ -105,6 +106,7 @@ class ClientInvoiceService {
     final now = DateTime.now();
     final documentRef = _clientInvoicesCollection(clientId).doc();
     final addressParts = _splitPostalCodeAndCity(cliente.codigoPostal);
+    final explicitCity = cliente.cidadeCliente.trim();
 
     final invoice = ClientInvoice(
       id: documentRef.id,
@@ -116,7 +118,7 @@ class ClientInvoiceService {
       clientName: cliente.nameCliente.trim(),
       clientAddress: cliente.moradaCliente.trim(),
       clientPostalCode: addressParts.$1,
-      clientCity: addressParts.$2,
+      clientCity: explicitCity.isNotEmpty ? explicitCity : addressParts.$2,
       totalHours: monthlyHours,
       hourlyRate: cliente.orcamento,
       additionalServices: additionalServices,
@@ -205,11 +207,27 @@ class ClientInvoiceService {
     final storedDuration = (data['durationHours'] as num?)?.toDouble();
     if (storedDuration != null) return storedDuration;
 
+    final rawStored = (data['rawDurationHours'] as num?)?.toDouble();
     final start = (data['startTime'] as Timestamp?)?.toDate();
+    if (rawStored != null && start != null) {
+      final storedMultiplier = (data['durationMultiplier'] as num?)?.toDouble();
+      if (storedMultiplier != null && storedMultiplier > 0) {
+        return rawStored * storedMultiplier;
+      }
+      return FixedHolidayHoursPolicy.applyToHours(
+        workDate: start,
+        rawHours: rawStored,
+      );
+    }
+
     final end = (data['endTime'] as Timestamp?)?.toDate();
     if (start == null || end == null) return null;
 
-    return end.difference(start).inMinutes / 60.0;
+    final rawHours = end.difference(start).inMinutes / 60.0;
+    return FixedHolidayHoursPolicy.applyToHours(
+      workDate: start,
+      rawHours: rawHours,
+    );
   }
 
   Map<String, double> _servicePricesForMonth({
@@ -261,11 +279,19 @@ class ClientInvoiceService {
       return ('', '');
     }
 
-    final match = RegExp(r'^(\d{4,5})\s*[-,]?\s*(.*)$').firstMatch(normalized);
+    if (RegExp(r'^\d{4,5}(?:-\d{3,4})?$').hasMatch(normalized)) {
+      return (normalized, '');
+    }
+
+    final match = RegExp(
+      r'^(\d{4,5}(?:-\d{3,4})?)\s+(.+)$',
+    ).firstMatch(normalized);
     if (match != null) {
       final postalCode = (match.group(1) ?? '').trim();
       final city = (match.group(2) ?? '').trim();
-      return (postalCode, city);
+      if (RegExp(r'[A-Za-zÀ-ÿ]').hasMatch(city)) {
+        return (postalCode, city);
+      }
     }
 
     return (normalized, '');

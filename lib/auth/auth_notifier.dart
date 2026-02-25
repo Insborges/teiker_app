@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 
 import 'auth_state.dart';
 import '../backend/auth_service.dart';
@@ -22,6 +23,19 @@ final isAdminProvider = Provider<bool>((ref) {
   );
 });
 
+final userRoleProvider = Provider<AppUserRole>((ref) {
+  final authState = ref.watch(authStateProvider);
+  return authState.maybeWhen(
+    data: (user) => AuthService.roleForEmail(user?.email),
+    orElse: () => AppUserRole.teiker,
+  );
+});
+
+final isPrivilegedProvider = Provider<bool>((ref) {
+  final role = ref.watch(userRoleProvider);
+  return role.isPrivileged;
+});
+
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
   return AuthNotifier(ref.read(authServiceProvider));
 });
@@ -38,7 +52,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       state = state.copyWith(
         status: AuthStatus.success,
-        isAdmin: AuthService.isAdminEmail(credential.user?.email),
+        isAdmin: AuthService.isPrivilegedEmail(credential.user?.email),
         errorMessage: null,
       );
 

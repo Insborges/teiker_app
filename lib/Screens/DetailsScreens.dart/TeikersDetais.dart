@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/Widgets/DatePickerBottomSheet.dart';
 import 'package:teiker_app/Widgets/app_pill_tab_bar.dart';
 import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
@@ -8,6 +10,7 @@ import 'package:teiker_app/Widgets/teiker_details_sheets.dart';
 import 'package:teiker_app/Widgets/teiker_details_tab_contents.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
+import 'package:teiker_app/backend/auth_service.dart';
 import '../../models/Teikers.dart';
 import '../../Widgets/AppBar.dart';
 import '../../Widgets/AppSnackBar.dart';
@@ -15,7 +18,12 @@ import 'package:teiker_app/backend/TeikerService.dart';
 
 class TeikersDetails extends StatefulWidget {
   final Teiker teiker;
-  const TeikersDetails({super.key, required this.teiker});
+  final bool canEditPersonalInfo;
+  const TeikersDetails({
+    super.key,
+    required this.teiker,
+    this.canEditPersonalInfo = true,
+  });
 
   @override
   State<TeikersDetails> createState() => _TeikersDetailsState();
@@ -26,16 +34,22 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   static const String _hoursSectionTitle = 'Horas da Teiker';
   final MonthlyHoursOverviewService _hoursOverviewService =
       MonthlyHoursOverviewService();
+  final AuthService _authService = AuthService();
+  late TextEditingController _emailController;
   late TextEditingController _telemovelController;
   late List<FeriasPeriodo> _feriasPeriodos;
   late List<BaixaPeriodo> _baixasPeriodos;
   late String _phoneCountryIso;
   late Future<Map<DateTime, double>> _hoursFuture;
   late List<Consulta> _consultas;
+  late List<TeikerMarcacao> _marcacoes;
+  late String _savedEmail;
 
   @override
   void initState() {
     super.initState();
+    _savedEmail = widget.teiker.email.trim().toLowerCase();
+    _emailController = TextEditingController(text: widget.teiker.email);
     _telemovelController = TextEditingController(
       text: widget.teiker.telemovel.toString(),
     );
@@ -54,6 +68,8 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     }
     _baixasPeriodos = List<BaixaPeriodo>.from(widget.teiker.baixasPeriodos);
     _consultas = List<Consulta>.from(widget.teiker.consultas);
+    _marcacoes = List<TeikerMarcacao>.from(widget.teiker.marcacoes)
+      ..sort((a, b) => a.data.compareTo(b.data));
     _hoursFuture = _hoursOverviewService.fetchMonthlyTotals(
       teikerId: widget.teiker.uid,
     );
@@ -61,11 +77,23 @@ class _TeikersDetailsState extends State<TeikersDetails> {
 
   @override
   void dispose() {
+    _emailController.dispose();
     _telemovelController.dispose();
     super.dispose();
   }
 
   void _guardarAlteracoes() async {
+    if (!widget.canEditPersonalInfo) {
+      AppSnackBar.show(
+        context,
+        message: "A Recursos Humanos não altera os dados pessoais da teiker.",
+        icon: Icons.info_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    final normalizedEmail = _emailController.text.trim().toLowerCase();
     final newTelemovel = int.tryParse(_telemovelController.text.trim());
 
     if (newTelemovel == null) {
@@ -77,26 +105,47 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       );
       return;
     }
+    if (normalizedEmail.isNotEmpty &&
+        !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(normalizedEmail)) {
+      AppSnackBar.show(
+        context,
+        message: "Email inválido.",
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
 
     try {
       final lastFerias = _feriasPeriodos.isEmpty ? null : _feriasPeriodos.last;
       final updatedTeiker = widget.teiker.copyWith(
+        email: normalizedEmail,
         telemovel: newTelemovel,
         phoneCountryIso: _phoneCountryIso,
         consultas: _consultas,
+        marcacoes: _marcacoes,
         feriasPeriodos: _feriasPeriodos,
         baixasPeriodos: _baixasPeriodos,
         feriasInicio: lastFerias?.inicio,
         feriasFim: lastFerias?.fim,
       );
 
-      await TeikerService().updateTeiker(updatedTeiker);
+      final result = await _authService.updateTeikerProfileByAdmin(
+        teiker: updatedTeiker,
+        previousEmail: _savedEmail,
+      );
+      _savedEmail = normalizedEmail;
 
       AppSnackBar.show(
         context,
-        message: "Atualizações realizadas com sucesso!",
-        icon: Icons.check_box_rounded,
-        background: Colors.green.shade700,
+        message:
+            result.warningMessage ?? "Atualizações realizadas com sucesso!",
+        icon: result.warningMessage == null
+            ? Icons.check_box_rounded
+            : Icons.info_outline_rounded,
+        background: result.warningMessage == null
+            ? Colors.green.shade700
+            : Colors.orange.shade700,
       );
     } catch (e) {
       AppSnackBar.show(
@@ -130,6 +179,127 @@ class _TeikersDetailsState extends State<TeikersDetails> {
         context,
         message: "Erro ao guardar consulta: $e",
         icon: Icons.error,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  Future<void> _saveMarcacoesTeiker({
+    String successMessage = 'Marcação guardada.',
+  }) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('teikers')
+          .doc(widget.teiker.uid)
+          .update({'marcacoes': _marcacoes.map((m) => m.toMap()).toList()});
+
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: successMessage,
+        icon: Icons.event_available_rounded,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: "Erro ao guardar marcação: $e",
+        icon: Icons.error,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  Future<void> _openMarcacaoSheet() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final role = AppUserRoleResolver.fromEmail(currentUser?.email);
+    if (!role.isPrivileged) {
+      AppSnackBar.show(
+        context,
+        message: 'Só Admin/RH pode adicionar marcações.',
+        icon: Icons.lock_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    final result = await showModalBottomSheet<TeikerMarcacao>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => TeikerMarcacaoSheet(primaryColor: _primaryColor),
+    );
+
+    if (result == null) return;
+
+    final creatorName = role.isAdmin ? 'Admin' : 'Recursos Humanos';
+    final createdAt = DateTime.now();
+    final firestore = FirebaseFirestore.instance;
+    final reminderRef = firestore
+        .collection('reminders')
+        .doc(widget.teiker.uid)
+        .collection('items')
+        .doc();
+    final adminRef = firestore.collection('admin_reminders').doc();
+
+    final startLabel = DateFormat('HH:mm', 'pt_PT').format(result.data);
+    final tag = result.tipo.label;
+    final reminderPayload = <String, dynamic>{
+      'title': tag,
+      'description': '',
+      'date': Timestamp.fromDate(result.data),
+      'start': startLabel,
+      'end': '',
+      'done': false,
+      'resolved': false,
+      'tag': tag,
+      'clienteId': null,
+      'clienteName': null,
+      'teikerId': widget.teiker.uid,
+      'teikerName': widget.teiker.nameTeiker,
+      'createdById': currentUser?.uid,
+      'createdByName': creatorName,
+      'createdByRole': role.name,
+      'seenByUserIds': const <String>[],
+      'responses': const <Map<String, dynamic>>[],
+      'createdAt': Timestamp.fromDate(createdAt),
+      'adminReminderId': adminRef.id,
+    };
+
+    final adminPayload = <String, dynamic>{
+      ...reminderPayload,
+      'sourceUserId': widget.teiker.uid,
+      'sourceReminderId': reminderRef.id,
+    };
+
+    try {
+      final batch = firestore.batch();
+      batch.set(reminderRef, reminderPayload);
+      batch.set(adminRef, adminPayload);
+      await batch.commit();
+
+      final saved = result.copyWith(
+        id: reminderRef.id,
+        createdAt: createdAt,
+        createdById: currentUser?.uid,
+        createdByName: creatorName,
+        reminderId: reminderRef.id,
+        adminReminderId: adminRef.id,
+      );
+
+      setState(() {
+        _marcacoes.add(saved);
+        _marcacoes.sort((a, b) => a.data.compareTo(b.data));
+      });
+
+      await _saveMarcacoesTeiker(successMessage: 'Marcação adicionada.');
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: "Erro ao adicionar marcação: $e",
+        icon: Icons.error_outline,
         background: Colors.red.shade700,
       );
     }
@@ -509,7 +679,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       teiker: teiker,
                       primaryColor: _primaryColor,
                       hoursSectionTitle: _hoursSectionTitle,
+                      emailController: _emailController,
                       telemovelController: _telemovelController,
+                      canEditPersonalInfo: widget.canEditPersonalInfo,
                       phoneCountryIso: _phoneCountryIso,
                       onPhoneCountryChanged: (iso) {
                         setState(() => _phoneCountryIso = iso);
@@ -519,6 +691,8 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                     ),
                     TeikerDetailsMarcacoesTab(
                       primaryColor: _primaryColor,
+                      marcacoes: _marcacoes,
+                      onAddMarcacao: _openMarcacaoSheet,
                       baixasPeriodos: _baixasPeriodos,
                       baixasDaysCount: _countBaixasDays(_baixasPeriodos),
                       onAddBaixa: () => _adicionarBaixa(),

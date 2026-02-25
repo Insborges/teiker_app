@@ -2,9 +2,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
+import 'package:teiker_app/Widgets/AppSnackBar.dart';
+import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
 import 'package:teiker_app/Widgets/app_search_bar.dart';
 import 'package:teiker_app/backend/auth_service.dart';
+import 'package:teiker_app/backend/client_invoice_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
+import 'package:teiker_app/models/client_invoice.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
 class AdminInvoicesScreen extends StatefulWidget {
@@ -16,7 +20,10 @@ class AdminInvoicesScreen extends StatefulWidget {
 
 class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
   final AuthService _authService = AuthService();
+  final ClientInvoiceService _clientInvoiceService = ClientInvoiceService();
   final TextEditingController _searchController = TextEditingController();
+  final Set<String> _sharingInvoiceKeys = <String>{};
+  final Set<String> _deletingInvoiceKeys = <String>{};
 
   List<Clientes> _clientes = const [];
   List<_WorkSessionEntry> _allSessions = const [];
@@ -42,6 +49,12 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
 
   String _monthKey(DateTime date) =>
       '${date.year}-${date.month.toString().padLeft(2, '0')}';
+
+  String get _selectedMonthKey =>
+      _monthKey(DateTime(_selectedYear, _selectedMonth, 1));
+
+  String _invoiceActionKey(ClientInvoice invoice) =>
+      '${invoice.clientId}:${invoice.id}';
 
   Future<void> _loadData() async {
     setState(() {
@@ -192,6 +205,78 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
     return DateFormat('MMMM', 'pt_PT').format(DateTime(2024, month));
   }
 
+  Future<void> _shareInvoiceFromSummary(ClientInvoice invoice) async {
+    final key = _invoiceActionKey(invoice);
+    if (_sharingInvoiceKeys.contains(key)) return;
+
+    setState(() => _sharingInvoiceKeys.add(key));
+    try {
+      await _clientInvoiceService.shareInvoiceDocument(invoice);
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Fatura ${invoice.invoiceNumber} pronta para partilha.',
+        icon: Icons.share_outlined,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro ao partilhar fatura: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _sharingInvoiceKeys.remove(key));
+      }
+    }
+  }
+
+  Future<void> _deleteInvoiceFromSummary(ClientInvoice invoice) async {
+    final shouldDelete = await AppConfirmDialog.show(
+      context: context,
+      title: 'Eliminar fatura',
+      message:
+          'Tens a certeza que queres eliminar a fatura ${invoice.invoiceNumber}? Esta ação é permanente.',
+      confirmLabel: 'Eliminar',
+      confirmColor: Colors.red.shade700,
+    );
+
+    if (!shouldDelete) return;
+
+    final key = _invoiceActionKey(invoice);
+    if (_deletingInvoiceKeys.contains(key)) return;
+
+    setState(() => _deletingInvoiceKeys.add(key));
+    try {
+      await _clientInvoiceService.deleteInvoice(
+        clientId: invoice.clientId,
+        invoiceId: invoice.id,
+      );
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Fatura ${invoice.invoiceNumber} eliminada.',
+        icon: Icons.delete_outline_rounded,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro ao eliminar fatura: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _deletingInvoiceKeys.remove(key));
+      }
+    }
+  }
+
   Widget _buildSelector<T>({
     required T value,
     required List<DropdownMenuItem<T>> items,
@@ -311,8 +396,224 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
               fontWeight: FontWeight.w600,
             ),
           ),
+          const SizedBox(height: 10),
+          _buildAssociatedInvoicesSection(summary, money),
         ],
       ),
+    );
+  }
+
+  Widget _buildAssociatedInvoicesSection(
+    _ClienteInvoiceSummary summary,
+    NumberFormat money,
+  ) {
+    final selectedMonthKey = _selectedMonthKey;
+    final dateFormat = DateFormat('dd/MM/yyyy');
+
+    bool matchesSelectedMonth(ClientInvoice invoice) {
+      if (invoice.periodMonthKey.trim() == selectedMonthKey) return true;
+      final date = invoice.invoiceDate;
+      return date.year == _selectedYear && date.month == _selectedMonth;
+    }
+
+    return StreamBuilder<List<ClientInvoice>>(
+      stream: _clientInvoiceService.watchClientInvoices(summary.cliente.uid),
+      builder: (context, snapshot) {
+        final invoices =
+            (snapshot.data ?? const <ClientInvoice>[])
+                .where(matchesSelectedMonth)
+                .toList()
+              ..sort((a, b) => b.invoiceDate.compareTo(a.invoiceDate));
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppColors.primaryGreen.withValues(alpha: .10),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.receipt_long_outlined,
+                    size: 16,
+                    color: AppColors.primaryGreen,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Faturas associadas',
+                      style: TextStyle(
+                        color: AppColors.primaryGreen.withValues(alpha: .95),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      snapshot.data == null)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Text(
+                      '${invoices.length}',
+                      style: const TextStyle(
+                        color: AppColors.primaryGreen,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              if (snapshot.hasError)
+                const Text(
+                  'Não foi possível carregar as faturas deste cliente.',
+                  style: TextStyle(
+                    color: Colors.redAccent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+              else if (invoices.isEmpty)
+                const Text(
+                  'Sem faturas emitidas neste mês.',
+                  style: TextStyle(
+                    color: Colors.black54,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+              else
+                Column(
+                  children: invoices.map((invoice) {
+                    final key = _invoiceActionKey(invoice);
+                    final sharing = _sharingInvoiceKeys.contains(key);
+                    final deleting = _deletingInvoiceKeys.contains(key);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: AppColors.primaryGreen.withValues(
+                              alpha: .12,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    invoice.invoiceNumber,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primaryGreen,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${dateFormat.format(invoice.invoiceDate)} • ${invoice.periodLabel}',
+                                    style: const TextStyle(
+                                      color: Colors.black54,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              money.format(invoice.total),
+                              style: const TextStyle(
+                                color: AppColors.primaryGreen,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: sharing
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(2),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : IconButton(
+                                      tooltip: 'Partilhar fatura',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: deleting
+                                          ? null
+                                          : () => _shareInvoiceFromSummary(
+                                              invoice,
+                                            ),
+                                      icon: const Icon(
+                                        Icons.share_outlined,
+                                        size: 16,
+                                        color: AppColors.primaryGreen,
+                                      ),
+                                    ),
+                            ),
+                            const SizedBox(width: 6),
+                            SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: deleting
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(2),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : IconButton(
+                                      tooltip: 'Eliminar fatura',
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      onPressed: sharing
+                                          ? null
+                                          : () => _deleteInvoiceFromSummary(
+                                              invoice,
+                                            ),
+                                      icon: const Icon(
+                                        Icons.delete_outline_rounded,
+                                        size: 16,
+                                        color: Colors.redAccent,
+                                      ),
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 

@@ -2,19 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/DatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/app_pill_tab_bar.dart';
 import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
-import 'package:teiker_app/Widgets/app_section_card.dart';
-import 'package:teiker_app/Widgets/consulta_item_card.dart';
-import 'package:teiker_app/Widgets/monthly_hours_overview_card.dart';
-import 'package:teiker_app/Widgets/teiker_baixas_content.dart';
 import 'package:teiker_app/Widgets/teiker_details_sheets.dart';
-import 'package:teiker_app/Widgets/teiker_ferias_content.dart';
-import 'package:teiker_app/Widgets/teiker_personal_info_content.dart';
+import 'package:teiker_app/Widgets/teiker_details_tab_contents.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import '../../models/Teikers.dart';
 import '../../Widgets/AppBar.dart';
-import '../../Widgets/AppButton.dart';
 import '../../Widgets/AppSnackBar.dart';
 import 'package:teiker_app/backend/TeikerService.dart';
 
@@ -487,51 +482,6 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     await _saveConsultas(successMessage: "Consulta eliminada.");
   }
 
-  Widget _hoursInfoChip({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _primaryColor.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: _primaryColor),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: _primaryColor.withValues(alpha: 0.85),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final teiker = widget.teiker;
@@ -544,260 +494,45 @@ class _TeikersDetailsState extends State<TeikersDetails> {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: _primaryColor.withValues(alpha: .2),
-                  ),
-                ),
-                child: TabBar(
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  dividerColor: Colors.transparent,
-                  indicator: BoxDecoration(
-                    color: _primaryColor.withValues(alpha: .14),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  labelColor: _primaryColor,
-                  unselectedLabelColor: Colors.black54,
-                  labelStyle: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
-                  tabs: const [
-                    Tab(text: 'Informações'),
-                    Tab(text: 'Marcações'),
-                  ],
-                ),
+              AppPillTabBar(
+                primaryColor: _primaryColor,
+                tabs: const [
+                  Tab(text: 'Informações'),
+                  Tab(text: 'Marcações'),
+                ],
               ),
               const SizedBox(height: 12),
               Expanded(
                 child: TabBarView(
                   children: [
-                    SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          AppSectionCard(
-                            title: "Informações Pessoais",
-                            titleIcon: Icons.badge_outlined,
-                            titleColor: _primaryColor,
-                            children: [
-                              TeikerPersonalInfoContent(
-                                birthDate: teiker.birthDate,
-                                telemovelController: _telemovelController,
-                                phoneCountryIso: _phoneCountryIso,
-                                onPhoneCountryChanged: (iso) {
-                                  setState(() => _phoneCountryIso = iso);
-                                },
-                                primaryColor: _primaryColor,
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 13),
-                          AppButton(
-                            text: "Guardar Alterações",
-                            icon: Icons.save_rounded,
-                            color: _primaryColor,
-                            onPressed: _guardarAlteracoes,
-                          ),
-                          const SizedBox(height: 20),
-                          AppSectionCard(
-                            title: _hoursSectionTitle,
-                            titleColor: _primaryColor,
-                            titleIcon: Icons.bar_chart_rounded,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _hoursInfoChip(
-                                      icon: Icons.work_outline_rounded,
-                                      label: 'Regime',
-                                      value: teiker.workPercentageLabel,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: _hoursInfoChip(
-                                      icon: Icons.schedule_rounded,
-                                      label: 'Meta semanal',
-                                      value:
-                                          '${teiker.weeklyTargetHours.toStringAsFixed(0)} h',
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              FutureBuilder<Map<DateTime, double>>(
-                                future: _hoursFuture,
-                                builder: (context, snapshot) {
-                                  if (snapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return const Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        vertical: 8,
-                                      ),
-                                      child: Center(
-                                        child: SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  }
-
-                                  if (snapshot.hasError) {
-                                    return const Text(
-                                      "Não foi possível carregar as horas.",
-                                      style: TextStyle(color: Colors.redAccent),
-                                    );
-                                  }
-
-                                  return MonthlyHoursOverviewCard(
-                                    monthlyTotals: snapshot.data ?? const {},
-                                    primaryColor: _primaryColor,
-                                    title: _hoursSectionTitle,
-                                    showHeader: false,
-                                    emptyMessage: 'Sem horas registadas.',
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                      ),
+                    TeikerDetailsInfoTab(
+                      teiker: teiker,
+                      primaryColor: _primaryColor,
+                      hoursSectionTitle: _hoursSectionTitle,
+                      telemovelController: _telemovelController,
+                      phoneCountryIso: _phoneCountryIso,
+                      onPhoneCountryChanged: (iso) {
+                        setState(() => _phoneCountryIso = iso);
+                      },
+                      onSaveChanges: _guardarAlteracoes,
+                      hoursFuture: _hoursFuture,
                     ),
-                    SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          AppSectionCard(
-                            title: "Baixas",
-                            titleIcon: Icons.healing_outlined,
-                            titleColor: _primaryColor,
-                            titleTrailing: _baixasPeriodos.isEmpty
-                                ? null
-                                : Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _primaryColor.withValues(
-                                        alpha: .08,
-                                      ),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: _primaryColor.withValues(
-                                          alpha: .2,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      '${_countBaixasDays(_baixasPeriodos)} dias',
-                                      style: TextStyle(
-                                        color: _primaryColor,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                            children: [
-                              TeikerBaixasContent(
-                                baixasPeriodos: _baixasPeriodos,
-                                primaryColor: _primaryColor,
-                                onAddBaixa: _adicionarBaixa,
-                                onEditBaixa: _editarBaixaPeriodo,
-                                onDeleteBaixa: _eliminarBaixaPeriodo,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          AppSectionCard(
-                            title: "Consultas",
-                            titleIcon: Icons.event_note_outlined,
-                            titleColor: _primaryColor,
-                            children: [
-                              if (_consultas.isEmpty)
-                                const Text(
-                                  "Nenhuma consulta registada.",
-                                  style: TextStyle(color: Colors.grey),
-                                )
-                              else
-                                Column(
-                                  children: _consultas.asMap().entries.map((
-                                    entry,
-                                  ) {
-                                    return ConsultaItemCard(
-                                      consulta: entry.value,
-                                      primaryColor: _primaryColor,
-                                      onEdit: () => _openConsultaSheet(
-                                        consulta: entry.value,
-                                        index: entry.key,
-                                      ),
-                                      onDelete: () =>
-                                          _confirmDeleteConsulta(entry.key),
-                                    );
-                                  }).toList(),
-                                ),
-                              const SizedBox(height: 12),
-                              AppButton(
-                                text: "Adicionar consulta",
-                                color: _primaryColor,
-                                icon: Icons.medical_information,
-                                onPressed: () => _openConsultaSheet(),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          AppSectionCard(
-                            title: "Férias",
-                            titleIcon: Icons.beach_access_outlined,
-                            titleColor: _primaryColor,
-                            titleTrailing: _feriasPeriodos.isEmpty
-                                ? null
-                                : Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: _primaryColor.withValues(
-                                        alpha: .08,
-                                      ),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                        color: _primaryColor.withValues(
-                                          alpha: .2,
-                                        ),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      '${_countFeriasDays(_feriasPeriodos)} dias',
-                                      style: TextStyle(
-                                        color: _primaryColor,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                            children: [
-                              TeikerFeriasContent(
-                                feriasPeriodos: _feriasPeriodos,
-                                primaryColor: _primaryColor,
-                                onAddFerias: _adicionarFerias,
-                                onEditFerias: _editarFeriasPeriodo,
-                                onDeleteFerias: _eliminarFeriasPeriodo,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                      ),
+                    TeikerDetailsMarcacoesTab(
+                      primaryColor: _primaryColor,
+                      baixasPeriodos: _baixasPeriodos,
+                      baixasDaysCount: _countBaixasDays(_baixasPeriodos),
+                      onAddBaixa: () => _adicionarBaixa(),
+                      onEditBaixa: _editarBaixaPeriodo,
+                      onDeleteBaixa: _eliminarBaixaPeriodo,
+                      consultas: _consultas,
+                      onEditConsulta: _openConsultaSheet,
+                      onDeleteConsulta: _confirmDeleteConsulta,
+                      onAddConsulta: () => _openConsultaSheet(),
+                      feriasPeriodos: _feriasPeriodos,
+                      feriasDaysCount: _countFeriasDays(_feriasPeriodos),
+                      onAddFerias: _adicionarFerias,
+                      onEditFerias: _editarFeriasPeriodo,
+                      onDeleteFerias: _eliminarFeriasPeriodo,
                     ),
                   ],
                 ),

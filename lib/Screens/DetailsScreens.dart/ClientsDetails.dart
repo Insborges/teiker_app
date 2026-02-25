@@ -7,14 +7,13 @@ import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
-import 'package:teiker_app/Widgets/AppTextInput.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
 import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
 import 'package:teiker_app/Widgets/SingleTimePickerBottomSheet.dart';
-import 'package:teiker_app/Widgets/client_details_sections.dart';
+import 'package:teiker_app/Widgets/app_pill_tab_bar.dart';
 import 'package:teiker_app/Widgets/client_service_dialogs.dart';
-import 'package:teiker_app/Widgets/phone_number_input_row.dart';
+import 'package:teiker_app/Widgets/client_details_tab_contents.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/client_invoice_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
@@ -768,155 +767,53 @@ class _ClientsdetailsState extends State<Clientsdetails> {
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: adminBorder),
-                ),
-                child: TabBar(
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  dividerColor: Colors.transparent,
-                  indicator: BoxDecoration(
-                    color: adminPrimary.withValues(alpha: .14),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  labelColor: adminPrimary,
-                  unselectedLabelColor: Colors.black54,
-                  labelStyle: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
-                  tabs: const [
-                    Tab(text: 'Horas & Preços'),
-                    Tab(text: 'Informações'),
-                  ],
-                ),
+              AppPillTabBar(
+                primaryColor: adminPrimary,
+                borderColor: adminBorder,
+                tabs: const [
+                  Tab(text: 'Horas & Preços'),
+                  Tab(text: 'Informações'),
+                ],
               ),
               const SizedBox(height: 12),
               Expanded(
                 child: TabBarView(
                   children: [
-                    SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          ClientOrcamentoSummaryCard(
-                            orcamento: currentPricePerHour,
-                            horas: _horasCasa,
-                            servicePrices: currentServicePrices,
-                          ),
-                          const SizedBox(height: 12),
-                          AppButton(
-                            text: "Adicionar Horas",
-                            icon: Icons.timer,
-                            color: adminPrimary,
-                            onPressed: () => _abrirDialogAdicionarHoras(),
-                          ),
-                          const SizedBox(height: 12),
-                          ClientIssuedInvoicesCard(
-                            primaryColor: adminPrimary,
-                            borderColor: adminBorder,
-                            invoicesStream: _clientInvoiceService
-                                .watchClientInvoices(widget.cliente.uid),
-                            sharingInvoiceIds: _sharingInvoiceIds,
-                            deletingInvoiceIds: _deletingInvoiceIds,
-                            onShareInvoice: _shareInvoice,
-                            onDeleteInvoice: _deleteInvoice,
-                          ),
-                          const SizedBox(height: 12),
-                          AppButton(
-                            text: _issuingInvoice
-                                ? "A emitir fatura..."
-                                : "Emitir Faturas",
-                            icon: Icons.file_copy,
-                            color: adminPrimary,
-                            enabled: !_issuingInvoice,
-                            onPressed: () => emitirFaturas(),
-                          ),
-                          const SizedBox(height: 12),
-                          ClientAdditionalServicesSection(
-                            primaryColor: adminPrimary,
-                            borderColor: adminBorder,
-                            serviceMonthLabel: _serviceMonthLabel,
-                            appliedServicePrices: _appliedServicePrices,
-                            onRemoveAppliedService: _removeAppliedService,
-                            onAddService: _openAddServiceDialog,
-                          ),
-                          const SizedBox(height: 12),
-                        ],
+                    ClientDetailsAdminHoursTab(
+                      primaryColor: adminPrimary,
+                      borderColor: adminBorder,
+                      currentPricePerHour: currentPricePerHour,
+                      horasCasa: _horasCasa,
+                      currentServicePrices: currentServicePrices,
+                      onAddHoras: _abrirDialogAdicionarHoras,
+                      issuingInvoice: _issuingInvoice,
+                      onEmitirFaturas: emitirFaturas,
+                      invoicesStream: _clientInvoiceService.watchClientInvoices(
+                        widget.cliente.uid,
                       ),
+                      sharingInvoiceIds: _sharingInvoiceIds,
+                      deletingInvoiceIds: _deletingInvoiceIds,
+                      onShareInvoice: _shareInvoice,
+                      onDeleteInvoice: _deleteInvoice,
+                      serviceMonthLabel: _serviceMonthLabel,
+                      appliedServicePrices: _appliedServicePrices,
+                      onRemoveAppliedService: _removeAppliedService,
+                      onAddService: _openAddServiceDialog,
                     ),
-                    SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          _buildTextField(
-                            'Nome',
-                            _nameController,
-                            borderColor: adminBorder,
-                            focusColor: adminPrimary,
-                            fillColor: Colors.white,
-                            prefixIcon: Icons.person_outline,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            'Morada',
-                            _moradaController,
-                            borderColor: adminBorder,
-                            focusColor: adminPrimary,
-                            fillColor: Colors.white,
-                            prefixIcon: Icons.home_outlined,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            'Código Postal',
-                            _codigoPostalController,
-                            borderColor: adminBorder,
-                            focusColor: adminPrimary,
-                            fillColor: Colors.white,
-                            prefixIcon: Icons.local_post_office_outlined,
-                          ),
-                          const SizedBox(height: 12),
-                          PhoneNumberInputRow(
-                            controller: _phoneController,
-                            countryIso: _phoneCountryIso,
-                            onCountryChanged: (iso) {
-                              setState(() => _phoneCountryIso = iso);
-                            },
-                            primaryColor: adminPrimary,
-                            label: 'Telefone',
-                            fillColor: Colors.white,
-                            borderColor: adminBorder,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            'Email',
-                            _emailController,
-                            keyboard: TextInputType.emailAddress,
-                            borderColor: adminBorder,
-                            focusColor: adminPrimary,
-                            fillColor: Colors.white,
-                            prefixIcon: Icons.email_outlined,
-                          ),
-                          const SizedBox(height: 12),
-                          _buildTextField(
-                            'Preço/Hora',
-                            _orcamentoController,
-                            keyboard: TextInputType.number,
-                            borderColor: adminBorder,
-                            focusColor: adminPrimary,
-                            fillColor: Colors.white,
-                            prefixIcon: Icons.payments_outlined,
-                          ),
-                          const SizedBox(height: 16),
-                          AppButton(
-                            text: "Guardar Alterações",
-                            icon: Icons.save_rounded,
-                            color: adminPrimary,
-                            onPressed: atualizarDadosCliente,
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                      ),
+                    ClientDetailsAdminInfoTab(
+                      primaryColor: adminPrimary,
+                      borderColor: adminBorder,
+                      nameController: _nameController,
+                      moradaController: _moradaController,
+                      codigoPostalController: _codigoPostalController,
+                      phoneController: _phoneController,
+                      phoneCountryIso: _phoneCountryIso,
+                      onPhoneCountryChanged: (iso) {
+                        setState(() => _phoneCountryIso = iso);
+                      },
+                      emailController: _emailController,
+                      orcamentoController: _orcamentoController,
+                      onSave: atualizarDadosCliente,
                     ),
                   ],
                 ),
@@ -963,9 +860,9 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     child: Icon(Icons.person, color: Colors.white, size: 100),
                   ),
                   const SizedBox(height: 6),
-                  _buildTextField(
-                    'Nome',
-                    _nameController,
+                  ClientDetailsStyledField(
+                    label: 'Nome',
+                    controller: _nameController,
                     readOnly: true,
                     borderColor: fieldBorder,
                     prefixIcon: Icons.person_outline,
@@ -974,9 +871,9 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     fillColor: fieldFill,
                   ),
                   const SizedBox(height: 12),
-                  _buildTextField(
-                    'Morada',
-                    _moradaController,
+                  ClientDetailsStyledField(
+                    label: 'Morada',
+                    controller: _moradaController,
                     readOnly: true,
                     borderColor: fieldBorder,
                     prefixIcon: Icons.home_outlined,
@@ -985,9 +882,9 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                     fillColor: fieldFill,
                   ),
                   const SizedBox(height: 12),
-                  _buildTextField(
-                    'Código Postal',
-                    _codigoPostalController,
+                  ClientDetailsStyledField(
+                    label: 'Código Postal',
+                    controller: _codigoPostalController,
                     readOnly: true,
                     borderColor: fieldBorder,
                     prefixIcon: Icons.local_post_office_outlined,
@@ -1053,39 +950,6 @@ class _ClientsdetailsState extends State<Clientsdetails> {
           ),
         ],
       ),
-    );
-  }
-
-  //TextField (tem também só ler)
-  Widget _buildTextField(
-    String label,
-    TextEditingController controller, {
-    TextInputType keyboard = TextInputType.text,
-    bool readOnly = false,
-    Color? borderColor,
-    Color? focusColor,
-    Color? labelColor,
-    Color? textColor,
-    Color fillColor = Colors.white,
-    IconData? prefixIcon,
-  }) {
-    return AppTextField(
-      label: label,
-      controller: controller,
-      prefixIcon: prefixIcon,
-      readOnly: readOnly,
-      keyboard: keyboard,
-      focusColor: focusColor ?? borderColor ?? Colors.grey.shade600,
-      fillColor: fillColor,
-      borderColor: borderColor ?? Colors.grey.shade400,
-      enableInteractiveSelection: !readOnly,
-      style: textColor != null
-          ? TextStyle(color: textColor, fontWeight: FontWeight.w600)
-          : null,
-      labelStyle: labelColor != null
-          ? TextStyle(color: labelColor, fontWeight: FontWeight.w600)
-          : null,
-      borderRadius: 12,
     );
   }
 }

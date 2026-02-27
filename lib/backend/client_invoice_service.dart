@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 import 'package:teiker_app/backend/invoice_docx_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
@@ -143,21 +145,37 @@ class ClientInvoiceService {
   Future<void> shareInvoiceDocument(
     ClientInvoice invoice, {
     File? preGeneratedFile,
+    Rect? sharePositionOrigin,
   }) async {
     final documentFile =
         preGeneratedFile ?? await _docxService.buildInvoiceDocument(invoice);
-
-    await Share.shareXFiles(
-      [
-        XFile(
-          documentFile.path,
-          mimeType:
-              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        ),
-      ],
-      text: 'Fatura ${invoice.invoiceNumber} - ${invoice.clientName}',
-      subject: 'Fatura ${invoice.invoiceNumber}',
+    final shareText = 'Fatura ${invoice.invoiceNumber} - ${invoice.clientName}';
+    final shareSubject = 'Fatura ${invoice.invoiceNumber}';
+    final xFile = XFile(
+      documentFile.path,
+      mimeType:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      name: p.basename(documentFile.path),
     );
+
+    try {
+      await Share.shareXFiles(
+        [xFile],
+        text: shareText,
+        subject: shareSubject,
+        sharePositionOrigin: sharePositionOrigin,
+      );
+      return;
+    } on PlatformException {
+      // Fallback for some iOS/iPad/macOS share sheet combinations that fail
+      // when an XML mime type or name override is provided.
+      await Share.shareXFiles(
+        [XFile(documentFile.path)],
+        text: shareText,
+        subject: shareSubject,
+        sharePositionOrigin: sharePositionOrigin,
+      );
+    }
   }
 
   Future<double> _calculateMonthlyHours({

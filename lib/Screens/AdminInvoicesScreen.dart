@@ -218,17 +218,108 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
     return filtered;
   }
 
+  double _selectedYearTotalForVisible(List<_ClienteInvoiceSummary> visible) {
+    if (visible.isEmpty) return 0;
+
+    final visibleClientIds = visible.map((item) => item.cliente.uid).toSet();
+    final clientById = <String, Clientes>{
+      for (final cliente in _clientes) cliente.uid: cliente,
+    };
+    final yearStart = DateTime(_selectedYear, 1, 1);
+    final nextYearStart = DateTime(_selectedYear + 1, 1, 1);
+    final currentMonthKey = _monthKey(DateTime.now());
+
+    var hoursTotal = 0.0;
+    for (final session in _allSessions) {
+      if (!visibleClientIds.contains(session.clienteId)) continue;
+      if (session.start.isBefore(yearStart) ||
+          !session.start.isBefore(nextYearStart)) {
+        continue;
+      }
+      final cliente = clientById[session.clienteId];
+      if (cliente == null) continue;
+      hoursTotal += session.hours * cliente.orcamento;
+    }
+
+    var servicesTotal = 0.0;
+    for (final summary in visible) {
+      final cliente = summary.cliente;
+      for (var month = 1; month <= 12; month++) {
+        final monthKey = _monthKey(DateTime(_selectedYear, month, 1));
+        final monthlyServices =
+            cliente.additionalServicePricesByMonth[monthKey] ??
+            (monthKey == currentMonthKey
+                ? cliente.additionalServicePrices
+                : const <String, double>{});
+        servicesTotal += monthlyServices.values.fold<double>(
+          0,
+          (runningTotal, value) => runningTotal + value,
+        );
+      }
+    }
+
+    return hoursTotal + servicesTotal;
+  }
+
+  Widget _buildTotalsHeaderCard({
+    required String title,
+    required double total,
+    EdgeInsetsGeometry margin = const EdgeInsets.fromLTRB(12, 0, 12, 8),
+  }) {
+    final money = NumberFormat.currency(locale: 'pt_PT', symbol: 'CHF ');
+    return Padding(
+      padding: margin,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppColors.primaryGreen.withValues(alpha: 0.16),
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.primaryGreen,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Text(
+              money.format(total),
+              style: const TextStyle(
+                color: AppColors.primaryGreen,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _monthLabel(int month) {
     return DateFormat('MMMM', 'pt_PT').format(DateTime(2024, month));
   }
 
-  Future<void> _shareInvoiceFromSummary(ClientInvoice invoice) async {
+  Future<void> _shareInvoiceFromSummary(
+    ClientInvoice invoice, {
+    Rect? sharePositionOrigin,
+  }) async {
     final key = _invoiceActionKey(invoice);
     if (_sharingInvoiceKeys.contains(key)) return;
 
     setState(() => _sharingInvoiceKeys.add(key));
     try {
-      await _clientInvoiceService.shareInvoiceDocument(invoice);
+      await _clientInvoiceService.shareInvoiceDocument(
+        invoice,
+        sharePositionOrigin: sharePositionOrigin,
+      );
       if (!mounted) return;
       AppSnackBar.show(
         context,
@@ -578,19 +669,36 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : IconButton(
-                                      tooltip: 'Partilhar fatura',
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      onPressed: deleting
-                                          ? null
-                                          : () => _shareInvoiceFromSummary(
-                                              invoice,
-                                            ),
-                                      icon: const Icon(
-                                        Icons.share_outlined,
-                                        size: 16,
-                                        color: AppColors.primaryGreen,
+                                  : Builder(
+                                      builder: (buttonContext) => IconButton(
+                                        tooltip: 'Partilhar fatura',
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        onPressed: deleting
+                                            ? null
+                                            : () {
+                                                final renderObject =
+                                                    buttonContext
+                                                        .findRenderObject();
+                                                final shareOrigin =
+                                                    renderObject is RenderBox
+                                                    ? renderObject
+                                                              .localToGlobal(
+                                                                Offset.zero,
+                                                              ) &
+                                                          renderObject.size
+                                                    : null;
+                                                _shareInvoiceFromSummary(
+                                                  invoice,
+                                                  sharePositionOrigin:
+                                                      shareOrigin,
+                                                );
+                                              },
+                                        icon: const Icon(
+                                          Icons.share_outlined,
+                                          size: 16,
+                                          color: AppColors.primaryGreen,
+                                        ),
                                       ),
                                     ),
                             ),
@@ -645,6 +753,7 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
       0,
       (runningTotal, item) => runningTotal + item.totalValue,
     );
+    final yearTotal = _selectedYearTotalForVisible(visible);
 
     return Scaffold(
       appBar: buildAppBar(
@@ -730,43 +839,11 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
                     ],
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.primaryGreen.withValues(alpha: 0.16),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            monthTitle,
-                            style: const TextStyle(
-                              color: AppColors.primaryGreen,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          NumberFormat.currency(
-                            locale: 'pt_PT',
-                            symbol: 'CHF ',
-                          ).format(globalTotal),
-                          style: const TextStyle(
-                            color: AppColors.primaryGreen,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                _buildTotalsHeaderCard(
+                  title: 'ANO $_selectedYear',
+                  total: yearTotal,
                 ),
+                _buildTotalsHeaderCard(title: monthTitle, total: globalTotal),
                 Expanded(
                   child: visible.isEmpty
                       ? const Center(

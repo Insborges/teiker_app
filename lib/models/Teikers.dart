@@ -102,6 +102,8 @@ class TeikerMarcacao {
     required this.id,
     required this.data,
     required this.tipo,
+    this.nota = '',
+    this.documentos = const [],
     this.createdAt,
     this.createdById,
     this.createdByName,
@@ -112,6 +114,8 @@ class TeikerMarcacao {
   final String id;
   final DateTime data;
   final TeikerMarcacaoTipo tipo;
+  final String nota;
+  final List<String> documentos;
   final DateTime? createdAt;
   final String? createdById;
   final String? createdByName;
@@ -130,6 +134,15 @@ class TeikerMarcacao {
       tipo: TeikerMarcacaoTipo.fromStorageValue(
         (map['tipo'] as String?)?.trim(),
       ),
+      nota: (map['nota'] as String? ?? map['descricao'] as String? ?? '')
+          .trim(),
+      documentos:
+          (map['documentos'] as List<dynamic>? ??
+                  map['documentLinks'] as List<dynamic>? ??
+                  const <dynamic>[])
+              .map((e) => e?.toString().trim() ?? '')
+              .where((e) => e.isNotEmpty)
+              .toList(),
       createdAt: _parseDate(map['createdAt']),
       createdById: (map['createdById'] as String?)?.trim(),
       createdByName: (map['createdByName'] as String?)?.trim(),
@@ -143,6 +156,8 @@ class TeikerMarcacao {
       'id': id,
       'data': data.toIso8601String(),
       'tipo': tipo.storageValue,
+      'nota': nota,
+      'documentos': documentos,
       'createdAt': createdAt?.toIso8601String(),
       'createdById': createdById,
       'createdByName': createdByName,
@@ -155,6 +170,8 @@ class TeikerMarcacao {
     String? id,
     DateTime? data,
     TeikerMarcacaoTipo? tipo,
+    String? nota,
+    List<String>? documentos,
     DateTime? createdAt,
     String? createdById,
     String? createdByName,
@@ -165,6 +182,8 @@ class TeikerMarcacao {
       id: id ?? this.id,
       data: data ?? this.data,
       tipo: tipo ?? this.tipo,
+      nota: nota ?? this.nota,
+      documentos: documentos ?? this.documentos,
       createdAt: createdAt ?? this.createdAt,
       createdById: createdById ?? this.createdById,
       createdByName: createdByName ?? this.createdByName,

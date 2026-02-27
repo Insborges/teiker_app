@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-import 'package:intl/intl.dart';
+import 'package:teiker_app/Widgets/event_item_view_model.dart';
 
 class EventItem extends StatelessWidget {
+  static const Color _appDarkGreen = Color(0xFF0B4B35);
+
   final Map<String, dynamic> event;
   final Color selectedColor;
   final VoidCallback onDelete;
@@ -12,6 +14,8 @@ class EventItem extends StatelessWidget {
   final bool showHours; // NOVO: controla se mostra horas
   final bool readOnly;
   final String? tag;
+  final bool showTeikerNameOnMarcacaoCard;
+  final bool showClienteNameOnReminderCard;
 
   const EventItem({
     super.key,
@@ -24,32 +28,30 @@ class EventItem extends StatelessWidget {
     this.showHours = true, // padrão true para compatibilidade
     this.readOnly = false,
     this.tag,
+    this.showTeikerNameOnMarcacaoCard = true,
+    this.showClienteNameOnReminderCard = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isDone = event['done'] ?? false;
-    final rawTag = tag ?? event['tag'] as String?;
-    final isAcontecimento =
-        event['isAcontecimento'] == true || rawTag?.trim() == 'Acontecimento';
-    final tagText = rawTag?.trim();
-    final subtitle = (event['subtitle'] as String?)?.trim();
-    final start = (event['start'] ?? '').toString();
-    final end = (event['end'] ?? '').toString();
-    final hasHours = start.isNotEmpty || end.isNotEmpty;
-    final createdAt = event['createdAt'] as DateTime?;
-    final createdAtLabel = createdAt == null
-        ? 'Data de criação indisponível'
-        : DateFormat('dd/MM/yyyy • HH:mm', 'pt_PT').format(createdAt);
-    final statusLabel = isDone ? 'Resolvido' : 'Por resolver';
+    final vm = EventItemViewModel.fromEvent(
+      event: event,
+      selectedColor: selectedColor,
+      displayTagOverride: tag,
+      showHours: showHours,
+      showTeikerNameOnMarcacaoCard: showTeikerNameOnMarcacaoCard,
+      showClienteNameOnReminderCard: showClienteNameOnReminderCard,
+    );
+    final metaChips = vm.metaItems.map(_buildMetaItem).toList();
 
     final card = AnimatedContainer(
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeOutCubic,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: isDone ? Colors.green.shade50 : Colors.white,
+        color: vm.surfaceColor,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: vm.borderColor),
         boxShadow: [
           BoxShadow(
             color: Colors.black12.withValues(alpha: 0.03),
@@ -66,9 +68,19 @@ class EventItem extends StatelessWidget {
             width: 5,
             height: 36,
             decoration: BoxDecoration(
-              color: isDone ? selectedColor : Colors.transparent,
+              color: vm.accentColor,
               borderRadius: BorderRadius.circular(6),
             ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: selectedColor.withValues(alpha: .14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(vm.iconData, size: 17, color: selectedColor),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -80,64 +92,63 @@ class EventItem extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        event['title'] ?? '',
+                        vm.title,
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color: isDone
-                              ? Colors.green.shade900
-                              : Colors.black87,
-                          decoration: isDone
+                          color: vm.titleColor,
+                          decoration: vm.shouldStrikeTitle
                               ? TextDecoration.lineThrough
                               : null,
                         ),
                       ),
                     ),
-                    if (!isAcontecimento &&
-                        tagText != null &&
-                        tagText.isNotEmpty)
-                      _tagChip(tagText),
+                    if (vm.showGenericTagChip && vm.tagText != null)
+                      _tagChip(vm.tagText!, usePillStyle: vm.usePillTagStyle),
                   ],
                 ),
-                if (isAcontecimento) ...[
-                  const SizedBox(height: 5),
+                if (vm.showGenericSubtitle && vm.subtitle != null) ...[
+                  const SizedBox(height: 4),
                   Text(
-                    'Adicionado: $createdAtLabel',
+                    vm.subtitle!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.grey.shade700,
+                      color: _appDarkGreen,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Estado: $statusLabel',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDone
-                          ? Colors.green.shade800
-                          : Colors.orange.shade800,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ] else if (subtitle != null && subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ],
+                if (vm.showBirthdayWishSubtitle && vm.subtitle != null) ...[
+                  const SizedBox(height: 5),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.favorite_border_rounded,
+                        size: 14,
+                        color: _appDarkGreen,
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          vm.subtitle!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: _appDarkGreen,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
-                if (showHours) ...[
-                  if (hasHours) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      "$start${(start.isNotEmpty && end.isNotEmpty) ? ' — ' : ''}$end",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
-                  ],
+                if (metaChips.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 6, runSpacing: 6, children: metaChips),
                 ],
               ],
             ),
@@ -153,7 +164,7 @@ class EventItem extends StatelessWidget {
                 duration: const Duration(milliseconds: 350),
                 transitionBuilder: (child, anim) =>
                     ScaleTransition(scale: anim, child: child),
-                child: isDone
+                child: vm.isDone
                     ? Icon(
                         Icons.check_circle,
                         color: selectedColor,
@@ -211,21 +222,90 @@ class EventItem extends StatelessWidget {
     );
   }
 
-  Widget _tagChip(String text) {
-    return Container(
-      margin: const EdgeInsets.only(left: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: selectedColor.withValues(alpha: .12),
-        borderRadius: BorderRadius.circular(10),
-      ),
+  Widget _buildMetaItem(EventItemMetaData meta) {
+    if (meta.kind == EventItemMetaKind.status) {
+      return _statusChip(label: meta.label, isDone: meta.isDone);
+    }
+    return _metaChip(icon: meta.icon!, label: meta.label);
+  }
+
+  Widget _tagChip(String text, {required bool usePillStyle}) {
+    if (usePillStyle) {
+      return Container(
+        margin: const EdgeInsets.only(left: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: .92),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selectedColor.withValues(alpha: .22)),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: selectedColor,
+            fontWeight: FontWeight.w700,
+            fontSize: 11,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
       child: Text(
         text,
-        style: TextStyle(
-          color: selectedColor,
-          fontWeight: FontWeight.w700,
-          fontSize: 11,
+        style: const TextStyle(
+          color: _appDarkGreen,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
         ),
+      ),
+    );
+  }
+
+  Widget _statusChip({required String label, required bool isDone}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          isDone ? Icons.check_circle_outline : Icons.pending_outlined,
+          size: 13,
+          color: _appDarkGreen,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: _appDarkGreen,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _metaChip({required IconData icon, required String label}) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 240),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(width: 1),
+          Icon(icon, size: 13, color: _appDarkGreen),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: _appDarkGreen,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }

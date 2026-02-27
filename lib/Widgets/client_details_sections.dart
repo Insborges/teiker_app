@@ -23,7 +23,11 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
   final Stream<List<ClientInvoice>> invoicesStream;
   final Set<String> sharingInvoiceIds;
   final Set<String> deletingInvoiceIds;
-  final Future<void> Function(ClientInvoice invoice) onShareInvoice;
+  final Future<void> Function(
+    ClientInvoice invoice, {
+    Rect? sharePositionOrigin,
+  })
+  onShareInvoice;
   final Future<void> Function(ClientInvoice invoice) onDeleteInvoice;
   final bool canShareInvoices;
   final bool canDeleteInvoices;
@@ -181,7 +185,8 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
                                   const SizedBox(width: 4),
                                   SizedBox(
                                     width: 30,
-                                    child: sharingInvoiceIds.contains(invoice.id)
+                                    child:
+                                        sharingInvoiceIds.contains(invoice.id)
                                         ? const SizedBox(
                                             width: 18,
                                             height: 18,
@@ -189,17 +194,38 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
                                               strokeWidth: 2,
                                             ),
                                           )
-                                        : IconButton(
-                                            tooltip: 'Partilhar fatura',
-                                            padding: EdgeInsets.zero,
-                                            constraints: const BoxConstraints(),
-                                            onPressed: () =>
-                                                onShareInvoice(invoice),
-                                            icon: Icon(
-                                              Icons.share_outlined,
-                                              color: primaryColor,
-                                              size: 20,
-                                            ),
+                                        : Builder(
+                                            builder: (buttonContext) =>
+                                                IconButton(
+                                                  tooltip: 'Partilhar fatura',
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints(),
+                                                  onPressed: () {
+                                                    final renderObject =
+                                                        buttonContext
+                                                            .findRenderObject();
+                                                    final shareOrigin =
+                                                        renderObject
+                                                            is RenderBox
+                                                        ? renderObject
+                                                                  .localToGlobal(
+                                                                    Offset.zero,
+                                                                  ) &
+                                                              renderObject.size
+                                                        : null;
+                                                    onShareInvoice(
+                                                      invoice,
+                                                      sharePositionOrigin:
+                                                          shareOrigin,
+                                                    );
+                                                  },
+                                                  icon: Icon(
+                                                    Icons.share_outlined,
+                                                    color: primaryColor,
+                                                    size: 20,
+                                                  ),
+                                                ),
                                           ),
                                   ),
                                 ],

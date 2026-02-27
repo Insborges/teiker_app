@@ -46,7 +46,11 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
   final Stream<List<ClientInvoice>> invoicesStream;
   final Set<String> sharingInvoiceIds;
   final Set<String> deletingInvoiceIds;
-  final Future<void> Function(ClientInvoice invoice) onShareInvoice;
+  final Future<void> Function(
+    ClientInvoice invoice, {
+    Rect? sharePositionOrigin,
+  })
+  onShareInvoice;
   final Future<void> Function(ClientInvoice invoice) onDeleteInvoice;
   final bool canShareInvoices;
   final bool canDeleteInvoices;
@@ -59,6 +63,7 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       child: Column(
         children: [
           ClientOrcamentoSummaryCard(
@@ -151,6 +156,7 @@ class ClientDetailsAdminInfoTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       child: Column(
         children: [
           ClientInfoSectionCard(
@@ -225,60 +231,6 @@ class ClientDetailsAdminInfoTab extends StatelessWidget {
               ],
             ),
           ),
-          if (!readOnly) ...[
-            const SizedBox(height: 12),
-            ClientInfoSectionCard(
-              title: 'Teikers associadas',
-              icon: Icons.groups_2_outlined,
-              primaryColor: primaryColor,
-              borderColor: borderColor,
-              child: associatedTeikerNames.isEmpty
-                  ? Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: borderColor),
-                      ),
-                      child: const Text(
-                        'Sem teikers associadas.',
-                        style: TextStyle(
-                          color: Colors.black54,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    )
-                  : Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: associatedTeikerNames
-                          .map(
-                            (name) => Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: primaryColor.withValues(alpha: .08),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: borderColor.withValues(alpha: .8),
-                                ),
-                              ),
-                              child: Text(
-                                name,
-                                style: TextStyle(
-                                  color: primaryColor,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-            ),
-          ],
           const SizedBox(height: 12),
           ClientInfoSectionCard(
             title: 'Contacto e faturação',

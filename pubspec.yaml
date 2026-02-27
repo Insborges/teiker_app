@@ -78,6 +78,7 @@ flutter:
 
   assets:
     - Invoice(Fatura)_Teiker.docx
+    - Template_Reunioes.docx
     - assets/TeikerLogo copy.png
     - assets/TeikerLogo.png
     - assets/TEIKER_Chaves_2025 @MC_Double_Branco.png

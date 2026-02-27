@@ -6,11 +6,13 @@ import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/Widgets/DatePickerBottomSheet.dart';
 import 'package:teiker_app/Widgets/app_pill_tab_bar.dart';
 import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
+import 'package:teiker_app/Widgets/teiker_marcacao_notes_dialog.dart';
 import 'package:teiker_app/Widgets/teiker_details_sheets.dart';
 import 'package:teiker_app/Widgets/teiker_details_tab_contents.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import 'package:teiker_app/backend/auth_service.dart';
+import 'package:teiker_app/backend/teiker_marcacao_calendar_sync_service.dart';
 import '../../models/Teikers.dart';
 import '../../Widgets/AppBar.dart';
 import '../../Widgets/AppSnackBar.dart';
@@ -35,6 +37,8 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   final MonthlyHoursOverviewService _hoursOverviewService =
       MonthlyHoursOverviewService();
   final AuthService _authService = AuthService();
+  final TeikerMarcacaoCalendarSyncService _marcacaoCalendarSyncService =
+      TeikerMarcacaoCalendarSyncService();
   late TextEditingController _emailController;
   late TextEditingController _telemovelController;
   late List<FeriasPeriodo> _feriasPeriodos;
@@ -186,6 +190,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
 
   Future<void> _saveMarcacoesTeiker({
     String successMessage = 'Marcação guardada.',
+    bool showSuccessSnack = true,
   }) async {
     try {
       await FirebaseFirestore.instance
@@ -194,12 +199,14 @@ class _TeikersDetailsState extends State<TeikersDetails> {
           .update({'marcacoes': _marcacoes.map((m) => m.toMap()).toList()});
 
       if (!mounted) return;
-      AppSnackBar.show(
-        context,
-        message: successMessage,
-        icon: Icons.event_available_rounded,
-        background: Colors.green.shade700,
-      );
+      if (showSuccessSnack) {
+        AppSnackBar.show(
+          context,
+          message: successMessage,
+          icon: Icons.event_available_rounded,
+          background: Colors.green.shade700,
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       AppSnackBar.show(
@@ -211,7 +218,92 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     }
   }
 
-  Future<void> _openMarcacaoSheet() async {
+  Future<void> _updateMarcacaoCalendarDocs(TeikerMarcacao marcacao) async {
+    await _marcacaoCalendarSyncService.updateCalendarDocs(
+      teikerId: widget.teiker.uid,
+      teikerName: widget.teiker.nameTeiker,
+      marcacao: marcacao,
+    );
+  }
+
+  Future<void> _deleteMarcacaoCalendarDocs(TeikerMarcacao marcacao) async {
+    await _marcacaoCalendarSyncService.deleteCalendarDocs(
+      teikerId: widget.teiker.uid,
+      marcacao: marcacao,
+    );
+  }
+
+  ({String name, AppUserRole role}) _currentMarcacaoNoteWriter() {
+    final user = FirebaseAuth.instance.currentUser;
+    final role = AppUserRoleResolver.fromEmail(user?.email);
+
+    final displayName = (user?.displayName ?? '').trim();
+    if (displayName.isNotEmpty) {
+      return (name: displayName, role: role);
+    }
+
+    final email = (user?.email ?? '').trim();
+    if (email.isNotEmpty && email.contains('@')) {
+      final localPart = email.split('@').first.trim();
+      if (localPart.isNotEmpty) {
+        return (name: localPart, role: role);
+      }
+    }
+
+    if (role.isAdmin) return (name: 'Admin', role: role);
+    if (role.isHr) return (name: 'Recursos Humanos', role: role);
+    return (name: widget.teiker.nameTeiker, role: role);
+  }
+
+  Future<void> _saveMarcacaoNote({
+    required int index,
+    required String note,
+  }) async {
+    if (index < 0 || index >= _marcacoes.length) return;
+    final current = _marcacoes[index];
+    final updated = current.copyWith(nota: note.trim());
+    await _updateMarcacaoCalendarDocs(updated);
+
+    if (!mounted) return;
+    setState(() {
+      _marcacoes[index] = updated;
+      _marcacoes.sort((a, b) => a.data.compareTo(b.data));
+    });
+    await _saveMarcacoesTeiker(
+      successMessage: 'Anotação atualizada.',
+      showSuccessSnack: false,
+    );
+  }
+
+  Future<void> _openMarcacaoNotesDialog(int index) async {
+    if (index < 0 || index >= _marcacoes.length) return;
+    final marcacao = _marcacoes[index];
+    final writer = _currentMarcacaoNoteWriter();
+    final canManageMarcacao = writer.role.isPrivileged;
+
+    await TeikerMarcacaoNotesDialog.show(
+      context: context,
+      primaryColor: _primaryColor,
+      tipoMarcacao: marcacao.tipo.label,
+      teikerName: widget.teiker.nameTeiker,
+      dataHoraMarcacao: marcacao.data,
+      initialNote: marcacao.nota,
+      writerName: writer.name,
+      writerRole: writer.role,
+      onSaveNote: (note) => _saveMarcacaoNote(index: index, note: note),
+      onEditMarcacao: canManageMarcacao
+          ? () => _openMarcacaoSheet(marcacao: marcacao, index: index)
+          : null,
+      onDeleteMarcacao: canManageMarcacao
+          ? () => _confirmDeleteMarcacao(index)
+          : null,
+    );
+  }
+
+  Future<void> _openMarcacaoSheet({
+    TeikerMarcacao? marcacao,
+    int? index,
+  }) async {
     final currentUser = FirebaseAuth.instance.currentUser;
     final role = AppUserRoleResolver.fromEmail(currentUser?.email);
     if (!role.isPrivileged) {
@@ -228,10 +320,41 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => TeikerMarcacaoSheet(primaryColor: _primaryColor),
+      builder: (_) =>
+          TeikerMarcacaoSheet(primaryColor: _primaryColor, marcacao: marcacao),
     );
 
     if (result == null) return;
+    final isEditing = marcacao != null && index != null;
+
+    if (isEditing) {
+      final updated = result.copyWith(
+        id: marcacao.id,
+        createdAt: marcacao.createdAt,
+        createdById: marcacao.createdById,
+        createdByName: marcacao.createdByName,
+        reminderId: marcacao.reminderId,
+        adminReminderId: marcacao.adminReminderId,
+      );
+
+      try {
+        await _updateMarcacaoCalendarDocs(updated);
+        setState(() {
+          _marcacoes[index] = updated;
+          _marcacoes.sort((a, b) => a.data.compareTo(b.data));
+        });
+        await _saveMarcacoesTeiker(successMessage: 'Marcação atualizada.');
+      } catch (e) {
+        if (!mounted) return;
+        AppSnackBar.show(
+          context,
+          message: "Erro ao atualizar marcação: $e",
+          icon: Icons.error_outline,
+          background: Colors.red.shade700,
+        );
+      }
+      return;
+    }
 
     final creatorName = role.isAdmin ? 'Admin' : 'Recursos Humanos';
     final createdAt = DateTime.now();
@@ -247,7 +370,8 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     final tag = result.tipo.label;
     final reminderPayload = <String, dynamic>{
       'title': tag,
-      'description': '',
+      'description': result.nota,
+      'nota': result.nota,
       'date': Timestamp.fromDate(result.data),
       'start': startLabel,
       'end': '',
@@ -299,6 +423,37 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       AppSnackBar.show(
         context,
         message: "Erro ao adicionar marcação: $e",
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  Future<void> _confirmDeleteMarcacao(int index) async {
+    if (index < 0 || index >= _marcacoes.length) return;
+    final marcacao = _marcacoes[index];
+    final shouldDelete = await AppConfirmDialog.show(
+      context: context,
+      title: 'Eliminar marcação',
+      message:
+          'Queres eliminar a marcação de ${DateFormat('dd/MM', 'pt_PT').format(marcacao.data)} às ${DateFormat('HH:mm', 'pt_PT').format(marcacao.data)}?',
+      confirmLabel: 'Eliminar',
+      confirmColor: Colors.red.shade700,
+    );
+
+    if (!shouldDelete) return;
+
+    try {
+      await _deleteMarcacaoCalendarDocs(marcacao);
+      setState(() {
+        _marcacoes.removeAt(index);
+      });
+      await _saveMarcacoesTeiker(successMessage: 'Marcação eliminada.');
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: "Erro ao eliminar marcação: $e",
         icon: Icons.error_outline,
         background: Colors.red.shade700,
       );
@@ -693,6 +848,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       primaryColor: _primaryColor,
                       marcacoes: _marcacoes,
                       onAddMarcacao: _openMarcacaoSheet,
+                      onOpenMarcacaoNotes: _openMarcacaoNotesDialog,
+                      onEditMarcacao: _openMarcacaoSheet,
+                      onDeleteMarcacao: _confirmDeleteMarcacao,
                       baixasPeriodos: _baixasPeriodos,
                       baixasDaysCount: _countBaixasDays(_baixasPeriodos),
                       onAddBaixa: () => _adicionarBaixa(),

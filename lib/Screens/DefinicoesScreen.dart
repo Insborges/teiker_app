@@ -11,6 +11,7 @@ import 'package:teiker_app/Screens/TeikerHorasScreen.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
 import 'package:teiker_app/Widgets/ResetPasswordDialog.dart';
+import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
 import 'package:teiker_app/Widgets/profile_image_picker_sheet.dart';
 import 'package:teiker_app/Widgets/settings_option_card.dart';
 import 'package:teiker_app/backend/auth_service.dart';
@@ -140,6 +141,14 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
   }
 
   Future<void> _logout() async {
+    final confirmed = await AppConfirmDialog.show(
+      context: context,
+      title: 'Terminar sessão',
+      message: 'Queres mesmo terminar a sessão nesta conta?',
+      confirmLabel: 'Terminar',
+      confirmColor: Colors.red.shade700,
+    );
+    if (!confirmed) return;
     await _authService.logout();
     // A navegação é gerida automaticamente pelo AuthGate.
   }
@@ -285,9 +294,21 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
           ),
           const SizedBox(height: 18),
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(children: _buildActionButtons()),
+            child: RefreshIndicator(
+              color: _mainColor,
+              onRefresh: _loadUserData,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  0,
+                  20,
+                  MediaQuery.of(context).padding.bottom + 20,
+                ),
+                child: Column(children: _buildActionButtons()),
+              ),
             ),
           ),
         ],

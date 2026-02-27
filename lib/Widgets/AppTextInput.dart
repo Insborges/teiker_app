@@ -14,6 +14,8 @@ class AppTextField extends StatelessWidget {
   final EdgeInsetsGeometry? contentPadding;
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onFieldSubmitted;
+  final Iterable<String>? autofillHints;
   final TextStyle? style;
   final TextStyle? labelStyle;
   final Color? borderColor;
@@ -21,6 +23,7 @@ class AppTextField extends StatelessWidget {
   final int maxLines;
   final bool? enableInteractiveSelection;
   final FocusNode? focusNode;
+  final bool prefixIconAlignTop;
 
   const AppTextField({
     super.key,
@@ -36,6 +39,8 @@ class AppTextField extends StatelessWidget {
     this.contentPadding,
     this.textInputAction,
     this.onChanged,
+    this.onFieldSubmitted,
+    this.autofillHints,
     this.style,
     this.labelStyle,
     this.borderColor,
@@ -43,11 +48,19 @@ class AppTextField extends StatelessWidget {
     this.maxLines = 1,
     this.enableInteractiveSelection,
     this.focusNode,
+    this.prefixIconAlignTop = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final neutralBorder = borderColor ?? Colors.grey.shade400;
+    final isMultiline = maxLines > 1;
+    final useHintInside = isMultiline && prefixIcon != null;
+    final useInlinePrefixForMultiline = useHintInside;
+    final shouldTopAlignPrefixIcon =
+        prefixIcon != null &&
+        !useInlinePrefixForMultiline &&
+        (isMultiline || prefixIconAlignTop);
     final baseLabelStyle =
         labelStyle ??
         TextStyle(
@@ -55,6 +68,11 @@ class AppTextField extends StatelessWidget {
           fontWeight: FontWeight.w600,
           fontSize: 14,
         );
+    final effectiveContentPadding =
+        contentPadding ??
+        (isMultiline
+            ? const EdgeInsets.fromLTRB(14, 14, 14, 14)
+            : const EdgeInsets.symmetric(horizontal: 14, vertical: 14));
 
     return TextFormField(
       controller: controller,
@@ -64,24 +82,53 @@ class AppTextField extends StatelessWidget {
       readOnly: readOnly,
       textInputAction: textInputAction,
       onChanged: onChanged,
+      onFieldSubmitted: onFieldSubmitted,
+      autofillHints: autofillHints,
       style: style,
       maxLines: maxLines,
+      textAlignVertical: isMultiline ? TextAlignVertical.top : null,
       enableInteractiveSelection: enableInteractiveSelection ?? !readOnly,
       decoration: InputDecoration(
-        labelText: label,
+        labelText: useHintInside ? null : label,
+        hintText: useHintInside ? label : null,
+        hintStyle: useHintInside ? baseLabelStyle : null,
+        hintMaxLines: useHintInside ? maxLines : null,
+        alignLabelWithHint: isMultiline,
         labelStyle: baseLabelStyle,
+        floatingLabelBehavior: useHintInside
+            ? FloatingLabelBehavior.never
+            : FloatingLabelBehavior.auto,
         floatingLabelStyle: baseLabelStyle.copyWith(
           color: focusColor,
           fontWeight: FontWeight.w700,
         ),
+        prefix: useInlinePrefixForMultiline
+            ? Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Icon(prefixIcon, size: 20, color: focusColor),
+              )
+            : null,
         prefixIcon: prefixIcon != null
-            ? Icon(prefixIcon, color: focusColor)
+            ? (useInlinePrefixForMultiline
+                  ? null
+                  : shouldTopAlignPrefixIcon
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 12),
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        widthFactor: 1,
+                        heightFactor: 1,
+                        child: Icon(prefixIcon, color: focusColor),
+                      ),
+                    )
+                  : Icon(prefixIcon, color: focusColor))
+            : null,
+        prefixIconConstraints: shouldTopAlignPrefixIcon
+            ? const BoxConstraints(minWidth: 44, minHeight: 0)
             : null,
         suffixIcon: suffixIcon,
-        contentPadding:
-            contentPadding ??
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        isDense: true,
+        contentPadding: effectiveContentPadding,
+        isDense: !isMultiline,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
         ),

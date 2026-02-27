@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="teiker_app"
+        android:label="Teiker App"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

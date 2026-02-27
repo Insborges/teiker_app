@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/EventAddSheet.dart';
 import 'package:teiker_app/Widgets/EventItem.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
@@ -13,10 +14,14 @@ import 'package:teiker_app/Widgets/modern_calendar.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppBottomNavBar.dart';
 import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
+import 'package:teiker_app/Widgets/teiker_details_sheets.dart';
+import 'package:teiker_app/Widgets/teiker_marcacao_notes_dialog.dart';
+import 'package:teiker_app/agenda/agenda_event_utils.dart';
 import 'package:teiker_app/auth/auth_notifier.dart';
 import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/backend/notification_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
+import 'package:teiker_app/models/Teikers.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -70,32 +75,372 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   bool _isAcontecimento(Map<String, dynamic> event) {
-    return event['isAcontecimento'] == true || event['tag'] == 'Acontecimento';
+    return AgendaEventUtils.isAcontecimento(event);
   }
 
   bool _isReminder(Map<String, dynamic> event) {
-    if (_isAcontecimento(event)) return false;
-    if (event['isFerias'] == true) return false;
-    if (event['isConsulta'] == true) return false;
-    if (event['isBirthday'] == true) return false;
-    return true;
+    return AgendaEventUtils.isReminder(event);
   }
 
   bool _isTeikerMarcacaoTag(String? rawTag) {
-    final normalized = (rawTag ?? '').trim().toLowerCase();
-    return normalized == 'reunião de trabalho' ||
-        normalized == 'reuniao de trabalho' ||
-        normalized == 'acompanhamento';
+    return AgendaEventUtils.isTeikerMarcacaoTag(rawTag);
   }
 
   bool _isHrVisibleAgendaTag(String? rawTag) {
-    final normalized = (rawTag ?? '').trim();
-    if (normalized == 'Acontecimento') return true;
-    return _isTeikerMarcacaoTag(normalized);
+    return AgendaEventUtils.isHrVisibleAgendaTag(rawTag);
   }
 
   bool _isTeikerMarcacaoAgendaEvent(Map<String, dynamic> event) {
-    return _isTeikerMarcacaoTag(event['tag'] as String?);
+    return AgendaEventUtils.isTeikerMarcacaoAgendaEvent(event);
+  }
+
+  List<Map<String, dynamic>> _sortedEventsForList(
+    List<Map<String, dynamic>> events,
+  ) {
+    return AgendaEventUtils.sortedEventsForList(events);
+  }
+
+  String _currentMarcacaoWriterName() {
+    final user = ref.read(authStateProvider).asData?.value;
+    final displayName = (user?.displayName ?? '').trim();
+    if (displayName.isNotEmpty) return displayName;
+
+    final email = (user?.email ?? '').trim();
+    if (email.isNotEmpty && email.contains('@')) {
+      final localPart = email.split('@').first.trim();
+      if (localPart.isNotEmpty) return localPart;
+    }
+
+    final role = ref.read(userRoleProvider);
+    if (role.isAdmin) return 'Admin';
+    if (role.isHr) return 'Recursos Humanos';
+
+    final uid = (user?.uid ?? '').trim();
+    if (uid.isNotEmpty) {
+      final known = _teikerNamesById[uid];
+      if (known != null && known.trim().isNotEmpty) return known.trim();
+    }
+    return 'Teiker';
+  }
+
+  Future<void> _syncMarcacaoNoteToTeikerDoc(
+    Map<String, dynamic> event,
+    String note,
+  ) async {
+    final teikerId = (event['teikerId'] as String?)?.trim() ?? '';
+    if (teikerId.isEmpty) return;
+
+    final isAdminSource = event['adminSource'] == true;
+    final reminderId = isAdminSource
+        ? ((event['sourceReminderId'] as String?)?.trim() ?? '')
+        : ((event['id'] as String?)?.trim() ?? '');
+    final adminReminderId = isAdminSource
+        ? ((event['id'] as String?)?.trim() ?? '')
+        : ((event['adminReminderId'] as String?)?.trim() ?? '');
+    final ids = AgendaMarcacaoIds(
+      teikerId: teikerId,
+      reminderId: reminderId,
+      adminReminderId: adminReminderId,
+    );
+
+    final docRef = FirebaseFirestore.instance
+        .collection('teikers')
+        .doc(teikerId);
+    final snap = await docRef.get();
+    if (!snap.exists) return;
+    final data = snap.data();
+    if (data == null) return;
+
+    final rawMarcacoes = List<dynamic>.from(
+      data['marcacoes'] as List? ?? const [],
+    );
+    var changed = false;
+
+    for (var i = 0; i < rawMarcacoes.length; i++) {
+      final raw = rawMarcacoes[i];
+      if (raw is! Map) continue;
+      final item = Map<String, dynamic>.from(raw);
+      if (!AgendaEventUtils.marcacaoItemMatchesIds(item: item, ids: ids)) {
+        continue;
+      }
+
+      item['nota'] = note.trim();
+      rawMarcacoes[i] = item;
+      changed = true;
+      break;
+    }
+
+    if (!changed) return;
+    await docRef.update({'marcacoes': rawMarcacoes});
+  }
+
+  Future<void> _saveMarcacaoNoteForAgendaEvent(
+    Map<String, dynamic> event,
+    String note,
+  ) async {
+    final trimmed = note.trim();
+    await _updateEventAcrossRefs(event, {
+      'description': trimmed,
+      'nota': trimmed,
+    });
+    await _syncMarcacaoNoteToTeikerDoc(event, trimmed);
+
+    if (!mounted) return;
+    setState(() {
+      event['description'] = trimmed;
+      event['nota'] = trimmed;
+    });
+  }
+
+  TeikerMarcacaoTipo _teikerMarcacaoTipoFromEventTag(String? rawTag) {
+    final normalized = (rawTag ?? '').trim().toLowerCase();
+    if (normalized == 'acompanhamento') {
+      return TeikerMarcacaoTipo.acompanhamento;
+    }
+    return TeikerMarcacaoTipo.reuniaoTrabalho;
+  }
+
+  AgendaMarcacaoIds _agendaMarcacaoIds(Map<String, dynamic> event) =>
+      AgendaEventUtils.agendaMarcacaoIds(event);
+
+  Future<void> _syncMarcacaoScheduleToTeikerDoc(
+    Map<String, dynamic> event, {
+    required DateTime date,
+    required TeikerMarcacaoTipo tipo,
+  }) async {
+    final ids = _agendaMarcacaoIds(event);
+    if (ids.teikerId.isEmpty) return;
+
+    final docRef = FirebaseFirestore.instance
+        .collection('teikers')
+        .doc(ids.teikerId);
+    final snap = await docRef.get();
+    if (!snap.exists) return;
+    final data = snap.data();
+    if (data == null) return;
+
+    final rawMarcacoes = List<dynamic>.from(
+      data['marcacoes'] as List? ?? const [],
+    );
+    var changed = false;
+
+    for (var i = 0; i < rawMarcacoes.length; i++) {
+      final raw = rawMarcacoes[i];
+      if (raw is! Map) continue;
+      final item = Map<String, dynamic>.from(raw);
+      if (!AgendaEventUtils.marcacaoItemMatchesIds(item: item, ids: ids)) {
+        continue;
+      }
+
+      item['data'] = date.toIso8601String();
+      item['tipo'] = tipo.storageValue;
+      if (ids.reminderId.isNotEmpty) {
+        item['reminderId'] = ids.reminderId;
+      }
+      if (ids.adminReminderId.isNotEmpty) {
+        item['adminReminderId'] = ids.adminReminderId;
+      }
+      rawMarcacoes[i] = item;
+      changed = true;
+      break;
+    }
+
+    if (!changed) return;
+    await docRef.update({'marcacoes': rawMarcacoes});
+  }
+
+  Future<void> _deleteMarcacaoFromTeikerDoc(Map<String, dynamic> event) async {
+    final ids = _agendaMarcacaoIds(event);
+    if (ids.teikerId.isEmpty) return;
+
+    final docRef = FirebaseFirestore.instance
+        .collection('teikers')
+        .doc(ids.teikerId);
+    final snap = await docRef.get();
+    if (!snap.exists) return;
+    final data = snap.data();
+    if (data == null) return;
+
+    final rawMarcacoes = List<dynamic>.from(
+      data['marcacoes'] as List? ?? const [],
+    );
+    final originalLength = rawMarcacoes.length;
+
+    rawMarcacoes.removeWhere((raw) {
+      if (raw is! Map) return false;
+      final item = Map<String, dynamic>.from(raw);
+      return AgendaEventUtils.marcacaoItemMatchesIds(item: item, ids: ids);
+    });
+
+    if (rawMarcacoes.length == originalLength) return;
+    await docRef.update({'marcacoes': rawMarcacoes});
+  }
+
+  Future<void> _editMarcacaoFromAgendaEvent(Map<String, dynamic> event) async {
+    if (!_isTeikerMarcacaoAgendaEvent(event)) return;
+    final role = ref.read(userRoleProvider);
+    if (!role.isPrivileged) return;
+
+    final currentDate = event['date'] as DateTime? ?? DateTime.now();
+    final currentTag = (event['tag'] as String?)?.trim();
+    final currentNote =
+        (event['nota'] as String?) ?? (event['description'] as String?) ?? '';
+    final reminderId = (event['sourceReminderId'] as String?)?.trim();
+    final adminReminderId = (event['adminReminderId'] as String?)?.trim();
+    final derivedReminderId = (event['id'] as String?)?.trim();
+    final isAdminSource = event['adminSource'] == true;
+
+    final edited = await showModalBottomSheet<TeikerMarcacao>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => TeikerMarcacaoSheet(
+        primaryColor: selectedColor,
+        marcacao: TeikerMarcacao(
+          id:
+              (isAdminSource ? reminderId : derivedReminderId) ??
+              DateTime.now().microsecondsSinceEpoch.toString(),
+          data: currentDate,
+          tipo: _teikerMarcacaoTipoFromEventTag(currentTag),
+          nota: currentNote,
+          reminderId: isAdminSource ? reminderId : derivedReminderId,
+          adminReminderId: isAdminSource ? derivedReminderId : adminReminderId,
+        ),
+      ),
+    );
+
+    if (edited == null) return;
+
+    final newDate = edited.data;
+    final newTag = edited.tipo.label;
+    final newStart = DateFormat('HH:mm', 'pt_PT').format(newDate);
+    final oldDate = currentDate;
+    final oldDayKey = _dayKey(oldDate);
+    final newDayKey = _dayKey(newDate);
+
+    try {
+      await _updateEventAcrossRefs(event, {
+        'title': newTag,
+        'tag': newTag,
+        'date': Timestamp.fromDate(newDate),
+        'start': newStart,
+        'end': '',
+      });
+      await _syncMarcacaoScheduleToTeikerDoc(
+        event,
+        date: newDate,
+        tipo: edited.tipo,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        event['title'] = newTag;
+        event['tag'] = newTag;
+        event['date'] = newDate;
+        event['start'] = newStart;
+        event['end'] = '';
+
+        if (oldDayKey != newDayKey) {
+          _events[oldDayKey]?.remove(event);
+          if ((_events[oldDayKey]?.isEmpty ?? true)) {
+            _events.remove(oldDayKey);
+          }
+          _events.putIfAbsent(newDayKey, () => []);
+          if (!_events[newDayKey]!.contains(event)) {
+            _events[newDayKey]!.add(event);
+          }
+        }
+      });
+
+      AppSnackBar.show(
+        context,
+        message: 'Marcação atualizada.',
+        icon: Icons.check_circle_outline,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro ao atualizar marcação: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  Future<void> _deleteMarcacaoFromAgendaEvent(
+    Map<String, dynamic> event,
+  ) async {
+    if (!_isTeikerMarcacaoAgendaEvent(event)) return;
+    final role = ref.read(userRoleProvider);
+    if (!role.isPrivileged) return;
+
+    final date = event['date'] as DateTime? ?? DateTime.now();
+    final tag = (event['tag'] as String?)?.trim() ?? 'marcação';
+    final shouldDelete = await AppConfirmDialog.show(
+      context: context,
+      title: 'Eliminar marcação',
+      message:
+          'Queres eliminar ${tag.toLowerCase()} de ${DateFormat('dd/MM', 'pt_PT').format(date)} às ${DateFormat('HH:mm', 'pt_PT').format(date)}?',
+      confirmLabel: 'Eliminar',
+      confirmColor: Colors.red.shade700,
+    );
+    if (!shouldDelete) return;
+
+    try {
+      await _deleteEvent(_dayKey(date), event);
+      await _deleteMarcacaoFromTeikerDoc(event);
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Marcação eliminada.',
+        icon: Icons.delete_outline,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro ao eliminar marcação: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  Future<void> _showMarcacaoNotesDialogForAgendaEvent(
+    Map<String, dynamic> event,
+  ) async {
+    if (!_isTeikerMarcacaoAgendaEvent(event)) return;
+    final role = ref.read(userRoleProvider);
+    final date = event['date'] as DateTime? ?? DateTime.now();
+    final teikerName =
+        (event['teikerName'] as String?)?.trim().isNotEmpty == true
+        ? (event['teikerName'] as String).trim()
+        : 'Teiker';
+    final tipo = (event['tag'] as String?)?.trim();
+    final initialNote =
+        (event['nota'] as String?) ?? (event['description'] as String?) ?? '';
+    final canManageMarcacao = role.isPrivileged;
+
+    await TeikerMarcacaoNotesDialog.show(
+      context: context,
+      primaryColor: selectedColor,
+      tipoMarcacao: (tipo == null || tipo.isEmpty) ? 'Marcação' : tipo,
+      teikerName: teikerName,
+      dataHoraMarcacao: date,
+      initialNote: initialNote,
+      writerName: _currentMarcacaoWriterName(),
+      writerRole: role,
+      onSaveNote: (note) => _saveMarcacaoNoteForAgendaEvent(event, note),
+      onEditMarcacao: canManageMarcacao
+          ? () => _editMarcacaoFromAgendaEvent(event)
+          : null,
+      onDeleteMarcacao: canManageMarcacao
+          ? () => _deleteMarcacaoFromAgendaEvent(event)
+          : null,
+    );
   }
 
   List<String> _parseStringList(dynamic raw) {
@@ -275,8 +620,10 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
     String? creatorName,
     DateTime? createdAt,
     String? teikerName,
+    String? tag,
   }) {
     if (!isPrivileged) return null;
+    final isTeikerMarcacao = _isTeikerMarcacaoTag(tag);
     final parts = <String>[];
     final client = clienteName?.trim();
     final by = creatorName?.trim();
@@ -290,7 +637,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
     if (by != null && by.isNotEmpty) {
       parts.add('Por: $by');
     }
-    if (createdAt != null) {
+    if (createdAt != null && !isTeikerMarcacao) {
       parts.add('Às ${DateFormat('HH:mm', 'pt_PT').format(createdAt)}');
     }
     if (parts.isEmpty) return null;
@@ -356,6 +703,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
           creatorName: creatorName,
           createdAt: createdAt,
           teikerName: teikerName,
+          tag: tag,
         ),
         'adminReminderId': data['adminReminderId'],
         'adminSource': false,
@@ -421,6 +769,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
             creatorName: creatorName,
             createdAt: createdAt,
             teikerName: teikerName,
+            tag: tag,
           ),
           'sourceUserId': data['sourceUserId'],
           'sourceReminderId': data['sourceReminderId'],
@@ -689,6 +1038,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         creatorName: creatorName,
         createdAt: createdAt,
         teikerName: teikerName,
+        tag: tag,
       ),
       'adminReminderId': null,
       if (isAcontecimento) 'cor': selectedColor,
@@ -1900,8 +2250,12 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _toggleDone(Map<String, dynamic> event) async {
     final previousDone = event['done'] ?? false;
+    final previousResolved = event['resolved'];
     final nextDone = !previousDone;
-    setState(() => event['done'] = nextDone);
+    setState(() {
+      event['done'] = nextDone;
+      event['resolved'] = nextDone;
+    });
     HapticFeedback.mediumImpact();
 
     final userId = _loadedUserId;
@@ -1912,7 +2266,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
           final adminRef = FirebaseFirestore.instance
               .collection('admin_reminders')
               .doc(eventId);
-          await adminRef.update({'done': nextDone});
+          await adminRef.update({'done': nextDone, 'resolved': nextDone});
 
           final sourceUserId = (event['sourceUserId'] as String?)?.trim();
           final sourceReminderId = (event['sourceReminderId'] as String?)
@@ -1923,7 +2277,9 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
             sourceReminderId: sourceReminderId,
           );
           if (sourceRef != null) {
-            await sourceRef.update({'done': nextDone}).catchError((_) {});
+            await sourceRef
+                .update({'done': nextDone, 'resolved': nextDone})
+                .catchError((_) {});
           }
         } else if (userId != null) {
           final userRef = FirebaseFirestore.instance
@@ -1931,7 +2287,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
               .doc(userId)
               .collection('items')
               .doc(eventId);
-          await userRef.update({'done': nextDone});
+          await userRef.update({'done': nextDone, 'resolved': nextDone});
 
           final adminReminderId = (event['adminReminderId'] as String?)?.trim();
           final adminMirror = await _findAdminMirrorDoc(
@@ -1940,7 +2296,9 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
             knownAdminReminderId: adminReminderId,
           );
           if (adminMirror != null) {
-            await adminMirror.update({'done': nextDone}).catchError((_) {});
+            await adminMirror
+                .update({'done': nextDone, 'resolved': nextDone})
+                .catchError((_) {});
             if (adminReminderId == null || adminReminderId.isEmpty) {
               event['adminReminderId'] = adminMirror.id;
               await userRef
@@ -1951,7 +2309,10 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         }
       } catch (_) {
         if (!mounted) return;
-        setState(() => event['done'] = previousDone);
+        setState(() {
+          event['done'] = previousDone;
+          event['resolved'] = previousResolved;
+        });
       }
     }
   }
@@ -2031,10 +2392,13 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       if (_dayKey(occurrence) != dayKey) continue;
 
       final name = birthday['name'] as String? ?? 'Teiker';
+      final isTeikerBirthdayCard = !isAdmin;
       events.add({
-        'title': isAdmin
-            ? 'Aniversário de $name'
-            : 'A Teiker deseja-te um Feliz Aniversário',
+        'title': isTeikerBirthdayCard
+            ? 'Feliz Aniversário'
+            : 'Aniversário de $name',
+        if (isTeikerBirthdayCard)
+          'subtitle': 'Tem um bom dia Teiker, cuida de ti!',
         'done': false,
         'start': '',
         'end': '',
@@ -2078,10 +2442,16 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
     String? emptyMessage,
     bool hideReminderTag = false,
   }) {
+    final sortedEvents = _sortedEventsForList(events);
+    final canOpenMarcacaoNotes = ref.read(userRoleProvider).isPrivileged;
+    final showTeikerNameOnMarcacaoCard = ref
+        .read(userRoleProvider)
+        .isPrivileged;
+    final showClienteNameOnReminderCard = !showTeikerNameOnMarcacaoCard;
     final bottomSafeArea = MediaQuery.of(context).padding.bottom;
     final listBottomPadding = bottomSafeArea + AppBottomNavBar.barHeight + 12;
 
-    if (events.isEmpty) {
+    if (sortedEvents.isEmpty) {
       return Card(
         color: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -2106,9 +2476,9 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
           parent: BouncingScrollPhysics(),
         ),
         padding: EdgeInsets.only(bottom: listBottomPadding),
-        itemCount: events.length,
+        itemCount: sortedEvents.length,
         itemBuilder: (context, i) {
-          final event = events[i];
+          final event = sortedEvents[i];
           final bool isFerias = event['isFerias'] == true;
           final bool isConsulta = event['isConsulta'] == true;
           final bool isAcontecimento = _isAcontecimento(event);
@@ -2134,8 +2504,12 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
             showHours: !isFerias && !isAcontecimento && hasHourRange,
             readOnly: readOnly,
             tag: tag,
+            showTeikerNameOnMarcacaoCard: showTeikerNameOnMarcacaoCard,
+            showClienteNameOnReminderCard: showClienteNameOnReminderCard,
             onTap: isAcontecimento
                 ? () => _showAcontecimentoDetailsDialog(event)
+                : (isTeikerMarcacao && canOpenMarcacaoNotes)
+                ? () => _showMarcacaoNotesDialogForAgendaEvent(event)
                 : null,
             trailingWidget: isAcontecimento
                 ? Icon(
@@ -2430,9 +2804,18 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
               .where((event) => event['uid'] == user?.uid)
               .toList();
 
+    final teikerMarcacaoEvents = normalEvents
+        .where(_isTeikerMarcacaoAgendaEvent)
+        .toList();
     final reminderEvents = isHr
         ? <Map<String, dynamic>>[]
-        : normalEvents.where(_isReminder).toList();
+        : normalEvents
+              .where(
+                (event) =>
+                    _isReminder(event) &&
+                    !(isPrivileged && _isTeikerMarcacaoAgendaEvent(event)),
+              )
+              .toList();
     final acontecimentoEvents = normalEvents.where(_isAcontecimento).toList();
     final teikerAgendaEvents = [
       ...birthdayEvents,
@@ -2445,6 +2828,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       ...baixasEvents,
       ...consultasEvents,
       ...birthdayEvents,
+      ...teikerMarcacaoEvents,
       ...acontecimentoEvents,
     ];
 

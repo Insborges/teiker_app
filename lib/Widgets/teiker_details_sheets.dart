@@ -140,6 +140,7 @@ class _TeikerMarcacaoSheetState extends State<TeikerMarcacaoSheet> {
   late DateTime _selectedDate;
   late TimeOfDay _selectedHour;
   late TeikerMarcacaoTipo _selectedTipo;
+  late final TextEditingController _notaCtrl;
 
   @override
   void initState() {
@@ -148,6 +149,13 @@ class _TeikerMarcacaoSheetState extends State<TeikerMarcacaoSheet> {
     _selectedDate = DateTime(baseDate.year, baseDate.month, baseDate.day);
     _selectedHour = TimeOfDay.fromDateTime(baseDate);
     _selectedTipo = widget.marcacao?.tipo ?? TeikerMarcacaoTipo.reuniaoTrabalho;
+    _notaCtrl = TextEditingController(text: widget.marcacao?.nota ?? '');
+  }
+
+  @override
+  void dispose() {
+    _notaCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _pickDate() async {
@@ -176,6 +184,32 @@ class _TeikerMarcacaoSheetState extends State<TeikerMarcacaoSheet> {
     setState(() => _selectedHour = picked);
   }
 
+  Future<void> _pickTipo() async {
+    final picked = await showModalBottomSheet<TeikerMarcacaoTipo>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: AppBottomSheetShell(
+          title: 'Selecionar tipo',
+          subtitle: 'Escolhe o tipo da marcação',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _tipoPickerTile(TeikerMarcacaoTipo.reuniaoTrabalho),
+              const SizedBox(height: 10),
+              _tipoPickerTile(TeikerMarcacaoTipo.acompanhamento),
+              const SizedBox(height: 4),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null) return;
+    setState(() => _selectedTipo = picked);
+  }
+
   void _save() {
     final date = DateTime(
       _selectedDate.year,
@@ -193,6 +227,7 @@ class _TeikerMarcacaoSheetState extends State<TeikerMarcacaoSheet> {
             DateTime.now().microsecondsSinceEpoch.toString(),
         data: date,
         tipo: _selectedTipo,
+        nota: _notaCtrl.text.trim(),
       ),
     );
   }
@@ -201,6 +236,7 @@ class _TeikerMarcacaoSheetState extends State<TeikerMarcacaoSheet> {
   Widget build(BuildContext context) {
     final dateLabel = DateFormat('dd MMM yyyy', 'pt_PT').format(_selectedDate);
     final timeLabel = _selectedHour.format(context);
+    final tipoLabel = _selectedTipo.label;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -246,13 +282,12 @@ class _TeikerMarcacaoSheetState extends State<TeikerMarcacaoSheet> {
               ],
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                _tipoChip(TeikerMarcacaoTipo.reuniaoTrabalho),
-                _tipoChip(TeikerMarcacaoTipo.acompanhamento),
-              ],
+            _selectorField(
+              icon: _selectedTipo == TeikerMarcacaoTipo.reuniaoTrabalho
+                  ? Icons.groups_2_outlined
+                  : Icons.support_agent_outlined,
+              label: tipoLabel,
+              onTap: _pickTipo,
             ),
             const SizedBox(height: 12),
             Row(
@@ -301,18 +336,19 @@ class _TeikerMarcacaoSheetState extends State<TeikerMarcacaoSheet> {
     );
   }
 
-  Widget _tipoChip(TeikerMarcacaoTipo tipo) {
+  Widget _tipoPickerTile(TeikerMarcacaoTipo tipo) {
     final selected = _selectedTipo == tipo;
     return InkWell(
-      onTap: () => setState(() => _selectedTipo = tipo),
-      borderRadius: BorderRadius.circular(999),
+      onTap: () => Navigator.pop(context, tipo),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: selected
               ? widget.primaryColor.withValues(alpha: .12)
               : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: selected
                 ? widget.primaryColor
@@ -321,7 +357,6 @@ class _TeikerMarcacaoSheetState extends State<TeikerMarcacaoSheet> {
           ),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               tipo == TeikerMarcacaoTipo.reuniaoTrabalho
@@ -330,14 +365,61 @@ class _TeikerMarcacaoSheetState extends State<TeikerMarcacaoSheet> {
               size: 18,
               color: widget.primaryColor,
             ),
-            const SizedBox(width: 8),
-            Text(
-              tipo.label,
-              style: TextStyle(
-                color: selected ? widget.primaryColor : Colors.black87,
-                fontWeight: FontWeight.w700,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                tipo.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? widget.primaryColor : Colors.black87,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
               ),
             ),
+            Icon(
+              selected
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: selected
+                  ? widget.primaryColor
+                  : widget.primaryColor.withValues(alpha: .55),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _selectorField({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: widget.primaryColor.withValues(alpha: .25)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: widget.primaryColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Icon(Icons.expand_more_rounded, color: widget.primaryColor),
           ],
         ),
       ),
@@ -427,7 +509,7 @@ class _ConsultaSheetState extends State<ConsultaSheet> {
     if (descricao.isEmpty) {
       AppSnackBar.show(
         context,
-        message: 'Adiciona uma breve descricao.',
+        message: 'Adiciona o assunto da consulta.',
         icon: Icons.error_outline,
         background: Colors.red.shade700,
       );
@@ -495,14 +577,14 @@ class _ConsultaSheetState extends State<ConsultaSheet> {
             ),
             const SizedBox(height: 10),
             AppTextField(
-              label: 'Descricao',
+              label: 'Sobre',
               controller: descricaoCtrl,
               focusColor: widget.primaryColor,
-              prefixIcon: Icons.note_alt_outlined,
+              prefixIcon: Icons.subject_rounded,
               fillColor: Colors.grey.shade100,
               borderColor: widget.primaryColor,
               borderRadius: 14,
-              maxLines: 2,
+              maxLines: 1,
             ),
             const SizedBox(height: 12),
             Row(

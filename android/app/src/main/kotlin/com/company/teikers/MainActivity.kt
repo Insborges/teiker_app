@@ -1,4 +1,4 @@
-package com.example.teiker_app
+package com.company.teikers
 
 import io.flutter.embedding.android.FlutterActivity
 

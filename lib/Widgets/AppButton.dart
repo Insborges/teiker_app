@@ -13,6 +13,7 @@ class AppButton extends StatelessWidget {
     this.verticalPadding = 16,
     this.borderRadius = 12,
     this.outline = false,
+    this.minHeight = 48,
   });
 
   final String text;
@@ -24,6 +25,7 @@ class AppButton extends StatelessWidget {
   final double verticalPadding;
   final double borderRadius;
   final bool outline;
+  final double minHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -38,39 +40,48 @@ class AppButton extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(borderRadius),
         onTap: enabled ? onPressed : null,
-        child: Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(vertical: verticalPadding),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(borderRadius),
-            border: outline ? Border.all(color: borderColor, width: 1.8) : null,
-            boxShadow: enabled && !outline
-                ? const [
-                    BoxShadow(
-                      color: Colors.black26,
-                      offset: Offset(0, 4),
-                      blurRadius: 6,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: minHeight),
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(vertical: verticalPadding),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(borderRadius),
+              border: outline
+                  ? Border.all(color: borderColor, width: 1.8)
+                  : null,
+              boxShadow: enabled && !outline
+                  ? const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        offset: Offset(0, 4),
+                        blurRadius: 6,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, color: foregroundColor),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foregroundColor,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
                     ),
-                  ]
-                : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, color: foregroundColor),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                text,
-                style: TextStyle(
-                  color: foregroundColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

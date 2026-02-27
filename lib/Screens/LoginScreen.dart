@@ -20,12 +20,16 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final emailCtrl = TextEditingController();
   final passCtrl = TextEditingController();
+  final _emailFocus = FocusNode();
+  final _passFocus = FocusNode();
   bool obscurePassword = true;
 
   @override
   void dispose() {
     emailCtrl.dispose();
     passCtrl.dispose();
+    _emailFocus.dispose();
+    _passFocus.dispose();
     super.dispose();
   }
 
@@ -36,76 +40,95 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
-      body: Column(
-        children: [
-          _header(context),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  const SizedBox(height: 32),
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: Column(
+          children: [
+            _header(context),
+            Expanded(
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.all(24),
+                child: AutofillGroup(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 32),
 
-                  AppTextField(
-                    label: "Email",
-                    controller: emailCtrl,
-                    keyboard: TextInputType.emailAddress,
-                    prefixIcon: Icons.email_outlined,
-                    focusColor: widget.primaryColor,
-                    fillColor: Colors.white,
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  AppTextField(
-                    label: "Password",
-                    controller: passCtrl,
-                    obscureText: obscurePassword,
-                    prefixIcon: Icons.lock_outline,
-                    focusColor: widget.primaryColor,
-                    fillColor: Colors.white,
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
+                      AppTextField(
+                        label: "Email",
+                        controller: emailCtrl,
+                        focusNode: _emailFocus,
+                        keyboard: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        autofillHints: const [AutofillHints.email],
+                        onFieldSubmitted: (_) {
+                          _passFocus.requestFocus();
+                        },
+                        prefixIcon: Icons.email_outlined,
+                        focusColor: widget.primaryColor,
+                        fillColor: Colors.white,
                       ),
-                      onPressed: () {
-                        setState(() => obscurePassword = !obscurePassword);
-                      },
-                    ),
-                  ),
 
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () => _openResetDialog(context, authNotifier),
-                      child: Text(
-                        "Esqueci a password",
-                        style: TextStyle(
-                          color: widget.primaryColor,
-                          fontWeight: FontWeight.w600,
-                          decoration: TextDecoration.underline,
+                      const SizedBox(height: 16),
+
+                      AppTextField(
+                        label: "Password",
+                        controller: passCtrl,
+                        focusNode: _passFocus,
+                        obscureText: obscurePassword,
+                        textInputAction: TextInputAction.done,
+                        autofillHints: const [AutofillHints.password],
+                        onFieldSubmitted: (_) => _login(context),
+                        prefixIcon: Icons.lock_outline,
+                        focusColor: widget.primaryColor,
+                        fillColor: Colors.white,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            obscurePassword
+                                ? Icons.visibility_off
+                                : Icons.visibility,
+                          ),
+                          onPressed: () {
+                            setState(() => obscurePassword = !obscurePassword);
+                          },
                         ),
                       ),
-                    ),
-                  ),
 
-                  const SizedBox(height: 15),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () =>
+                              _openResetDialog(context, authNotifier),
+                          child: Text(
+                            "Esqueci a password",
+                            style: TextStyle(
+                              color: widget.primaryColor,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ),
 
-                  AppButton(
-                    text: authState.status == AuthStatus.loading
-                        ? "A carregar..."
-                        : "Login",
-                    color: widget.primaryColor,
-                    enabled: authState.status != AuthStatus.loading,
-                    onPressed: () => _login(context),
+                      const SizedBox(height: 15),
+
+                      AppButton(
+                        text: authState.status == AuthStatus.loading
+                            ? "A carregar..."
+                            : "Login",
+                        color: widget.primaryColor,
+                        enabled: authState.status != AuthStatus.loading,
+                        onPressed: () => _login(context),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -155,6 +178,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   // --------------------
 
   Future<void> _login(BuildContext context) async {
+    FocusScope.of(context).unfocus();
     final email = emailCtrl.text.trim();
     final password = passCtrl.text.trim();
     final authNotifier = ref.read(authProvider.notifier);

@@ -184,6 +184,10 @@ class NotificationService {
       ('admin_reminder_$reminderId').hashCode & 0x7fffffff;
   int _userMarcacaoNotificationId(String reminderId) =>
       ('user_marcacao_$reminderId').hashCode & 0x7fffffff;
+  int _marcacaoStartsSoonNotificationId({
+    required String scope,
+    required String reminderId,
+  }) => ('marcacao_30m_${scope}_$reminderId').hashCode & 0x7fffffff;
   int _teikerBirthdayNotificationId(String uid) =>
       ('teiker_birthday_$uid').hashCode & 0x7fffffff;
 
@@ -242,21 +246,48 @@ class NotificationService {
           if (!_adminReminderBaselineLoaded) {
             for (final doc in snapshot.docs) {
               _knownAdminReminderIds.add(doc.id);
+              final data = doc.data();
+              unawaited(
+                _scheduleMarcacaoStartsSoonNotification(
+                  scope: 'manager',
+                  reminderId: doc.id,
+                  tag: data['tag'] as String?,
+                  scheduledFor: _parseReminderDate(data['date']),
+                ),
+              );
             }
             _adminReminderBaselineLoaded = true;
             return;
           }
 
           for (final change in snapshot.docChanges) {
-            if (change.type != DocumentChangeType.added) continue;
-
             final doc = change.doc;
             final id = doc.id;
+            final data = doc.data();
+            if (change.type == DocumentChangeType.removed) {
+              _knownAdminReminderIds.remove(id);
+              unawaited(
+                _cancelMarcacaoStartsSoonNotification(
+                  scope: 'manager',
+                  reminderId: id,
+                ),
+              );
+              continue;
+            }
+            if (data == null) continue;
+
+            unawaited(
+              _scheduleMarcacaoStartsSoonNotification(
+                scope: 'manager',
+                reminderId: id,
+                tag: data['tag'] as String?,
+                scheduledFor: _parseReminderDate(data['date']),
+              ),
+            );
+
+            if (change.type != DocumentChangeType.added) continue;
             if (_knownAdminReminderIds.contains(id)) continue;
             _knownAdminReminderIds.add(id);
-
-            final data = doc.data();
-            if (data == null) continue;
 
             final tag = (data['tag'] as String?)?.trim() ?? 'Lembrete';
             final createdById = (data['createdById'] as String?)?.trim();
@@ -311,6 +342,77 @@ class NotificationService {
         normalized == 'acompanhamento';
   }
 
+  DateTime? _parseReminderDate(dynamic raw) {
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is String && raw.trim().isNotEmpty) {
+      return DateTime.tryParse(raw.trim());
+    }
+    return null;
+  }
+
+  String _marcacaoStartsSoonNotificationBody(String? tag) {
+    final normalized = (tag ?? '').trim().toLowerCase();
+    if (normalized == 'acompanhamento') {
+      return 'Tens o acompanhamento para daqui a 30 minutos! Não te esqueças.';
+    }
+    return 'Tens a reunião para daqui a 30 minutos! Não te esqueças.';
+  }
+
+  Future<void> _cancelMarcacaoStartsSoonNotification({
+    required String scope,
+    required String reminderId,
+  }) async {
+    await _local.cancel(
+      _marcacaoStartsSoonNotificationId(scope: scope, reminderId: reminderId),
+    );
+  }
+
+  Future<void> _scheduleMarcacaoStartsSoonNotification({
+    required String scope,
+    required String reminderId,
+    required String? tag,
+    required DateTime? scheduledFor,
+  }) async {
+    await _cancelMarcacaoStartsSoonNotification(
+      scope: scope,
+      reminderId: reminderId,
+    );
+
+    if (!_isTeikerMarcacaoReminderTag(tag) || scheduledFor == null) return;
+
+    final notifyAt = scheduledFor.subtract(const Duration(minutes: 30));
+    if (!notifyAt.isAfter(DateTime.now())) return;
+
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'marcacao_starts_soon',
+        'Marcações em breve',
+        channelDescription:
+            'Avisos 30 minutos antes de reuniões/acompanhamentos.',
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      ),
+      iOS: const DarwinNotificationDetails(),
+    );
+
+    await _local.zonedSchedule(
+      _marcacaoStartsSoonNotificationId(scope: scope, reminderId: reminderId),
+      'Faltam 30 minutos',
+      _marcacaoStartsSoonNotificationBody(tag),
+      tz.TZDateTime.from(notifyAt, tz.local),
+      details,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      payload: jsonEncode({
+        'tipo': 'marcacao_starts_soon',
+        'reminderId': reminderId,
+      }),
+    );
+  }
+
   Future<void> _syncUserMarcacaoNotifications() async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -339,21 +441,48 @@ class NotificationService {
           if (!_userMarcacoesBaselineLoaded) {
             for (final doc in snapshot.docs) {
               _knownUserMarcacaoReminderIds.add(doc.id);
+              final data = doc.data();
+              unawaited(
+                _scheduleMarcacaoStartsSoonNotification(
+                  scope: 'user',
+                  reminderId: doc.id,
+                  tag: data['tag'] as String?,
+                  scheduledFor: _parseReminderDate(data['date']),
+                ),
+              );
             }
             _userMarcacoesBaselineLoaded = true;
             return;
           }
 
           for (final change in snapshot.docChanges) {
-            if (change.type != DocumentChangeType.added) continue;
-
             final doc = change.doc;
             final reminderId = doc.id;
+            final data = doc.data();
+            if (change.type == DocumentChangeType.removed) {
+              _knownUserMarcacaoReminderIds.remove(reminderId);
+              unawaited(
+                _cancelMarcacaoStartsSoonNotification(
+                  scope: 'user',
+                  reminderId: reminderId,
+                ),
+              );
+              continue;
+            }
+            if (data == null) continue;
+
+            unawaited(
+              _scheduleMarcacaoStartsSoonNotification(
+                scope: 'user',
+                reminderId: reminderId,
+                tag: data['tag'] as String?,
+                scheduledFor: _parseReminderDate(data['date']),
+              ),
+            );
+
+            if (change.type != DocumentChangeType.added) continue;
             if (_knownUserMarcacaoReminderIds.contains(reminderId)) continue;
             _knownUserMarcacaoReminderIds.add(reminderId);
-
-            final data = doc.data();
-            if (data == null) continue;
 
             final tag = (data['tag'] as String?)?.trim();
             if (!_isTeikerMarcacaoReminderTag(tag)) continue;

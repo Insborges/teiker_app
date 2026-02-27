@@ -51,7 +51,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDRUWaT04OOiYzicxAvv4EcYRN1ege1dec',
-    appId: '1:34759246473:android:6f6d3936e98cf024f6fc58',
+    appId: '1:34759246473:android:8f4a5611464a7634f6fc58',
     messagingSenderId: '34759246473',
     projectId: 'teikerapp-45ae5',
     storageBucket: 'teikerapp-45ae5.firebasestorage.app',
@@ -63,7 +63,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '34759246473',
     projectId: 'teikerapp-45ae5',
     storageBucket: 'teikerapp-45ae5.firebasestorage.app',
-    iosBundleId: 'com.example.teikerApp',
+    iosBundleId: 'com.company.teikers',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -72,7 +72,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '34759246473',
     projectId: 'teikerapp-45ae5',
     storageBucket: 'teikerapp-45ae5.firebasestorage.app',
-    iosBundleId: 'com.example.teikerApp',
+    iosBundleId: 'com.company.teikers',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

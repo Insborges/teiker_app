@@ -51,6 +51,11 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
   bool get _isSelecting => _bulkMode != _ClientesBulkMode.none;
   bool get _hasAnyOpenSession => _openSessions.values.any((s) => s != null);
+  bool get _hasActiveSearchOrFilters =>
+      _searchController.text.trim().isNotEmpty ||
+      _showFilters ||
+      _onlyArchived ||
+      _sort != _ClientesSort.az;
 
   @override
   void initState() {
@@ -334,7 +339,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
       }
       if (query.isEmpty) return true;
       return cliente.nameCliente.toLowerCase().contains(query) ||
-          cliente.moradaCliente.toLowerCase().contains(query);
+          cliente.moradaCliente.toLowerCase().contains(query) ||
+          cliente.cidadeCliente.toLowerCase().contains(query) ||
+          cliente.codigoPostal.toLowerCase().contains(query);
     }).toList();
 
     switch (_sort) {
@@ -355,6 +362,64 @@ class _ClientesScreenState extends State<ClientesScreen> {
     return list;
   }
 
+  Widget _buildStateListMessage({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    String? actionLabel,
+    VoidCallback? onAction,
+    EdgeInsetsGeometry? padding,
+  }) {
+    final bottomInset =
+        AppBottomNavBar.barHeight + MediaQuery.of(context).padding.bottom + 16;
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: padding ?? EdgeInsets.fromLTRB(12, 12, 12, bottomInset),
+      children: [
+        AppCard(
+          child: Column(
+            children: [
+              Icon(
+                icon,
+                size: 34,
+                color: AppColors.primaryGreen.withValues(alpha: 0.9),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
+              if (subtitle != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade700, height: 1.25),
+                ),
+              ],
+              if (actionLabel != null && onAction != null) ...[
+                const SizedBox(height: 14),
+                TextButton.icon(
+                  onPressed: onAction,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primaryGreen,
+                  ),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text(actionLabel),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<List<Clientes>>(
@@ -372,6 +437,24 @@ class _ClientesScreenState extends State<ClientesScreen> {
           );
         }
 
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: _buildClientesAppBar(),
+            body: RefreshIndicator(
+              color: AppColors.primaryGreen,
+              onRefresh: _refreshClientes,
+              child: _buildStateListMessage(
+                icon: Icons.error_outline,
+                title: 'Erro ao carregar clientes',
+                subtitle:
+                    'Puxa para atualizar ou tenta novamente pelo botão de atualizar.',
+                actionLabel: 'Tentar novamente',
+                onAction: _refreshClientes,
+              ),
+            ),
+          );
+        }
+
         final listaClientes = snapshot.data ?? [];
         _preloadCurrentMonthHours(listaClientes);
         final filteredClientes = _applyFilters(listaClientes);
@@ -386,456 +469,515 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
         return Scaffold(
           appBar: _buildClientesAppBar(),
-          body: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: AppSearchBar(
-                      controller: _searchController,
-                      hintText: 'Pesquisar',
-                      margin: const EdgeInsets.fromLTRB(12, 10, 6, 8),
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ),
-                  if (_isPrivileged)
-                    _iconBox(
-                      icon: Icons.filter_alt_outlined,
-                      active: _showFilters,
-                      onTap: () => setState(() => _showFilters = !_showFilters),
-                    ),
-                  if (_isPrivileged) const SizedBox(width: 6),
-                  if (_isAdmin)
-                    _iconBox(
-                      icon: Icons.archive_outlined,
-                      active: _bulkMode == _ClientesBulkMode.archive,
-                      onTap: () => _setBulkMode(_ClientesBulkMode.archive),
-                    ),
-                  if (_isAdmin) const SizedBox(width: 12),
-                  if (_isAdmin)
-                    _iconBox(
-                      icon: Icons.delete_outline,
-                      active: _bulkMode == _ClientesBulkMode.delete,
-                      onTap: () => _setBulkMode(_ClientesBulkMode.delete),
-                    ),
-                  if (_isAdmin) const SizedBox(width: 12),
-                ],
-              ),
-              if (_showFilters)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      if (_isPrivileged)
-                        ChoiceChip(
-                          label: Text(_onlyArchived ? 'Arquivados' : 'Todos'),
-                          selected: _onlyArchived,
-                          onSelected: (_) =>
-                              setState(() => _onlyArchived = !_onlyArchived),
-                        ),
-                      ChoiceChip(
-                        label: const Text('A-Z'),
-                        selected: _sort == _ClientesSort.az,
-                        onSelected: (_) =>
-                            setState(() => _sort = _ClientesSort.az),
+          body: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusScope.of(context).unfocus(),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: AppSearchBar(
+                        controller: _searchController,
+                        hintText: 'Pesquisar',
+                        margin: const EdgeInsets.fromLTRB(12, 10, 6, 8),
+                        onChanged: (_) => setState(() {}),
                       ),
-                      ChoiceChip(
-                        label: const Text('Mais horas'),
-                        selected: _sort == _ClientesSort.hoursDesc,
-                        onSelected: (_) =>
-                            setState(() => _sort = _ClientesSort.hoursDesc),
+                    ),
+                    if (_isPrivileged)
+                      _iconBox(
+                        icon: Icons.filter_alt_outlined,
+                        active: _showFilters,
+                        onTap: () =>
+                            setState(() => _showFilters = !_showFilters),
                       ),
-                    ],
-                  ),
+                    if (_isPrivileged) const SizedBox(width: 6),
+                    if (_isAdmin)
+                      _iconBox(
+                        icon: Icons.archive_outlined,
+                        active: _bulkMode == _ClientesBulkMode.archive,
+                        onTap: () => _setBulkMode(_ClientesBulkMode.archive),
+                      ),
+                    if (_isAdmin) const SizedBox(width: 12),
+                    if (_isAdmin)
+                      _iconBox(
+                        icon: Icons.delete_outline,
+                        active: _bulkMode == _ClientesBulkMode.delete,
+                        onTap: () => _setBulkMode(_ClientesBulkMode.delete),
+                      ),
+                    if (_isAdmin) const SizedBox(width: 12),
+                  ],
                 ),
-              if (_isSelecting)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
+                if (_showFilters)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (_isPrivileged)
+                          ChoiceChip(
+                            label: Text(_onlyArchived ? 'Arquivados' : 'Todos'),
+                            selected: _onlyArchived,
+                            onSelected: (_) =>
+                                setState(() => _onlyArchived = !_onlyArchived),
+                          ),
+                        ChoiceChip(
+                          label: const Text('A-Z'),
+                          selected: _sort == _ClientesSort.az,
+                          onSelected: (_) =>
+                              setState(() => _sort = _ClientesSort.az),
+                        ),
+                        ChoiceChip(
+                          label: const Text('Mais horas'),
+                          selected: _sort == _ClientesSort.hoursDesc,
+                          onSelected: (_) =>
+                              setState(() => _sort = _ClientesSort.hoursDesc),
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_isSelecting)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
                           '${_selectedClientes.length} selecionado(s)',
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
-                      ),
-                      if (_bulkMode == _ClientesBulkMode.archive)
-                        TextButton.icon(
-                          onPressed: _selectedClientes.isEmpty
-                              ? null
-                              : _archiveSelected,
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.primaryGreen,
-                          ),
-                          icon: const Icon(Icons.archive_outlined),
-                          label: const Text('Arquivar'),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 2,
+                          runSpacing: 2,
+                          children: [
+                            if (_bulkMode == _ClientesBulkMode.archive)
+                              TextButton.icon(
+                                onPressed: _selectedClientes.isEmpty
+                                    ? null
+                                    : _archiveSelected,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: AppColors.primaryGreen,
+                                ),
+                                icon: const Icon(Icons.archive_outlined),
+                                label: const Text('Arquivar'),
+                              ),
+                            if (_bulkMode == _ClientesBulkMode.delete)
+                              TextButton.icon(
+                                onPressed: _selectedClientes.isEmpty
+                                    ? null
+                                    : _deleteSelected,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: AppColors.primaryGreen,
+                                ),
+                                icon: const Icon(Icons.delete_outline),
+                                label: const Text('Eliminar'),
+                              ),
+                            TextButton(
+                              onPressed: () =>
+                                  _setBulkMode(_ClientesBulkMode.none),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.primaryGreen,
+                              ),
+                              child: const Text('Cancelar'),
+                            ),
+                          ],
                         ),
-                      if (_bulkMode == _ClientesBulkMode.delete)
-                        TextButton.icon(
-                          onPressed: _selectedClientes.isEmpty
-                              ? null
-                              : _deleteSelected,
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.primaryGreen,
-                          ),
-                          icon: const Icon(Icons.delete_outline),
-                          label: const Text('Eliminar'),
-                        ),
-                      TextButton(
-                        onPressed: () => _setBulkMode(_ClientesBulkMode.none),
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.primaryGreen,
-                        ),
-                        child: const Text('Cancelar'),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              Expanded(
-                child: filteredClientes.isEmpty
-                    ? Center(
-                        child: Text(
-                          _onlyArchived
-                              ? 'Sem clientes arquivados.'
-                              : 'Nenhum cliente encontrado',
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: EdgeInsets.only(bottom: listBottomInset),
-                        itemCount: filteredClientes.length,
-                        itemBuilder: (context, index) {
-                          final cliente = filteredClientes[index];
-                          final working = _openSessions[cliente.uid] != null;
-                          final selected = _selectedClientes.contains(
-                            cliente.uid,
-                          );
-                          final isArchived = cliente.isArchived;
-                          final cachedHours =
-                              _currentMonthHoursCache[cliente.uid] ??
-                              cliente.hourasCasa;
+                Expanded(
+                  child: filteredClientes.isEmpty
+                      ? RefreshIndicator(
+                          color: AppColors.primaryGreen,
+                          onRefresh: _refreshClientes,
+                          child: _buildStateListMessage(
+                            icon: _onlyArchived
+                                ? Icons.archive_outlined
+                                : Icons.search_off_rounded,
+                            title: _onlyArchived
+                                ? 'Sem clientes arquivados'
+                                : 'Nenhum cliente encontrado',
+                            subtitle: _hasActiveSearchOrFilters
+                                ? 'Ajusta a pesquisa ou os filtros para veres mais resultados.'
+                                : 'Ainda não existem clientes para mostrar.',
+                            actionLabel: 'Atualizar',
+                            onAction: _refreshClientes,
+                          ),
+                        )
+                      : RefreshIndicator(
+                          color: AppColors.primaryGreen,
+                          onRefresh: _refreshClientes,
+                          child: ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            keyboardDismissBehavior:
+                                ScrollViewKeyboardDismissBehavior.onDrag,
+                            padding: EdgeInsets.only(bottom: listBottomInset),
+                            itemCount: filteredClientes.length,
+                            itemBuilder: (context, index) {
+                              final cliente = filteredClientes[index];
+                              final working =
+                                  _openSessions[cliente.uid] != null;
+                              final selected = _selectedClientes.contains(
+                                cliente.uid,
+                              );
+                              final isArchived = cliente.isArchived;
+                              final cachedHours =
+                                  _currentMonthHoursCache[cliente.uid] ??
+                                  cliente.hourasCasa;
 
-                          return AppCard(
-                            color: isArchived
-                                ? AppColors.primaryGreen.withValues(alpha: .5)
-                                : Colors.white,
-                            borderSide: selected
-                                ? const BorderSide(
-                                    color: AppColors.primaryGreen,
-                                    width: 1.5,
-                                  )
-                                : null,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                InkWell(
-                                  onTap: () {
-                                    if (_isSelecting) {
-                                      _toggleSelected(cliente.uid);
-                                      return;
-                                    }
+                              return AppCard(
+                                color: isArchived
+                                    ? AppColors.primaryGreen.withValues(
+                                        alpha: .5,
+                                      )
+                                    : Colors.white,
+                                borderSide: selected
+                                    ? const BorderSide(
+                                        color: AppColors.primaryGreen,
+                                        width: 1.5,
+                                      )
+                                    : null,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    InkWell(
+                                      onTap: () {
+                                        if (_isSelecting) {
+                                          _toggleSelected(cliente.uid);
+                                          return;
+                                        }
 
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (ctx) => Clientsdetails(
-                                          cliente: cliente,
-                                          onSessionClosed: () {
-                                            if (!mounted) return;
-                                            setState(() {
-                                              _openSessions[cliente.uid] = null;
-                                            });
-                                            _updateClienteHours(cliente);
-                                          },
-                                        ),
-                                      ),
-                                    ).then((updated) {
-                                      if (updated == true) {
-                                        _refreshClientes();
-                                      }
-                                    });
-                                  },
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        selected
-                                            ? Icons.check_circle
-                                            : Icons.people,
-                                        color: selected
-                                            ? AppColors.primaryGreen
-                                            : (isArchived
-                                                  ? Colors.white
-                                                  : Colors.black87),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              cliente.nameCliente,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 20,
-                                                color: isArchived
-                                                    ? Colors.white
-                                                    : Colors.black87,
-                                              ),
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (ctx) => Clientsdetails(
+                                              cliente: cliente,
+                                              onSessionClosed: () {
+                                                if (!mounted) return;
+                                                setState(() {
+                                                  _openSessions[cliente.uid] =
+                                                      null;
+                                                });
+                                                _updateClienteHours(cliente);
+                                              },
                                             ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              cliente.moradaCliente,
-                                              style: TextStyle(
-                                                color: isArchived
-                                                    ? Colors.white
-                                                    : Colors.grey.shade700,
-                                              ),
-                                            ),
-                                            if (cliente.isArchived) ...[
-                                              const SizedBox(height: 4),
-                                              InkWell(
-                                                onTap: _isAdmin
-                                                    ? () =>
-                                _toggleArchiveStatus(
-                                                            cliente,
-                                                            false,
-                                                          )
-                                                    : null,
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                child: Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 10,
-                                                        vertical: 6,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.white
-                                                        .withValues(alpha: .16),
+                                          ),
+                                        ).then((updated) {
+                                          if (updated == true) {
+                                            _refreshClientes();
+                                          }
+                                        });
+                                      },
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            selected
+                                                ? Icons.check_circle
+                                                : Icons.people,
+                                            color: selected
+                                                ? AppColors.primaryGreen
+                                                : (isArchived
+                                                      ? Colors.white
+                                                      : Colors.black87),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  cliente.nameCliente,
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 20,
+                                                    color: isArchived
+                                                        ? Colors.white
+                                                        : Colors.black87,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  [
+                                                        cliente.moradaCliente
+                                                            .trim(),
+                                                        cliente.cidadeCliente
+                                                            .trim(),
+                                                      ]
+                                                      .where(
+                                                        (e) => e.isNotEmpty,
+                                                      )
+                                                      .join(' • '),
+                                                  style: TextStyle(
+                                                    color: isArchived
+                                                        ? Colors.white
+                                                        : Colors.grey.shade700,
+                                                  ),
+                                                ),
+                                                if (cliente.isArchived) ...[
+                                                  const SizedBox(height: 4),
+                                                  InkWell(
+                                                    onTap: _isAdmin
+                                                        ? () =>
+                                                              _toggleArchiveStatus(
+                                                                cliente,
+                                                                false,
+                                                              )
+                                                        : null,
                                                     borderRadius:
                                                         BorderRadius.circular(
                                                           10,
                                                         ),
-                                                    border: Border.all(
-                                                      color: Colors.white
-                                                          .withValues(
-                                                            alpha: .3,
+                                                    child: Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 10,
+                                                            vertical: 6,
                                                           ),
-                                                    ),
-                                                  ),
-                                                  child: Row(
-                                                    children: [
-                                                      const Icon(
-                                                        Icons
-                                                            .unarchive_outlined,
-                                                        size: 14,
-                                                        color: Colors.white,
-                                                      ),
-                                                      const SizedBox(width: 6),
-                                                      Expanded(
-                                                        child: Text(
-                                                          '${cliente.archivedBy == null ? 'Arquivado' : 'Arquivado por ${cliente.archivedBy}'} · toque para desarquivar',
-                                                          maxLines: 2,
-                                                          overflow: TextOverflow
-                                                              .ellipsis,
-                                                          style: TextStyle(
-                                                            color: Colors.white,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            fontSize: 12,
-                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.white
+                                                            .withValues(
+                                                              alpha: .16,
+                                                            ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              10,
+                                                            ),
+                                                        border: Border.all(
+                                                          color: Colors.white
+                                                              .withValues(
+                                                                alpha: .3,
+                                                              ),
                                                         ),
                                                       ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
-                                      ),
-                                      Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            '${cachedHours.toStringAsFixed(1)}h',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 15,
-                                              color: isArchived
-                                                  ? Colors.white
-                                                  : const Color.fromARGB(
-                                                      255,
-                                                      4,
-                                                      76,
-                                                      32,
+                                                      child: Row(
+                                                        children: [
+                                                          const Icon(
+                                                            Icons
+                                                                .unarchive_outlined,
+                                                            size: 14,
+                                                            color: Colors.white,
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 6,
+                                                          ),
+                                                          Expanded(
+                                                            child: Text(
+                                                              '${cliente.archivedBy == null ? 'Arquivado' : 'Arquivado por ${cliente.archivedBy}'} · toque para desarquivar',
+                                                              maxLines: 2,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
+                                                              style: TextStyle(
+                                                                color: Colors
+                                                                    .white,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                fontSize: 12,
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
                                                     ),
+                                                  ),
+                                                ],
+                                              ],
                                             ),
                                           ),
-                                          if (!_isSelecting) ...[
-                                            const SizedBox(width: 4),
-                                            Icon(
-                                              Icons.chevron_right,
-                                              color: isArchived
-                                                  ? Colors.white
-                                                  : Colors.grey,
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                '${cachedHours.toStringAsFixed(1)}h',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 15,
+                                                  color: isArchived
+                                                      ? Colors.white
+                                                      : const Color.fromARGB(
+                                                          255,
+                                                          4,
+                                                          76,
+                                                          32,
+                                                        ),
+                                                ),
+                                              ),
+                                              if (!_isSelecting) ...[
+                                                const SizedBox(width: 4),
+                                                Icon(
+                                                  Icons.chevron_right,
+                                                  color: isArchived
+                                                      ? Colors.white
+                                                      : Colors.grey,
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (!_isSelecting &&
+                                        !_onlyArchived &&
+                                        !_isHr) ...[
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: AppButton(
+                                              text: 'Começar',
+                                              color: const Color.fromARGB(
+                                                255,
+                                                4,
+                                                76,
+                                                32,
+                                              ),
+                                              enabled:
+                                                  !working &&
+                                                  !_hasAnyOpenSession,
+                                              onPressed: () async {
+                                                try {
+                                                  final session =
+                                                      await _workSessionService
+                                                          .startSession(
+                                                            clienteId:
+                                                                cliente.uid,
+                                                            clienteName: cliente
+                                                                .nameCliente,
+                                                          );
+
+                                                  setState(() {
+                                                    _openSessions[cliente.uid] =
+                                                        session;
+                                                  });
+
+                                                  AppSnackBar.show(
+                                                    context,
+                                                    message:
+                                                        'Começaste às ${TimeOfDay.now().format(context)}!',
+                                                    icon: Icons.play_arrow,
+                                                    background:
+                                                        const Color.fromARGB(
+                                                          255,
+                                                          4,
+                                                          76,
+                                                          32,
+                                                        ),
+                                                  );
+                                                } catch (e) {
+                                                  AppSnackBar.show(
+                                                    context,
+                                                    message:
+                                                        'Não foi possivel iniciar: $e',
+                                                    icon: Icons.error,
+                                                    background:
+                                                        Colors.red.shade700,
+                                                  );
+                                                }
+                                              },
                                             ),
-                                          ],
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: AppButton(
+                                              text: 'Terminar',
+                                              outline: true,
+                                              color: const Color.fromARGB(
+                                                255,
+                                                4,
+                                                76,
+                                                32,
+                                              ),
+                                              enabled: working,
+                                              onPressed: () async {
+                                                try {
+                                                  final session =
+                                                      _openSessions[cliente
+                                                          .uid];
+
+                                                  if (session == null) {
+                                                    throw Exception(
+                                                      'Sessão não encontrada localmente.',
+                                                    );
+                                                  }
+
+                                                  final total =
+                                                      await _workSessionService
+                                                          .finishSessionById(
+                                                            clienteId:
+                                                                cliente.uid,
+                                                            sessionId:
+                                                                session.id,
+                                                            startTime: session
+                                                                .startTime,
+                                                          );
+
+                                                  final displayTotal = _isAdmin
+                                                      ? total
+                                                      : await _workSessionService
+                                                            .calculateMonthlyTotalForCurrentUser(
+                                                              clienteId:
+                                                                  cliente.uid,
+                                                              referenceDate:
+                                                                  session
+                                                                      .startTime,
+                                                            );
+
+                                                  setState(() {
+                                                    _openSessions[cliente.uid] =
+                                                        null;
+                                                    cliente.hourasCasa =
+                                                        displayTotal;
+                                                    _currentMonthHoursCache[cliente
+                                                            .uid] =
+                                                        displayTotal;
+                                                  });
+
+                                                  AppSnackBar.show(
+                                                    context,
+                                                    message:
+                                                        'Terminaste! Total do mês: ${displayTotal.toStringAsFixed(2)}h',
+                                                    icon: Icons.square,
+                                                    background:
+                                                        const Color.fromARGB(
+                                                          255,
+                                                          188,
+                                                          82,
+                                                          82,
+                                                        ),
+                                                  );
+
+                                                  await _ensureOpenSessions([
+                                                    cliente,
+                                                  ]);
+                                                } catch (e) {
+                                                  AppSnackBar.show(
+                                                    context,
+                                                    message:
+                                                        'Não foi possivel terminar: $e',
+                                                    icon: Icons.error,
+                                                    background:
+                                                        Colors.red.shade700,
+                                                  );
+                                                }
+                                              },
+                                            ),
+                                          ),
                                         ],
                                       ),
                                     ],
-                                  ),
+                                  ],
                                 ),
-                                if (!_isSelecting &&
-                                    !_onlyArchived &&
-                                    !_isHr) ...[
-                                  const SizedBox(height: 10),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: AppButton(
-                                          text: 'Começar',
-                                          color: const Color.fromARGB(
-                                            255,
-                                            4,
-                                            76,
-                                            32,
-                                          ),
-                                          enabled:
-                                              !working && !_hasAnyOpenSession,
-                                          onPressed: () async {
-                                            try {
-                                              final session =
-                                                  await _workSessionService
-                                                      .startSession(
-                                                        clienteId: cliente.uid,
-                                                        clienteName:
-                                                            cliente.nameCliente,
-                                                      );
-
-                                              setState(() {
-                                                _openSessions[cliente.uid] =
-                                                    session;
-                                              });
-
-                                              AppSnackBar.show(
-                                                context,
-                                                message:
-                                                    'Começaste às ${TimeOfDay.now().format(context)}!',
-                                                icon: Icons.play_arrow,
-                                                background:
-                                                    const Color.fromARGB(
-                                                      255,
-                                                      4,
-                                                      76,
-                                                      32,
-                                                    ),
-                                              );
-                                            } catch (e) {
-                                              AppSnackBar.show(
-                                                context,
-                                                message:
-                                                    'Não foi possivel iniciar: $e',
-                                                icon: Icons.error,
-                                                background: Colors.red.shade700,
-                                              );
-                                            }
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: AppButton(
-                                          text: 'Terminar',
-                                          outline: true,
-                                          color: const Color.fromARGB(
-                                            255,
-                                            4,
-                                            76,
-                                            32,
-                                          ),
-                                          enabled: working,
-                                          onPressed: () async {
-                                            try {
-                                              final session =
-                                                  _openSessions[cliente.uid];
-
-                                              if (session == null) {
-                                                throw Exception(
-                                                  'Sessão não encontrada localmente.',
-                                                );
-                                              }
-
-                                              final total =
-                                                  await _workSessionService
-                                                      .finishSessionById(
-                                                        clienteId: cliente.uid,
-                                                        sessionId: session.id,
-                                                        startTime:
-                                                            session.startTime,
-                                                      );
-
-                                              final displayTotal = _isAdmin
-                                                  ? total
-                                                  : await _workSessionService
-                                                        .calculateMonthlyTotalForCurrentUser(
-                                                          clienteId:
-                                                              cliente.uid,
-                                                          referenceDate:
-                                                              session.startTime,
-                                                        );
-
-                                              setState(() {
-                                                _openSessions[cliente.uid] =
-                                                    null;
-                                                cliente.hourasCasa =
-                                                    displayTotal;
-                                                _currentMonthHoursCache[cliente
-                                                        .uid] =
-                                                    displayTotal;
-                                              });
-
-                                              AppSnackBar.show(
-                                                context,
-                                                message:
-                                                    'Terminaste! Total do mês: ${displayTotal.toStringAsFixed(2)}h',
-                                                icon: Icons.square,
-                                                background:
-                                                    const Color.fromARGB(
-                                                      255,
-                                                      188,
-                                                      82,
-                                                      82,
-                                                    ),
-                                              );
-
-                                              await _ensureOpenSessions([
-                                                cliente,
-                                              ]);
-                                            } catch (e) {
-                                              AppSnackBar.show(
-                                                context,
-                                                message:
-                                                    'Não foi possivel terminar: $e',
-                                                icon: Icons.error,
-                                                background: Colors.red.shade700,
-                                              );
-                                            }
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
+                              );
+                            },
+                          ),
+                        ),
+                ),
+              ],
+            ),
           ),
         );
       },

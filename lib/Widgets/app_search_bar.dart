@@ -37,10 +37,13 @@ class AppSearchBar extends StatelessWidget {
         controller: controller,
         onChanged: onChanged,
         textInputAction: TextInputAction.search,
+        onTapOutside: (_) => FocusScope.of(context).unfocus(),
+        scrollPadding: const EdgeInsets.only(bottom: 96),
         decoration: InputDecoration(
           hintText: hintText,
           hintStyle: TextStyle(color: Colors.grey.shade600),
           border: InputBorder.none,
+          isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 15),
           prefixIcon: Icon(Icons.search_rounded, color: primary),
           suffixIcon: hasText

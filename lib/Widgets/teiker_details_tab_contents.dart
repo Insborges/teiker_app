@@ -142,6 +142,9 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
     required this.primaryColor,
     required this.marcacoes,
     required this.onAddMarcacao,
+    required this.onOpenMarcacaoNotes,
+    required this.onEditMarcacao,
+    required this.onDeleteMarcacao,
     required this.baixasPeriodos,
     required this.baixasDaysCount,
     required this.onAddBaixa,
@@ -161,6 +164,10 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
   final Color primaryColor;
   final List<TeikerMarcacao> marcacoes;
   final VoidCallback onAddMarcacao;
+  final Future<void> Function(int index) onOpenMarcacaoNotes;
+  final Future<void> Function({TeikerMarcacao? marcacao, int? index})
+  onEditMarcacao;
+  final Future<void> Function(int index) onDeleteMarcacao;
   final List<BaixaPeriodo> baixasPeriodos;
   final int baixasDaysCount;
   final VoidCallback onAddBaixa;
@@ -201,6 +208,16 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
                         (marcacao) => _TeikerMarcacaoListTile(
                           marcacao: marcacao,
                           primaryColor: primaryColor,
+                          onTap: () => onOpenMarcacaoNotes(
+                            sortedMarcacoes.indexOf(marcacao),
+                          ),
+                          onEdit: () => onEditMarcacao(
+                            marcacao: marcacao,
+                            index: sortedMarcacoes.indexOf(marcacao),
+                          ),
+                          onDelete: () => onDeleteMarcacao(
+                            sortedMarcacoes.indexOf(marcacao),
+                          ),
                         ),
                       )
                       .toList(),
@@ -301,124 +318,142 @@ class _TeikerMarcacaoListTile extends StatelessWidget {
   const _TeikerMarcacaoListTile({
     required this.marcacao,
     required this.primaryColor,
+    required this.onTap,
+    required this.onEdit,
+    required this.onDelete,
   });
 
   final TeikerMarcacao marcacao;
   final Color primaryColor;
+  final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final dia = DateFormat('dd MMM yyyy', 'pt_PT').format(marcacao.data);
     final hora = DateFormat('HH:mm', 'pt_PT').format(marcacao.data);
     final isReuniao = marcacao.tipo == TeikerMarcacaoTipo.reuniaoTrabalho;
+    final nota = marcacao.nota.trim();
 
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+    final card = Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: primaryColor.withValues(alpha: .18)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: primaryColor.withValues(alpha: .10),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: primaryColor.withValues(alpha: .2)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: .1),
+              shape: BoxShape.circle,
+              border: Border.all(color: primaryColor.withValues(alpha: .18)),
+            ),
+            child: Icon(
+              isReuniao
+                  ? Icons.groups_2_outlined
+                  : Icons.support_agent_outlined,
+              color: primaryColor,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 6,
                   children: [
-                    Icon(
-                      isReuniao
-                          ? Icons.groups_2_outlined
-                          : Icons.support_agent_outlined,
-                      size: 16,
-                      color: primaryColor,
-                    ),
-                    const SizedBox(width: 6),
                     Text(
-                      marcacao.tipo.label,
+                      '$dia · $hora',
                       style: TextStyle(
                         color: primaryColor,
                         fontWeight: FontWeight.w700,
-                        fontSize: 12,
                       ),
                     ),
+                    _typePill(marcacao.tipo.label),
                   ],
                 ),
-              ),
-            ],
+                if (nota.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: .035),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: primaryColor.withValues(alpha: .10),
+                      ),
+                    ),
+                    child: Text(
+                      nota,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _MarcacaoMetaChip(
-                  icon: Icons.calendar_today_rounded,
-                  label: dia,
-                  primaryColor: primaryColor,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _MarcacaoMetaChip(
-                  icon: Icons.schedule_rounded,
-                  label: hora,
-                  primaryColor: primaryColor,
-                ),
-              ),
-            ],
+          const SizedBox(width: 4),
+          Icon(
+            Icons.chevron_right_rounded,
+            size: 18,
+            color: primaryColor.withValues(alpha: .45),
           ),
         ],
       ),
     );
-  }
-}
 
-class _MarcacaoMetaChip extends StatelessWidget {
-  const _MarcacaoMetaChip({
-    required this.icon,
-    required this.label,
-    required this.primaryColor,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color primaryColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: primaryColor.withValues(alpha: .12)),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: card,
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 16, color: primaryColor),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
+    );
+  }
+
+  Widget _typePill(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: primaryColor.withValues(alpha: .09),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: primaryColor.withValues(alpha: .2)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: primaryColor,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
       ),
     );
   }

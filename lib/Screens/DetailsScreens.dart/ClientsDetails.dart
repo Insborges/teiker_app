@@ -91,7 +91,9 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       text: widget.cliente.codigoPostal,
     );
     _phoneController = TextEditingController(
-      text: widget.cliente.telemovel.toString(),
+      text: widget.cliente.telemovel > 0
+          ? widget.cliente.telemovel.toString()
+          : '',
     );
     _phoneCountryIso = widget.cliente.phoneCountryIso;
     _emailController = TextEditingController(text: widget.cliente.email);
@@ -755,6 +757,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   Future<void> _shareInvoice(
     ClientInvoice invoice, {
     File? preGeneratedFile,
+    Rect? sharePositionOrigin,
   }) async {
     if (_sharingInvoiceIds.contains(invoice.id)) return;
 
@@ -763,6 +766,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       await _clientInvoiceService.shareInvoiceDocument(
         invoice,
         preGeneratedFile: preGeneratedFile,
+        sharePositionOrigin: sharePositionOrigin,
       );
     } catch (e) {
       if (!mounted) return;
@@ -843,72 +847,75 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
     return Scaffold(
       appBar: buildAppBar(widget.cliente.nameCliente, seta: true),
-      body: DefaultTabController(
-        length: 2,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              AppPillTabBar(
-                primaryColor: adminPrimary,
-                borderColor: adminBorder,
-                tabs: const [
-                  Tab(text: 'Horas & Preços'),
-                  Tab(text: 'Informações'),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    ClientDetailsAdminHoursTab(
-                      primaryColor: adminPrimary,
-                      borderColor: adminBorder,
-                      currentPricePerHour: currentPricePerHour,
-                      horasCasa: _horasCasa,
-                      currentServicePrices: currentServicePrices,
-                      onAddHoras: _abrirDialogAdicionarHoras,
-                      canAddHoras: !_isHr,
-                      issuingInvoice: _issuingInvoice,
-                      onEmitirFaturas: emitirFaturas,
-                      canEmitirFaturas: _isAdmin,
-                      invoicesStream: _clientInvoiceService.watchClientInvoices(
-                        widget.cliente.uid,
-                      ),
-                      sharingInvoiceIds: _sharingInvoiceIds,
-                      deletingInvoiceIds: _deletingInvoiceIds,
-                      onShareInvoice: _shareInvoice,
-                      onDeleteInvoice: _deleteInvoice,
-                      canShareInvoices: true,
-                      canDeleteInvoices: _isAdmin,
-                      serviceMonthLabel: _serviceMonthLabel,
-                      appliedServicePrices: _appliedServicePrices,
-                      onRemoveAppliedService: _removeAppliedService,
-                      onAddService: _openAddServiceDialog,
-                      canManageAdditionalServices: _isAdmin,
-                    ),
-                    ClientDetailsAdminInfoTab(
-                      primaryColor: adminPrimary,
-                      borderColor: adminBorder,
-                      nameController: _nameController,
-                      moradaController: _moradaController,
-                      cidadeController: _cidadeController,
-                      codigoPostalController: _codigoPostalController,
-                      phoneController: _phoneController,
-                      phoneCountryIso: _phoneCountryIso,
-                      onPhoneCountryChanged: (iso) {
-                        setState(() => _phoneCountryIso = iso);
-                      },
-                      emailController: _emailController,
-                      orcamentoController: _orcamentoController,
-                      onSave: atualizarDadosCliente,
-                      readOnly: !_isAdmin,
-                      associatedTeikerNames: _associatedTeikerNames,
-                    ),
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: DefaultTabController(
+          length: 2,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                AppPillTabBar(
+                  primaryColor: adminPrimary,
+                  borderColor: adminBorder,
+                  tabs: const [
+                    Tab(text: 'Horas & Preços'),
+                    Tab(text: 'Informações'),
                   ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      ClientDetailsAdminHoursTab(
+                        primaryColor: adminPrimary,
+                        borderColor: adminBorder,
+                        currentPricePerHour: currentPricePerHour,
+                        horasCasa: _horasCasa,
+                        currentServicePrices: currentServicePrices,
+                        onAddHoras: _abrirDialogAdicionarHoras,
+                        canAddHoras: !_isHr,
+                        issuingInvoice: _issuingInvoice,
+                        onEmitirFaturas: emitirFaturas,
+                        canEmitirFaturas: _isAdmin,
+                        invoicesStream: _clientInvoiceService
+                            .watchClientInvoices(widget.cliente.uid),
+                        sharingInvoiceIds: _sharingInvoiceIds,
+                        deletingInvoiceIds: _deletingInvoiceIds,
+                        onShareInvoice: _shareInvoice,
+                        onDeleteInvoice: _deleteInvoice,
+                        canShareInvoices: true,
+                        canDeleteInvoices: _isAdmin,
+                        serviceMonthLabel: _serviceMonthLabel,
+                        appliedServicePrices: _appliedServicePrices,
+                        onRemoveAppliedService: _removeAppliedService,
+                        onAddService: _openAddServiceDialog,
+                        canManageAdditionalServices: _isAdmin,
+                      ),
+                      ClientDetailsAdminInfoTab(
+                        primaryColor: adminPrimary,
+                        borderColor: adminBorder,
+                        nameController: _nameController,
+                        moradaController: _moradaController,
+                        cidadeController: _cidadeController,
+                        codigoPostalController: _codigoPostalController,
+                        phoneController: _phoneController,
+                        phoneCountryIso: _phoneCountryIso,
+                        onPhoneCountryChanged: (iso) {
+                          setState(() => _phoneCountryIso = iso);
+                        },
+                        emailController: _emailController,
+                        orcamentoController: _orcamentoController,
+                        onSave: atualizarDadosCliente,
+                        readOnly: !_isAdmin,
+                        associatedTeikerNames: _associatedTeikerNames,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -927,102 +934,108 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
     return Scaffold(
       appBar: buildAppBar(widget.cliente.nameCliente, seta: true),
-      body: SizedBox.expand(
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: curveHeight,
-              child: ClipPath(
-                clipper: CurvedCalendarClipper(),
-                child: Container(color: primary),
-              ),
-            ),
-            SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Column(
-                children: [
-                  const Align(
-                    alignment: Alignment.center,
-                    child: Icon(Icons.person, color: Colors.white, size: 100),
-                  ),
-                  const SizedBox(height: 10),
-                  ClientDetailsStyledField(
-                    label: 'Nome',
-                    controller: _nameController,
-                    readOnly: true,
-                    borderColor: fieldBorder,
-                    prefixIcon: Icons.person_outline,
-                    labelColor: fieldLabel,
-                    textColor: fieldText,
-                    fillColor: fieldFill,
-                  ),
-                  const SizedBox(height: 12),
-                  ClientDetailsStyledField(
-                    label: 'Rua',
-                    controller: _moradaController,
-                    readOnly: true,
-                    borderColor: fieldBorder,
-                    prefixIcon: Icons.home_outlined,
-                    labelColor: fieldLabel,
-                    textColor: fieldText,
-                    fillColor: fieldFill,
-                  ),
-                  const SizedBox(height: 12),
-                  ClientDetailsStyledField(
-                    label: 'Código Postal',
-                    controller: _codigoPostalController,
-                    readOnly: true,
-                    borderColor: fieldBorder,
-                    prefixIcon: Icons.local_post_office_outlined,
-                    labelColor: fieldLabel,
-                    textColor: fieldText,
-                    fillColor: fieldFill,
-                  ),
-                  const SizedBox(height: 12),
-                  ClientDetailsStyledField(
-                    label: 'Cidade',
-                    controller: _cidadeController,
-                    readOnly: true,
-                    borderColor: fieldBorder,
-                    prefixIcon: Icons.location_city_outlined,
-                    labelColor: fieldLabel,
-                    textColor: fieldText,
-                    fillColor: fieldFill,
-                  ),
-                  const SizedBox(height: buttonHeight + 12),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 16,
-              right: 16,
-              // metade do botão dentro da área verde e metade fora
-              top: curveHeight - (buttonHeight / 2),
-              child: SizedBox(
-                height: buttonHeight,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.timer, size: 20),
-                  label: const Text(
-                    'Adicionar Horas',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 4,
-                  ),
-                  onPressed: () => _abrirDialogAdicionarHoras(),
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SizedBox.expand(
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: curveHeight,
+                child: ClipPath(
+                  clipper: CurvedCalendarClipper(),
+                  child: Container(color: primary),
                 ),
               ),
-            ),
-          ],
+              SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  children: [
+                    const Align(
+                      alignment: Alignment.center,
+                      child: Icon(Icons.person, color: Colors.white, size: 100),
+                    ),
+                    const SizedBox(height: 10),
+                    ClientDetailsStyledField(
+                      label: 'Nome',
+                      controller: _nameController,
+                      readOnly: true,
+                      borderColor: fieldBorder,
+                      prefixIcon: Icons.person_outline,
+                      labelColor: fieldLabel,
+                      textColor: fieldText,
+                      fillColor: fieldFill,
+                    ),
+                    const SizedBox(height: 12),
+                    ClientDetailsStyledField(
+                      label: 'Rua',
+                      controller: _moradaController,
+                      readOnly: true,
+                      borderColor: fieldBorder,
+                      prefixIcon: Icons.home_outlined,
+                      labelColor: fieldLabel,
+                      textColor: fieldText,
+                      fillColor: fieldFill,
+                    ),
+                    const SizedBox(height: 12),
+                    ClientDetailsStyledField(
+                      label: 'Código Postal',
+                      controller: _codigoPostalController,
+                      readOnly: true,
+                      borderColor: fieldBorder,
+                      prefixIcon: Icons.local_post_office_outlined,
+                      labelColor: fieldLabel,
+                      textColor: fieldText,
+                      fillColor: fieldFill,
+                    ),
+                    const SizedBox(height: 12),
+                    ClientDetailsStyledField(
+                      label: 'Cidade',
+                      controller: _cidadeController,
+                      readOnly: true,
+                      borderColor: fieldBorder,
+                      prefixIcon: Icons.location_city_outlined,
+                      labelColor: fieldLabel,
+                      textColor: fieldText,
+                      fillColor: fieldFill,
+                    ),
+                    const SizedBox(height: buttonHeight + 12),
+                  ],
+                ),
+              ),
+              Positioned(
+                left: 16,
+                right: 16,
+                // metade do botão dentro da área verde e metade fora
+                top: curveHeight - (buttonHeight / 2),
+                child: SizedBox(
+                  height: buttonHeight,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.timer, size: 20),
+                    label: const Text(
+                      'Adicionar Horas',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 4,
+                    ),
+                    onPressed: () => _abrirDialogAdicionarHoras(),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

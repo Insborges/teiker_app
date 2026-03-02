@@ -2441,6 +2441,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
     required Color color,
     String? emptyMessage,
     bool hideReminderTag = false,
+    double? listBottomPadding,
   }) {
     final sortedEvents = _sortedEventsForList(events);
     final canOpenMarcacaoNotes = ref.read(userRoleProvider).isPrivileged;
@@ -2449,7 +2450,8 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         .isPrivileged;
     final showClienteNameOnReminderCard = !showTeikerNameOnMarcacaoCard;
     final bottomSafeArea = MediaQuery.of(context).padding.bottom;
-    final listBottomPadding = bottomSafeArea + AppBottomNavBar.barHeight + 12;
+    final resolvedListBottomPadding =
+        listBottomPadding ?? bottomSafeArea + AppBottomNavBar.barHeight + 12;
 
     if (sortedEvents.isEmpty) {
       return Card(
@@ -2469,70 +2471,68 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    return Scrollbar(
-      child: ListView.builder(
-        primary: false,
-        physics: const AlwaysScrollableScrollPhysics(
-          parent: BouncingScrollPhysics(),
-        ),
-        padding: EdgeInsets.only(bottom: listBottomPadding),
-        itemCount: sortedEvents.length,
-        itemBuilder: (context, i) {
-          final event = sortedEvents[i];
-          final bool isFerias = event['isFerias'] == true;
-          final bool isConsulta = event['isConsulta'] == true;
-          final bool isAcontecimento = _isAcontecimento(event);
-          final bool isTeikerMarcacao = _isTeikerMarcacaoAgendaEvent(event);
-          final start = (event['start'] ?? '').toString();
-          final end = (event['end'] ?? '').toString();
-          final hasHourRange = start.isNotEmpty || end.isNotEmpty;
-          final bool readOnly =
-              isFerias || isConsulta || isAcontecimento || isTeikerMarcacao;
-          final itemColor =
-              (isFerias || isConsulta || isAcontecimento || isTeikerMarcacao)
-              ? (event['cor'] as Color? ?? color)
-              : color;
-          final rawTag = event['tag'] as String?;
-          final tag = hideReminderTag && _isReminder(event) ? '' : rawTag;
-          final seenCounterpart = isAcontecimento
-              ? _isAcontecimentoSeenByCounterpart(event)
-              : false;
-
-          return EventItem(
-            event: event,
-            selectedColor: itemColor,
-            showHours: !isFerias && !isAcontecimento && hasHourRange,
-            readOnly: readOnly,
-            tag: tag,
-            showTeikerNameOnMarcacaoCard: showTeikerNameOnMarcacaoCard,
-            showClienteNameOnReminderCard: showClienteNameOnReminderCard,
-            onTap: isAcontecimento
-                ? () => _showAcontecimentoDetailsDialog(event)
-                : (isTeikerMarcacao && canOpenMarcacaoNotes)
-                ? () => _showMarcacaoNotesDialogForAgendaEvent(event)
-                : null,
-            trailingWidget: isAcontecimento
-                ? Icon(
-                    seenCounterpart
-                        ? Icons.visibility_rounded
-                        : Icons.visibility_outlined,
-                    color: itemColor,
-                    size: 20,
-                  )
-                : null,
-            onToggleDone: () {
-              if (!readOnly) {
-                _toggleDone(event);
-              }
-            },
-            onDelete: () {
-              if (!readOnly) {
-                _deleteEvent(dayKey, event);
-              }
-            },
-          );
-        },
+    return ListView.builder(
+      primary: false,
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
       ),
+      padding: EdgeInsets.only(bottom: resolvedListBottomPadding),
+      itemCount: sortedEvents.length,
+      itemBuilder: (context, i) {
+        final event = sortedEvents[i];
+        final bool isFerias = event['isFerias'] == true;
+        final bool isConsulta = event['isConsulta'] == true;
+        final bool isAcontecimento = _isAcontecimento(event);
+        final bool isTeikerMarcacao = _isTeikerMarcacaoAgendaEvent(event);
+        final start = (event['start'] ?? '').toString();
+        final end = (event['end'] ?? '').toString();
+        final hasHourRange = start.isNotEmpty || end.isNotEmpty;
+        final bool readOnly =
+            isFerias || isConsulta || isAcontecimento || isTeikerMarcacao;
+        final itemColor =
+            (isFerias || isConsulta || isAcontecimento || isTeikerMarcacao)
+            ? (event['cor'] as Color? ?? color)
+            : color;
+        final rawTag = event['tag'] as String?;
+        final tag = hideReminderTag && _isReminder(event) ? '' : rawTag;
+        final seenCounterpart = isAcontecimento
+            ? _isAcontecimentoSeenByCounterpart(event)
+            : false;
+
+        return EventItem(
+          event: event,
+          selectedColor: itemColor,
+          showHours: !isFerias && !isAcontecimento && hasHourRange,
+          readOnly: readOnly,
+          tag: tag,
+          showTeikerNameOnMarcacaoCard: showTeikerNameOnMarcacaoCard,
+          showClienteNameOnReminderCard: showClienteNameOnReminderCard,
+          onTap: isAcontecimento
+              ? () => _showAcontecimentoDetailsDialog(event)
+              : (isTeikerMarcacao && canOpenMarcacaoNotes)
+              ? () => _showMarcacaoNotesDialogForAgendaEvent(event)
+              : null,
+          trailingWidget: isAcontecimento
+              ? Icon(
+                  seenCounterpart
+                      ? Icons.visibility_rounded
+                      : Icons.visibility_outlined,
+                  color: itemColor,
+                  size: 20,
+                )
+              : null,
+          onToggleDone: () {
+            if (!readOnly) {
+              _toggleDone(event);
+            }
+          },
+          onDelete: () {
+            if (!readOnly) {
+              _deleteEvent(dayKey, event);
+            }
+          },
+        );
+      },
     );
   }
 
@@ -2660,6 +2660,185 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       leftEmptyMessage: 'Sem lembretes neste dia.',
       rightEmptyMessage: 'Sem itens da agenda neste dia.',
       hideLeftReminderTag: true,
+    );
+  }
+
+  Widget _buildAgendaActionButtons({
+    required bool isAdmin,
+    required bool isHr,
+    bool isDesktop = false,
+  }) {
+    final iconSize = isDesktop ? 22.0 : 20.0;
+    final labelStyle = TextStyle(
+      fontWeight: FontWeight.bold,
+      fontSize: isDesktop ? 15 : 14,
+      letterSpacing: isDesktop ? .1 : 0,
+    );
+    final actionStyle = ElevatedButton.styleFrom(
+      backgroundColor: selectedColor,
+      foregroundColor: Colors.white,
+      minimumSize: Size.fromHeight(isDesktop ? 54 : 48),
+      padding: EdgeInsets.symmetric(
+        vertical: isDesktop ? 14 : 14,
+        horizontal: isDesktop ? 16 : 12,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(isDesktop ? 14 : 12),
+      ),
+      elevation: isDesktop ? 3 : 4,
+    );
+
+    Widget reminderButton() {
+      return ElevatedButton.icon(
+        icon: Icon(Icons.add, size: iconSize),
+        label: Text('Adicionar Lembrete', style: labelStyle),
+        style: actionStyle,
+        onPressed: _showAddEventSheet,
+      );
+    }
+
+    Widget acontecimentoButton() {
+      return ElevatedButton.icon(
+        icon: Icon(Icons.event_available_outlined, size: iconSize),
+        label: Text('Acontecimento', style: labelStyle),
+        style: actionStyle,
+        onPressed: _showAddAcontecimentoSheet,
+      );
+    }
+
+    if (isAdmin) {
+      if (isDesktop) {
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth >= 440) {
+              return Row(
+                children: [
+                  Expanded(child: reminderButton()),
+                  const SizedBox(width: 10),
+                  Expanded(child: acontecimentoButton()),
+                ],
+              );
+            }
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                reminderButton(),
+                const SizedBox(height: 10),
+                acontecimentoButton(),
+              ],
+            );
+          },
+        );
+      }
+
+      return Row(
+        children: [
+          Expanded(child: reminderButton()),
+          const SizedBox(width: 10),
+          Expanded(child: acontecimentoButton()),
+        ],
+      );
+    }
+
+    if (isHr) {
+      return acontecimentoButton();
+    }
+
+    return reminderButton();
+  }
+
+  Widget _buildDesktopAgendaColumns({
+    required DateTime dayKey,
+    required List<Map<String, dynamic>> reminderEvents,
+    required List<Map<String, dynamic>> infoEvents,
+    required bool showReminderPanel,
+  }) {
+    if (!showReminderPanel) {
+      return _buildDesktopListSection(
+        title: 'Agenda',
+        child: _buildEventListBody(
+          events: infoEvents,
+          dayKey: dayKey,
+          color: selectedColor,
+          emptyMessage: 'Sem itens da agenda neste dia.',
+          listBottomPadding: 12,
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: _buildDesktopListSection(
+            title: 'Lembretes',
+            child: _buildEventListBody(
+              events: reminderEvents,
+              dayKey: dayKey,
+              color: selectedColor,
+              emptyMessage: 'Sem lembretes neste dia.',
+              hideReminderTag: true,
+              listBottomPadding: 12,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: _buildDesktopListSection(
+            title: 'Agenda',
+            child: _buildEventListBody(
+              events: infoEvents,
+              dayKey: dayKey,
+              color: selectedColor,
+              emptyMessage: 'Sem itens da agenda neste dia.',
+              listBottomPadding: 12,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopListSection({
+    required String title,
+    required Widget child,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: selectedColor.withValues(alpha: .14)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+            child: Row(
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: selectedColor,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: selectedColor.withValues(alpha: .14)),
+          Expanded(
+            child: Padding(padding: const EdgeInsets.all(8), child: child),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2869,6 +3048,22 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
             targetCalendarHeight,
             availableCalendarHeight,
           );
+          final isDesktopWideLayout = constraints.maxWidth >= 1024;
+          final desktopAgendaEvents = isAdmin || isHr
+              ? adminAgendaEvents
+              : teikerAgendaEvents;
+          final desktopHorizontalPadding = constraints.maxWidth >= 1480
+              ? 24.0
+              : 16.0;
+          final desktopGap = constraints.maxWidth >= 1480 ? 20.0 : 14.0;
+          final desktopBottomPadding =
+              MediaQuery.of(context).padding.bottom +
+              AppBottomNavBar.barHeight +
+              14;
+          final desktopLeftPanelWidth = math.max(
+            430.0,
+            math.min(560.0, constraints.maxWidth * 0.42),
+          );
 
           return Column(
             children: [
@@ -2885,175 +3080,200 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
                         child: Container(color: selectedColor),
                       ),
                     ),
-                    Column(
-                      children: [
-                        // Calendário
-                        Container(
-                          margin: const EdgeInsets.only(top: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: ModernCalendar(
-                            focusedDay: _focusedDay,
-                            selectedDay: _selectedDay,
-                            primaryColor: selectedColor,
-                            todayColor: Colors.greenAccent,
-                            events: calendarEvents,
-                            maxHeight: calendarMaxHeight,
-                            onDaySelected: (day, month) {
-                              setState(() {
-                                _selectedDay = day;
-                                _focusedDay = DateTime(
-                                  month.year,
-                                  month.month,
-                                  1,
-                                );
-                              });
-                            },
-                            teikersFerias: [...teikersFerias, ...teikersBaixas],
-                          ),
+                    if (isDesktopWideLayout)
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          desktopHorizontalPadding,
+                          8,
+                          desktopHorizontalPadding,
+                          desktopBottomPadding,
                         ),
-                        // Botão para adicionar lembrete
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 4,
-                          ),
-                          margin: const EdgeInsets.only(top: 10),
-                          child: isAdmin
-                              ? Row(
-                                  children: [
-                                    Expanded(
-                                      child: ElevatedButton.icon(
-                                        icon: const Icon(Icons.add, size: 20),
-                                        label: const Text(
-                                          'Adicionar Lembrete',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: selectedColor,
-                                          foregroundColor: Colors.white,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 14,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              12,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(
+                              width: desktopLeftPanelWidth,
+                              child: LayoutBuilder(
+                                builder: (context, leftConstraints) {
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      Expanded(
+                                        child: Align(
+                                          alignment: Alignment.topCenter,
+                                          child: ConstrainedBox(
+                                            constraints: const BoxConstraints(
+                                              maxHeight: 560,
+                                            ),
+                                            child: ModernCalendar(
+                                              focusedDay: _focusedDay,
+                                              selectedDay: _selectedDay,
+                                              primaryColor: selectedColor,
+                                              todayColor: Colors.greenAccent,
+                                              events: calendarEvents,
+                                              maxHeight:
+                                                  leftConstraints.maxHeight,
+                                              onDaySelected: (day, month) {
+                                                setState(() {
+                                                  _selectedDay = day;
+                                                  _focusedDay = DateTime(
+                                                    month.year,
+                                                    month.month,
+                                                    1,
+                                                  );
+                                                });
+                                              },
+                                              teikersFerias: [
+                                                ...teikersFerias,
+                                                ...teikersBaixas,
+                                              ],
                                             ),
                                           ),
-                                          elevation: 4,
                                         ),
-                                        onPressed: _showAddEventSheet,
                                       ),
-                                    ),
-                                    const SizedBox(width: 10),
-                                    Expanded(
-                                      child: ElevatedButton.icon(
-                                        icon: const Icon(
-                                          Icons.event_available_outlined,
-                                          size: 20,
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.fromLTRB(
+                                          14,
+                                          12,
+                                          14,
+                                          12,
                                         ),
-                                        label: const Text(
-                                          'Acontecimento',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.bold,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            14,
                                           ),
-                                        ),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: selectedColor,
-                                          foregroundColor: Colors.white,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 14,
-                                          ),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              12,
+                                          border: Border.all(
+                                            color: selectedColor.withValues(
+                                              alpha: .14,
                                             ),
                                           ),
-                                          elevation: 4,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black.withValues(
+                                                alpha: .04,
+                                              ),
+                                              blurRadius: 12,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
                                         ),
-                                        onPressed: _showAddAcontecimentoSheet,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'Acoes Rapidas',
+                                              style: TextStyle(
+                                                color: selectedColor,
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 10),
+                                            _buildAgendaActionButtons(
+                                              isAdmin: isAdmin,
+                                              isHr: isHr,
+                                              isDesktop: true,
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                )
-                              : isHr
-                              ? ElevatedButton.icon(
-                                  icon: const Icon(
-                                    Icons.event_available_outlined,
-                                    size: 20,
-                                  ),
-                                  label: const Text(
-                                    'Acontecimento',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: selectedColor,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 14,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    elevation: 4,
-                                  ),
-                                  onPressed: _showAddAcontecimentoSheet,
-                                )
-                              : ElevatedButton.icon(
-                                  icon: const Icon(Icons.add, size: 20),
-                                  label: const Text(
-                                    'Adicionar Lembrete',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: selectedColor,
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 14,
-                                    ),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    elevation: 4,
-                                  ),
-                                  onPressed: _showAddEventSheet,
-                                ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+                            SizedBox(width: desktopGap),
+                            Expanded(
+                              child: _buildDesktopAgendaColumns(
+                                dayKey: dayKey,
+                                reminderEvents: reminderEvents,
+                                infoEvents: desktopAgendaEvents,
+                                showReminderPanel: !isHr,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 10),
-                        // Lista de eventos
-                        Expanded(
-                          child: Container(
-                            width: double.infinity,
+                      )
+                    else
+                      Column(
+                        children: [
+                          // Calendário
+                          Container(
+                            margin: const EdgeInsets.only(top: 8),
                             padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: isAdmin
-                                ? _buildAdminSwipableLists(
-                                    dayKey: dayKey,
-                                    reminderEvents: reminderEvents,
-                                    infoEvents: adminAgendaEvents,
-                                  )
-                                : isHr
-                                ? _buildEventListBody(
-                                    events: adminAgendaEvents,
-                                    dayKey: dayKey,
-                                    color: selectedColor,
-                                    emptyMessage:
-                                        'Sem itens da agenda neste dia.',
-                                  )
-                                : _buildTeikerSwipableLists(
-                                    dayKey: dayKey,
-                                    reminderEvents: reminderEvents,
-                                    infoEvents: teikerAgendaEvents,
-                                  ),
+                            child: ModernCalendar(
+                              focusedDay: _focusedDay,
+                              selectedDay: _selectedDay,
+                              primaryColor: selectedColor,
+                              todayColor: Colors.greenAccent,
+                              events: calendarEvents,
+                              maxHeight: calendarMaxHeight,
+                              onDaySelected: (day, month) {
+                                setState(() {
+                                  _selectedDay = day;
+                                  _focusedDay = DateTime(
+                                    month.year,
+                                    month.month,
+                                    1,
+                                  );
+                                });
+                              },
+                              teikersFerias: [
+                                ...teikersFerias,
+                                ...teikersBaixas,
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                          // Botão para adicionar lembrete
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 4,
+                            ),
+                            margin: const EdgeInsets.only(top: 10),
+                            child: _buildAgendaActionButtons(
+                              isAdmin: isAdmin,
+                              isHr: isHr,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          // Lista de eventos
+                          Expanded(
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              child: isAdmin
+                                  ? _buildAdminSwipableLists(
+                                      dayKey: dayKey,
+                                      reminderEvents: reminderEvents,
+                                      infoEvents: adminAgendaEvents,
+                                    )
+                                  : isHr
+                                  ? _buildEventListBody(
+                                      events: adminAgendaEvents,
+                                      dayKey: dayKey,
+                                      color: selectedColor,
+                                      emptyMessage:
+                                          'Sem itens da agenda neste dia.',
+                                    )
+                                  : _buildTeikerSwipableLists(
+                                      dayKey: dayKey,
+                                      reminderEvents: reminderEvents,
+                                      infoEvents: teikerAgendaEvents,
+                                    ),
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               ),

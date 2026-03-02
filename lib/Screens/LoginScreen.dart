@@ -139,9 +139,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Widget _header(BuildContext context) {
     final h = MediaQuery.of(context).size.height;
+    final headerHeight = (h * 0.35).clamp(220.0, 360.0);
+    final compactHeader = headerHeight < 240;
     return Container(
       width: double.infinity,
-      height: h * 0.35,
+      height: headerHeight,
       decoration: BoxDecoration(
         color: widget.primaryColor,
         borderRadius: const BorderRadius.only(
@@ -152,22 +154,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          Image.asset('assets/IconCasaSuica.png', height: 120),
-          const SizedBox(height: 16),
-          const Text(
+          Image.asset(
+            'assets/IconCasaSuica.png',
+            height: compactHeader ? 92 : 120,
+          ),
+          SizedBox(height: compactHeader ? 10 : 16),
+          Text(
             "Bem-vindas Teikers",
             style: TextStyle(
-              fontSize: 22,
+              fontSize: compactHeader ? 20 : 22,
               fontWeight: FontWeight.bold,
               color: Colors.white,
             ),
           ),
-          const SizedBox(height: 6),
-          const Text(
+          SizedBox(height: compactHeader ? 4 : 6),
+          Text(
             "Acede à tua conta para continuar",
-            style: TextStyle(fontSize: 16, color: Colors.white70),
+            style: TextStyle(
+              fontSize: compactHeader ? 14 : 16,
+              color: Colors.white70,
+            ),
           ),
-          const SizedBox(height: 20),
+          SizedBox(height: compactHeader ? 14 : 20),
         ],
       ),
     );

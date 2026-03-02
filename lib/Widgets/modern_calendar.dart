@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'dart:ui';
 
@@ -163,27 +164,71 @@ class _ModernCalendarState extends State<ModernCalendar> {
                 ],
               ),
               const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: weekDays
-                    .map(
-                      (d) => Flexible(
-                        fit: FlexFit.tight,
-                        child: Center(
-                          child: Text(
-                            d,
-                            style: TextStyle(
-                              color: Colors.black.withValues(alpha: .55),
-                              fontSize: 12,
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    const spacing = 5.0;
+                    const weekLabelHeight = 22.0;
+                    final rows = (days.length / 7).ceil();
+                    final widthCellSize =
+                        (constraints.maxWidth - spacing * 6) / 7;
+                    final availableGridHeight = math.max(
+                      0.0,
+                      constraints.maxHeight - weekLabelHeight - 8,
+                    );
+                    final heightCellSize =
+                        (availableGridHeight - spacing * (rows - 1)) / rows;
+                    if (heightCellSize <= 0 || widthCellSize <= 0) {
+                      return const SizedBox.shrink();
+                    }
+
+                    final gridWidth = constraints.maxWidth;
+                    final gridHeight = availableGridHeight;
+                    final childAspectRatio = widthCellSize / heightCellSize;
+
+                    return Column(
+                      children: [
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: SizedBox(
+                            width: gridWidth,
+                            height: weekLabelHeight,
+                            child: Row(
+                              children: weekDays
+                                  .map(
+                                    (d) => Expanded(
+                                      child: Center(
+                                        child: Text(
+                                          d,
+                                          style: TextStyle(
+                                            color: Colors.black.withValues(
+                                              alpha: .55,
+                                            ),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
                             ),
                           ),
                         ),
-                      ),
-                    )
-                    .toList(),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: _buildGrid(
+                            days,
+                            gridWidth: gridWidth,
+                            gridHeight: gridHeight,
+                            spacing: spacing,
+                            childAspectRatio: childAspectRatio,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ),
-              const SizedBox(height: 8),
-              Expanded(child: _buildGrid(days)),
             ],
           ),
         ),
@@ -191,62 +236,62 @@ class _ModernCalendarState extends State<ModernCalendar> {
     );
   }
 
-  Widget _buildGrid(List<DateTime> days) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        final cellSize = (width - 6 * 6) / 7;
-        final rows = (days.length / 7).ceil();
-        final gridHeight = cellSize * rows + (rows - 1) * 6;
-
-        return SizedBox(
-          height: gridHeight,
-          child: GridView.builder(
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.zero,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 7,
-              mainAxisSpacing: 6,
-              crossAxisSpacing: 6,
-              childAspectRatio: 1,
-            ),
-            itemCount: days.length,
-            itemBuilder: (_, i) {
-              final d = days[i];
-              final inMonth = d.month == _visibleMonth.month;
-              final today = _utc(d) == _utc(DateTime.now());
-              final selected = _utc(d) == _utc(_selected);
-              final weekHighlight =
-                  widget.highlightWeek &&
-                  _utc(d).difference(_startOfWeek(DateTime.now())).inDays >=
-                      0 &&
-                  _utc(d).difference(_startOfWeek(DateTime.now())).inDays < 7;
-
-              final coresFerias = _feriasCoresParaDia(d);
-
-              return _Tile(
-                date: d,
-                selected: selected,
-                today: today,
-                inMonth: inMonth,
-                weekHighlight: weekHighlight,
-                hasEvents: _hasEvents(d),
-                isHoliday: _isHoliday(d),
-                feriasColors: coresFerias,
-                primary: widget.primaryColor,
-                accent: widget.todayColor,
-                onTap: () {
-                  setState(() {
-                    _selected = d;
-                    _visibleMonth = DateTime(d.year, d.month, 1);
-                  });
-                  widget.onDaySelected(d, _visibleMonth);
-                },
-              );
-            },
+  Widget _buildGrid(
+    List<DateTime> days, {
+    required double gridWidth,
+    required double gridHeight,
+    required double spacing,
+    required double childAspectRatio,
+  }) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SizedBox(
+        width: gridWidth,
+        height: gridHeight,
+        child: GridView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: spacing,
+            crossAxisSpacing: spacing,
+            childAspectRatio: childAspectRatio,
           ),
-        );
-      },
+          itemCount: days.length,
+          itemBuilder: (_, i) {
+            final d = days[i];
+            final inMonth = d.month == _visibleMonth.month;
+            final today = _utc(d) == _utc(DateTime.now());
+            final selected = _utc(d) == _utc(_selected);
+            final weekHighlight =
+                widget.highlightWeek &&
+                _utc(d).difference(_startOfWeek(DateTime.now())).inDays >= 0 &&
+                _utc(d).difference(_startOfWeek(DateTime.now())).inDays < 7;
+
+            final coresFerias = _feriasCoresParaDia(d);
+
+            return _Tile(
+              date: d,
+              selected: selected,
+              today: today,
+              inMonth: inMonth,
+              weekHighlight: weekHighlight,
+              hasEvents: _hasEvents(d),
+              isHoliday: _isHoliday(d),
+              feriasColors: coresFerias,
+              primary: widget.primaryColor,
+              accent: widget.todayColor,
+              onTap: () {
+                setState(() {
+                  _selected = d;
+                  _visibleMonth = DateTime(d.year, d.month, 1);
+                });
+                widget.onDaySelected(d, _visibleMonth);
+              },
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -311,110 +356,146 @@ class _Tile extends StatelessWidget {
     final text = "${date.day}";
     final baseColor = inMonth ? Colors.black87 : Colors.black26;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(50),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: selected
-              ? primary
-              : (today ? accent.withValues(alpha: .22) : Colors.transparent),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    blurRadius: 12,
-                    color: primary.withValues(alpha: .28),
-                    offset: const Offset(0, 6),
-                  ),
-                ]
-              : null,
-          border: weekHighlight
-              ? Border.all(color: primary.withValues(alpha: .22), width: 1.3)
-              : null,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              text,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: selected ? Colors.white : baseColor,
-              ),
-            ),
-            if (feriasColors.isNotEmpty || hasEvents || isHoliday)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tileSide = math.min(constraints.maxWidth, constraints.maxHeight);
+        final bubbleSide = math.min(tileSide * .9, 64.0);
+        final dayFontSize = (bubbleSide * 0.34).clamp(10.0, 20.0);
+        final markerSize = (bubbleSide * 0.12).clamp(4.0, 7.0);
+        final markerSpacing = bubbleSide < 30 ? 2.0 : 4.0;
+        final markerTopPadding = bubbleSide < 30 ? 2.0 : 4.0;
+        final showMarkers =
+            (feriasColors.isNotEmpty || hasEvents || isHoliday) &&
+            bubbleSide >= 26;
+
+        return Center(
+          child: SizedBox(
+            width: bubbleSide,
+            height: bubbleSide,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(50),
+              onTap: onTap,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: selected
+                      ? primary
+                      : (today
+                            ? accent.withValues(alpha: .22)
+                            : Colors.transparent),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            blurRadius: 12,
+                            color: primary.withValues(alpha: .28),
+                            offset: const Offset(0, 6),
+                          ),
+                        ]
+                      : null,
+                  border: weekHighlight
+                      ? Border.all(
+                          color: primary.withValues(alpha: .22),
+                          width: 1.3,
+                        )
+                      : null,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    if (feriasColors.isNotEmpty)
-                      _FeriasIndicator(feriasColors: feriasColors),
-                    if (hasEvents)
-                      Container(
-                        margin: const EdgeInsets.only(left: 4),
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: selected ? Colors.white : primary,
-                          shape: BoxShape.circle,
-                        ),
+                    Text(
+                      text,
+                      style: TextStyle(
+                        fontSize: dayFontSize,
+                        fontWeight: FontWeight.w600,
+                        color: selected ? Colors.white : baseColor,
                       ),
-                    if (isHoliday)
-                      Container(
-                        margin: const EdgeInsets.only(left: 4),
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: const Color.fromARGB(255, 222, 222, 122),
-                            width: 2,
-                          ),
+                    ),
+                    if (showMarkers)
+                      Padding(
+                        padding: EdgeInsets.only(top: markerTopPadding),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (feriasColors.isNotEmpty)
+                              _FeriasIndicator(
+                                feriasColors: feriasColors,
+                                markerSize: markerSize,
+                              ),
+                            if (hasEvents)
+                              Container(
+                                margin: EdgeInsets.only(left: markerSpacing),
+                                width: markerSize,
+                                height: markerSize,
+                                decoration: BoxDecoration(
+                                  color: selected ? Colors.white : primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            if (isHoliday)
+                              Container(
+                                margin: EdgeInsets.only(left: markerSpacing),
+                                width: markerSize,
+                                height: markerSize,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: const Color.fromARGB(
+                                      255,
+                                      222,
+                                      222,
+                                      122,
+                                    ),
+                                    width: markerSize <= 4.5 ? 1.3 : 2,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                   ],
                 ),
               ),
-          ],
-        ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
 class _FeriasIndicator extends StatelessWidget {
   final List<Color> feriasColors;
+  final double markerSize;
 
-  const _FeriasIndicator({required this.feriasColors});
+  const _FeriasIndicator({required this.feriasColors, this.markerSize = 6});
 
   @override
   Widget build(BuildContext context) {
     if (feriasColors.isEmpty) return const SizedBox.shrink();
 
     if (feriasColors.length == 1) {
-      // Apenas 1 Teiker de férias nesse dia → bolinha única
+      // Apenas 1 Teiker de férias nesse dia -> bolinha única.
       return Container(
-        width: 8,
-        height: 8,
+        width: markerSize,
+        height: markerSize,
         decoration: BoxDecoration(
           color: feriasColors.first,
           shape: BoxShape.circle,
         ),
       );
     } else if (feriasColors.length == 2) {
-      // 2 Teikers → círculo dividido a meio
+      // 2 Teikers -> círculo dividido a meio.
+      final splitSize = markerSize + 2;
       return CustomPaint(
-        size: const Size(10, 10),
+        size: Size(splitSize, splitSize),
         painter: _HalfCirclePainter(feriasColors[0], feriasColors[1]),
       );
     } else {
-      // 3 ou mais Teikers → três bolinhas pequenas
+      // 3 ou mais Teikers -> três bolinhas pequenas.
+      final compactSize = math.max(3.0, markerSize - 1.5);
       return Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: feriasColors
@@ -422,8 +503,8 @@ class _FeriasIndicator extends StatelessWidget {
             .map(
               (c) => Container(
                 margin: const EdgeInsets.symmetric(horizontal: 1),
-                width: 6,
-                height: 6,
+                width: compactSize,
+                height: compactSize,
                 decoration: BoxDecoration(color: c, shape: BoxShape.circle),
               ),
             )

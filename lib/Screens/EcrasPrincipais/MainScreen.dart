@@ -121,6 +121,15 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final isDesktopNav = mediaQuery.size.width >= 980;
+    final desktopNavWidth = (mediaQuery.size.width * 0.62).clamp(560.0, 980.0);
+    final desktopNavLeftOffset = (mediaQuery.size.width - desktopNavWidth) / 2;
+    final fabActionsRight = isDesktopNav ? desktopNavLeftOffset + 16 : 16.0;
+    final fabActionsBottom = isDesktopNav
+        ? mediaQuery.padding.bottom + 126
+        : 120.0;
+
     return Scaffold(
       backgroundColor: AppColors.creamBackground,
       resizeToAvoidBottomInset: false,
@@ -139,8 +148,8 @@ class _MainScreenState extends State<MainScreen> {
 
             if (_canAddEntities && showOptions)
               Positioned(
-                right: 16,
-                bottom: 120,
+                right: fabActionsRight,
+                bottom: fabActionsBottom,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [

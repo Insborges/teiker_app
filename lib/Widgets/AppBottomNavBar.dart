@@ -27,6 +27,16 @@ class AppBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final isDesktop = mediaQuery.size.width >= 980;
+    if (isDesktop) {
+      return _buildDesktopBar(context, mediaQuery);
+    }
+
+    return _buildMobileBar();
+  }
+
+  Widget _buildMobileBar() {
     return SizedBox(
       height: barHeight,
       child: Stack(
@@ -107,6 +117,88 @@ class AppBottomNavBar extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildDesktopBar(BuildContext context, MediaQueryData mediaQuery) {
+    final safeBottom = mediaQuery.padding.bottom;
+    final maxWidth = showFab ? 980.0 : 920.0;
+    final navWidth = (mediaQuery.size.width * 0.62).clamp(560.0, maxWidth);
+
+    return SizedBox(
+      height: 112 + safeBottom,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 12 + safeBottom),
+        child: Center(
+          child: SizedBox(
+            width: navWidth,
+            child: Container(
+              height: 84,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: barColor,
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: Colors.white.withValues(alpha: .14)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: .16),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        for (int i = 0; i < items.length; i++)
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 3,
+                              ),
+                              child: _DesktopNavItem(
+                                active: index == i,
+                                icon: items[i].icon,
+                                activeIcon:
+                                    items[i].activeIcon ?? items[i].icon,
+                                label: items[i].label,
+                                onTap: () => onTap(i),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (showFab) ...[
+                    const SizedBox(width: 10),
+                    GestureDetector(
+                      onTap: onFabTap,
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .18),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: .24),
+                          ),
+                        ),
+                        child: Icon(
+                          fabOpen ? CupertinoIcons.xmark : Icons.add,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _NavItem extends StatelessWidget {
@@ -157,6 +249,76 @@ class _NavItem extends StatelessWidget {
                   : const SizedBox.shrink(),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopNavItem extends StatelessWidget {
+  final bool active;
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _DesktopNavItem({
+    required this.active,
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: active
+                ? Colors.white.withValues(alpha: .16)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: active
+                  ? Colors.white.withValues(alpha: .28)
+                  : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                active ? activeIcon : icon,
+                size: 24,
+                color: active
+                    ? Colors.white
+                    : Colors.white.withValues(alpha: .86),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                    color: active
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: .90),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

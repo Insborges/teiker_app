@@ -64,10 +64,11 @@ class NotificationService {
     tz.initializeTimeZones();
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosInit = DarwinInitializationSettings();
+    const darwinInit = DarwinInitializationSettings();
     const initSettings = InitializationSettings(
       android: androidInit,
-      iOS: iosInit,
+      iOS: darwinInit,
+      macOS: darwinInit,
     );
 
     final launchDetails = await _local.getNotificationAppLaunchDetails();
@@ -795,18 +796,39 @@ class NotificationService {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    if (Platform.isIOS) {
+    final requiresApns = Platform.isIOS || Platform.isMacOS;
+    if (requiresApns) {
       final apns = await _fcm.getAPNSToken();
       if (apns == null) {
-        if (attempt < 5) {
+        if (attempt < 8) {
           await Future.delayed(const Duration(seconds: 2));
           return _saveFcmToken(attempt: attempt + 1);
         }
+        debugPrint(
+          'APNS token ainda não está disponível. A guardar token FCM foi adiado.',
+        );
         return;
       }
     }
 
-    final token = await _fcm.getToken();
+    String? token;
+    try {
+      token = await _fcm.getToken();
+    } on FirebaseException catch (e) {
+      if (requiresApns && e.code == 'apns-token-not-set') {
+        if (attempt < 8) {
+          await Future.delayed(const Duration(seconds: 2));
+          return _saveFcmToken(attempt: attempt + 1);
+        }
+        debugPrint(
+          'FCM token indisponível sem APNS após várias tentativas. '
+          'Nova tentativa ficará para o próximo refresh/login.',
+        );
+        return;
+      }
+      rethrow;
+    }
+
     if (token == null) return;
 
     final email = user.email ?? '';

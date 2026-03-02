@@ -164,6 +164,19 @@ class WorkSessionService {
     );
   }
 
+  Future<double> calculateMonthlyTotalForClient({
+    required String clienteId,
+    required DateTime referenceDate,
+  }) async {
+    if (clienteId.trim().isEmpty) {
+      throw Exception('Cliente inválido.');
+    }
+    return _repository.calculateMonthlyTotal(
+      clienteId: clienteId,
+      referenceDate: referenceDate,
+    );
+  }
+
   Future<double> closePendingSession({
     required String clienteId,
     required String sessionId,

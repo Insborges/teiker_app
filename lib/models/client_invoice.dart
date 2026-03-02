@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ClientInvoice {
+  static const double _lineEpsilon = 0.0001;
+
   const ClientInvoice({
     required this.id,
     required this.clientId,
@@ -42,6 +44,26 @@ class ClientInvoice {
   final double vatAmount;
   final double total;
   final DateTime createdAt;
+
+  bool get hasBillableHours =>
+      totalHours > _lineEpsilon && subtotal > _lineEpsilon;
+
+  bool get hasBillableAdditionalServices {
+    if (servicesTotal > _lineEpsilon) return true;
+    for (final value in additionalServices.values) {
+      if (value > _lineEpsilon) return true;
+    }
+    return false;
+  }
+
+  String get contentTypeLabel {
+    final hasHours = hasBillableHours;
+    final hasServices = hasBillableAdditionalServices;
+    if (hasHours && hasServices) return 'Horas + Servicos';
+    if (hasHours) return 'Horas';
+    if (hasServices) return 'Servicos';
+    return 'Sem linhas';
+  }
 
   Map<String, dynamic> toMap() {
     return {

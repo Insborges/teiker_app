@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -11,6 +13,8 @@ import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/client_invoice.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import 'package:teiker_app/work_sessions/domain/fixed_holiday_hours_policy.dart';
+
+enum _DesktopInvoiceAction { share, openWord }
 
 class AdminInvoicesScreen extends StatefulWidget {
   const AdminInvoicesScreen({super.key});
@@ -35,6 +39,8 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
   int _selectedYear = DateTime.now().year;
   int _selectedMonth = DateTime.now().month;
   List<int> _availableYears = const [];
+  bool get _isDesktopPlatform =>
+      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
   @override
   void initState() {
@@ -169,14 +175,11 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
     }
 
     final monthKey = _monthKey(monthStart);
-    final currentMonthKey = _monthKey(DateTime.now());
-
     final summaries = _clientes.map((cliente) {
-      final monthlyServices =
-          cliente.additionalServicePricesByMonth[monthKey] ??
-          (monthKey == currentMonthKey
-              ? cliente.additionalServicePrices
-              : const <String, double>{});
+      final monthlyServices = _monthlyServicesForCliente(
+        cliente: cliente,
+        monthKey: monthKey,
+      );
       final serviceTotal = monthlyServices.values.fold<double>(
         0,
         (runningTotal, item) => runningTotal + item,
@@ -227,7 +230,6 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
     };
     final yearStart = DateTime(_selectedYear, 1, 1);
     final nextYearStart = DateTime(_selectedYear + 1, 1, 1);
-    final currentMonthKey = _monthKey(DateTime.now());
 
     var hoursTotal = 0.0;
     for (final session in _allSessions) {
@@ -246,11 +248,10 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
       final cliente = summary.cliente;
       for (var month = 1; month <= 12; month++) {
         final monthKey = _monthKey(DateTime(_selectedYear, month, 1));
-        final monthlyServices =
-            cliente.additionalServicePricesByMonth[monthKey] ??
-            (monthKey == currentMonthKey
-                ? cliente.additionalServicePrices
-                : const <String, double>{});
+        final monthlyServices = _monthlyServicesForCliente(
+          cliente: cliente,
+          monthKey: monthKey,
+        );
         servicesTotal += monthlyServices.values.fold<double>(
           0,
           (runningTotal, value) => runningTotal + value,
@@ -259,6 +260,25 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
     }
 
     return hoursTotal + servicesTotal;
+  }
+
+  Map<String, double> _monthlyServicesForCliente({
+    required Clientes cliente,
+    required String monthKey,
+  }) {
+    final monthly = cliente.additionalServicePricesByMonth[monthKey];
+    if (monthly != null) {
+      return Map<String, double>.from(monthly);
+    }
+
+    // Legacy fallback: only when no monthly map exists at all.
+    final nowKey = _monthKey(DateTime.now());
+    if (monthKey == nowKey &&
+        cliente.additionalServicePricesByMonth.isEmpty &&
+        cliente.additionalServicePrices.isNotEmpty) {
+      return Map<String, double>.from(cliente.additionalServicePrices);
+    }
+    return const <String, double>{};
   }
 
   Widget _buildTotalsHeaderCard({
@@ -316,6 +336,23 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
 
     setState(() => _sharingInvoiceKeys.add(key));
     try {
+      final desktopAction = _isDesktopPlatform
+          ? await _pickDesktopInvoiceAction(invoice)
+          : _DesktopInvoiceAction.share;
+      if (desktopAction == null) return;
+
+      if (desktopAction == _DesktopInvoiceAction.openWord) {
+        await _clientInvoiceService.openInvoiceDocumentInWord(invoice);
+        if (!mounted) return;
+        AppSnackBar.show(
+          context,
+          message: 'Fatura ${invoice.invoiceNumber} aberta no Word.',
+          icon: Icons.description_outlined,
+          background: Colors.green.shade700,
+        );
+        return;
+      }
+
       await _clientInvoiceService.shareInvoiceDocument(
         invoice,
         sharePositionOrigin: sharePositionOrigin,
@@ -331,7 +368,7 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
       if (!mounted) return;
       AppSnackBar.show(
         context,
-        message: 'Erro ao partilhar fatura: $e',
+        message: 'Erro ao partilhar/abrir fatura: $e',
         icon: Icons.error_outline,
         background: Colors.red.shade700,
       );
@@ -340,6 +377,73 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
         setState(() => _sharingInvoiceKeys.remove(key));
       }
     }
+  }
+
+  Future<_DesktopInvoiceAction?> _pickDesktopInvoiceAction(
+    ClientInvoice invoice,
+  ) async {
+    return showModalBottomSheet<_DesktopInvoiceAction>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 44,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Fatura ${invoice.invoiceNumber}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.share_outlined),
+                  title: const Text('Partilhar'),
+                  subtitle: const Text('Abrir menu de partilha'),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_DesktopInvoiceAction.share),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.description_outlined),
+                  title: const Text('Abrir no Word'),
+                  subtitle: const Text('Abre o ficheiro no computador'),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_DesktopInvoiceAction.openWord),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _deleteInvoiceFromSummary(ClientInvoice invoice) async {
@@ -644,6 +748,17 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
                                       color: Colors.black54,
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Conteudo: ${invoice.contentTypeLabel}',
+                                    style: TextStyle(
+                                      color: AppColors.primaryGreen.withValues(
+                                        alpha: .88,
+                                      ),
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ],

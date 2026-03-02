@@ -12,6 +12,7 @@ class InvoiceDocxService {
   static const String _templateAssetPath = 'Invoice(Fatura)_Teiker.docx';
   static final RegExp _tablePattern = RegExp(r'<w:tbl\b[^>]*>[\s\S]*?</w:tbl>');
   static final RegExp _rowPattern = RegExp(r'<w:tr\b[^>]*>[\s\S]*?</w:tr>');
+  static const double _minLineAmount = 0.0001;
 
   Future<File> buildInvoiceDocument(ClientInvoice invoice) async {
     final templateData = await rootBundle.load(_templateAssetPath);
@@ -240,22 +241,29 @@ class InvoiceDocxService {
   }
 
   String _buildInvoiceLineRows(String templateRow, ClientInvoice invoice) {
-    final lines = <_InvoiceTableLine>[
-      _InvoiceTableLine(
-        description:
-            'Servicos ${_capitalizedMonth(invoice.invoiceDate)} Teiker',
-        unitsText: '${invoice.totalHours.toStringAsFixed(1)}h',
-        unitPrice: invoice.hourlyRate,
-        total: invoice.subtotal,
-      ),
-      ..._buildAdditionalServiceLines(invoice),
-    ];
+    final lines = <_InvoiceTableLine>[];
+    if (invoice.totalHours > _minLineAmount &&
+        invoice.subtotal > _minLineAmount) {
+      lines.add(
+        _InvoiceTableLine(
+          description:
+              'Servicos ${_capitalizedMonth(invoice.invoiceDate)} Teiker',
+          unitsText: '${invoice.totalHours.toStringAsFixed(1)}h',
+          unitPrice: invoice.hourlyRate,
+          total: invoice.subtotal,
+        ),
+      );
+    }
+    lines.addAll(_buildAdditionalServiceLines(invoice));
 
     return lines.map((line) => _buildRowFromTemplate(templateRow, line)).join();
   }
 
   List<_InvoiceTableLine> _buildAdditionalServiceLines(ClientInvoice invoice) {
     final entries = invoice.additionalServices.entries.toList()
+      ..removeWhere(
+        (entry) => !entry.value.isFinite || entry.value <= _minLineAmount,
+      )
       ..sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
 
     return entries.map((entry) {
@@ -268,6 +276,7 @@ class InvoiceDocxService {
         unitsText: normalized.quantity.toString(),
         unitPrice: normalized.unitPrice,
         total: normalized.total,
+        hideUnitAndRate: true,
       );
     }).toList();
   }
@@ -328,11 +337,15 @@ class InvoiceDocxService {
       oldValue: 'August',
       newValue: descriptionParts.$3,
     );
-    row = _replaceTextNode(row, oldValue: 'Hours', newValue: line.unitsText);
+    row = _replaceTextNode(
+      row,
+      oldValue: 'Hours',
+      newValue: line.hideUnitAndRate ? '' : line.unitsText,
+    );
     row = _replaceTextNode(
       row,
       oldValue: '49 CHF',
-      newValue: _formatMoney(line.unitPrice),
+      newValue: line.hideUnitAndRate ? '' : _formatMoney(line.unitPrice),
     );
     row = _replaceTextNode(
       row,
@@ -479,12 +492,14 @@ class _InvoiceTableLine {
     required this.unitsText,
     required this.unitPrice,
     required this.total,
+    this.hideUnitAndRate = false,
   });
 
   final String description;
   final String unitsText;
   final double unitPrice;
   final double total;
+  final bool hideUnitAndRate;
 }
 
 class _AdditionalServiceEntry {

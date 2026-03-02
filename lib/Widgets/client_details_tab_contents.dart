@@ -26,6 +26,10 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
     required this.onDeleteInvoice,
     required this.canShareInvoices,
     required this.canDeleteInvoices,
+    required this.monthLabel,
+    required this.selectedMonthKey,
+    required this.onPreviousMonth,
+    required this.onNextMonth,
     required this.serviceMonthLabel,
     required this.appliedServicePrices,
     required this.onRemoveAppliedService,
@@ -54,6 +58,10 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
   final Future<void> Function(ClientInvoice invoice) onDeleteInvoice;
   final bool canShareInvoices;
   final bool canDeleteInvoices;
+  final String monthLabel;
+  final String selectedMonthKey;
+  final VoidCallback onPreviousMonth;
+  final VoidCallback onNextMonth;
   final String serviceMonthLabel;
   final Map<String, double> appliedServicePrices;
   final Future<void> Function(String serviceKey) onRemoveAppliedService;
@@ -66,10 +74,19 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       child: Column(
         children: [
+          ClientMonthSelectorCard(
+            primaryColor: primaryColor,
+            borderColor: borderColor,
+            monthLabel: monthLabel,
+            onPreviousMonth: onPreviousMonth,
+            onNextMonth: onNextMonth,
+          ),
+          const SizedBox(height: 12),
           ClientOrcamentoSummaryCard(
             orcamento: currentPricePerHour,
             horas: horasCasa,
             servicePrices: currentServicePrices,
+            monthLabel: monthLabel,
           ),
           const SizedBox(height: 12),
           if (canAddHoras) ...[
@@ -91,6 +108,8 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
             onDeleteInvoice: onDeleteInvoice,
             canShareInvoices: canShareInvoices,
             canDeleteInvoices: canDeleteInvoices,
+            monthLabel: monthLabel,
+            selectedMonthKey: selectedMonthKey,
           ),
           const SizedBox(height: 12),
           if (canEmitirFaturas) ...[

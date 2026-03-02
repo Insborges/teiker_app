@@ -22,6 +22,10 @@ import 'package:teiker_app/models/client_invoice.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import '../../models/Clientes.dart';
 
+enum _DesktopInvoiceAction { share, openWord }
+
+enum _InvoiceContentOption { both, hoursOnly, servicesOnly }
+
 class Clientsdetails extends StatefulWidget {
   final Clientes cliente;
   final VoidCallback? onSessionClosed;
@@ -57,7 +61,11 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   late TextEditingController _emailController;
   late TextEditingController _orcamentoController;
   late Map<String, double> _appliedServicePrices;
-  late String _serviceMonthKey;
+  DateTime _selectedReferenceMonth = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    1,
+  );
 
   late double _horasCasa;
   late String _phoneCountryIso;
@@ -73,6 +81,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   bool get _isAdmin => _role == AppUserRole.admin;
   bool get _isHr => _role == AppUserRole.hr;
   bool get _isPrivileged => _role?.isPrivileged == true;
+  bool get _isDesktopPlatform =>
+      Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
   @override
   void initState() {
@@ -100,12 +110,9 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     _orcamentoController = TextEditingController(
       text: widget.cliente.orcamento.toString(),
     );
-    _serviceMonthKey = _monthKey(DateTime.now());
-    final monthServices =
-        widget.cliente.additionalServicePricesByMonth[_serviceMonthKey] ??
-        widget.cliente.additionalServicePrices;
+    _migrateLegacyCurrentMonthServicesIfNeeded();
     _appliedServicePrices = Map<String, double>.fromEntries(
-      monthServices.entries.where(
+      _servicePricesForMonth(_selectedReferenceMonth).entries.where(
         (entry) => _serviceCatalog.contains(_serviceBaseName(entry.key)),
       ),
     );
@@ -113,7 +120,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     _horasCasa = widget.cliente.hourasCasa;
     _loadAssociatedTeikerNames();
     _checkPendingSessionReminder();
-    _loadHorasParaTeiker();
+    _loadHorasForSelectedMonth();
   }
 
   @override
@@ -218,25 +225,72 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     return null;
   }
 
+  DateTime _monthStart(DateTime date) => DateTime(date.year, date.month, 1);
+
+  String get _serviceMonthKey => _monthKey(_selectedReferenceMonth);
+
+  String get _currentMonthKey => _monthKey(DateTime.now());
+
+  bool _useLegacyCurrentMonthServicesOnly() =>
+      widget.cliente.additionalServicePricesByMonth.isEmpty &&
+      widget.cliente.additionalServicePrices.isNotEmpty;
+
+  Map<String, double> _servicePricesForMonth(DateTime month) {
+    final monthKey = _monthKey(month);
+    final monthly = widget.cliente.additionalServicePricesByMonth[monthKey];
+    if (monthly != null) {
+      return Map<String, double>.from(monthly);
+    }
+
+    // Legacy fallback: migrate old unscoped services only for current month.
+    if (_useLegacyCurrentMonthServicesOnly() && monthKey == _currentMonthKey) {
+      return Map<String, double>.from(widget.cliente.additionalServicePrices);
+    }
+    return const <String, double>{};
+  }
+
+  void _migrateLegacyCurrentMonthServicesIfNeeded() {
+    if (!_useLegacyCurrentMonthServicesOnly()) return;
+
+    final monthly = Map<String, Map<String, double>>.from(
+      widget.cliente.additionalServicePricesByMonth,
+    );
+    monthly[_currentMonthKey] = Map<String, double>.from(
+      widget.cliente.additionalServicePrices,
+    );
+    widget.cliente.additionalServicePricesByMonth = monthly;
+
+    FirebaseFirestore.instance
+        .collection('clientes')
+        .doc(widget.cliente.uid)
+        .update({'additionalServicePricesByMonth': monthly})
+        .catchError((_) {});
+  }
+
   Future<void> _persistAdditionalServices() async {
     final monthly = Map<String, Map<String, double>>.from(
       widget.cliente.additionalServicePricesByMonth,
     );
-    monthly[_serviceMonthKey] = Map<String, double>.from(_appliedServicePrices);
+    if (_appliedServicePrices.isEmpty) {
+      monthly.remove(_serviceMonthKey);
+    } else {
+      monthly[_serviceMonthKey] = Map<String, double>.from(
+        _appliedServicePrices,
+      );
+    }
+    final currentMonthServices = Map<String, double>.from(
+      monthly[_currentMonthKey] ?? const <String, double>{},
+    );
 
     await FirebaseFirestore.instance
         .collection('clientes')
         .doc(widget.cliente.uid)
         .update({
-          'additionalServicePrices': Map<String, double>.from(
-            _appliedServicePrices,
-          ),
+          'additionalServicePrices': currentMonthServices,
           'additionalServicePricesByMonth': monthly,
         });
 
-    widget.cliente.additionalServicePrices = Map<String, double>.from(
-      _appliedServicePrices,
-    );
+    widget.cliente.additionalServicePrices = currentMonthServices;
     widget.cliente.additionalServicePricesByMonth = monthly;
   }
 
@@ -344,16 +398,40 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       '${date.year}-${date.month.toString().padLeft(2, '0')}';
 
   String get _serviceMonthLabel =>
-      DateFormat('MMMM yyyy', 'pt_PT').format(DateTime.now());
+      DateFormat('MMMM yyyy', 'pt_PT').format(_selectedReferenceMonth);
 
-  Future<void> _loadHorasParaTeiker() async {
-    if (_isPrivileged) return;
-    final total = await _workSessionService.calculateMonthlyTotalForCurrentUser(
-      clienteId: widget.cliente.uid,
-      referenceDate: DateTime.now(),
-    );
+  Future<void> _loadHorasForSelectedMonth() async {
+    final referenceDate = _monthStart(_selectedReferenceMonth);
+    final total = _isPrivileged
+        ? await _workSessionService.calculateMonthlyTotalForClient(
+            clienteId: widget.cliente.uid,
+            referenceDate: referenceDate,
+          )
+        : await _workSessionService.calculateMonthlyTotalForCurrentUser(
+            clienteId: widget.cliente.uid,
+            referenceDate: referenceDate,
+          );
     if (!mounted) return;
     setState(() => _horasCasa = total);
+  }
+
+  Future<void> _shiftSelectedMonth(int delta) async {
+    final next = _monthStart(
+      DateTime(
+        _selectedReferenceMonth.year,
+        _selectedReferenceMonth.month + delta,
+        1,
+      ),
+    );
+    setState(() {
+      _selectedReferenceMonth = next;
+      _appliedServicePrices = Map<String, double>.fromEntries(
+        _servicePricesForMonth(next).entries.where(
+          (entry) => _serviceCatalog.contains(_serviceBaseName(entry.key)),
+        ),
+      );
+    });
+    await _loadHorasForSelectedMonth();
   }
 
   Future<void> _checkPendingSessionReminder() async {
@@ -564,15 +642,21 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                       endDate,
                                       pendingSessionId: pendingSessionId,
                                     );
-                                    final displayTotal = _isPrivileged
-                                        ? total
+                                    final selectedMonthTotal = _isPrivileged
+                                        ? await _workSessionService
+                                              .calculateMonthlyTotalForClient(
+                                                clienteId: widget.cliente.uid,
+                                                referenceDate:
+                                                    _selectedReferenceMonth,
+                                              )
                                         : await _workSessionService
                                               .calculateMonthlyTotalForCurrentUser(
                                                 clienteId: widget.cliente.uid,
-                                                referenceDate: startDate,
+                                                referenceDate:
+                                                    _selectedReferenceMonth,
                                               );
                                     setState(() {
-                                      _horasCasa = displayTotal;
+                                      _horasCasa = selectedMonthTotal;
                                       if (_isPrivileged) {
                                         widget.cliente.hourasCasa = total;
                                       }
@@ -582,7 +666,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                     AppSnackBar.show(
                                       context,
                                       message:
-                                          "Horas registadas. Total do mês: ${displayTotal.toStringAsFixed(2)}h",
+                                          "Horas registadas. Total do mês: ${selectedMonthTotal.toStringAsFixed(2)}h",
                                       icon: Icons.save,
                                       background: Colors.green.shade700,
                                     );
@@ -646,8 +730,15 @@ class _ClientsdetailsState extends State<Clientsdetails> {
         Map<String, Map<String, double>>.from(
           widget.cliente.additionalServicePricesByMonth,
         );
-    additionalServicePricesByMonth[_serviceMonthKey] = Map<String, double>.from(
-      additionalServicePrices,
+    if (additionalServicePrices.isEmpty) {
+      additionalServicePricesByMonth.remove(_serviceMonthKey);
+    } else {
+      additionalServicePricesByMonth[_serviceMonthKey] =
+          Map<String, double>.from(additionalServicePrices);
+    }
+    final currentMonthServices = Map<String, double>.from(
+      additionalServicePricesByMonth[_currentMonthKey] ??
+          const <String, double>{},
     );
 
     final updated = Clientes(
@@ -658,7 +749,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       codigoPostal: _codigoPostalController.text,
       telemovel: int.tryParse(phone) ?? 0,
       phoneCountryIso: _phoneCountryIso,
-      additionalServicePrices: additionalServicePrices,
+      additionalServicePrices: currentMonthServices,
       additionalServicePricesByMonth: additionalServicePricesByMonth,
       email: email,
       orcamento: double.tryParse(_orcamentoController.text) ?? 0,
@@ -692,9 +783,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
             0;
         widget.cliente.hourasCasa = _horasCasa;
         widget.cliente.teikersIds = List.from(widget.cliente.teikersIds);
-        widget.cliente.additionalServicePrices = Map<String, double>.from(
-          additionalServicePrices,
-        );
+        widget.cliente.additionalServicePrices = currentMonthServices;
         widget.cliente.additionalServicePricesByMonth =
             Map<String, Map<String, double>>.from(
               additionalServicePricesByMonth,
@@ -723,19 +812,22 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
 
     if (selectedDate == null) return;
+    final selectedContent = await _pickInvoiceContentOption();
+    if (selectedContent == null) return;
 
     setState(() => _issuingInvoice = true);
     try {
       final result = await _clientInvoiceService.issueInvoice(
         cliente: widget.cliente,
         invoiceDate: selectedDate,
+        contentFilter: _toInvoiceContentFilter(selectedContent),
       );
 
       if (!mounted) return;
       AppSnackBar.show(
         context,
         message:
-            'Fatura ${result.invoice.invoiceNumber} emitida. Partilha no card abaixo.',
+            'Fatura ${result.invoice.invoiceNumber} emitida (${_invoiceContentSummary(selectedContent)}). Partilha no card abaixo.',
         icon: Icons.file_download_done,
         background: Colors.green.shade700,
       );
@@ -754,6 +846,101 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     }
   }
 
+  InvoiceContentFilter _toInvoiceContentFilter(_InvoiceContentOption option) {
+    switch (option) {
+      case _InvoiceContentOption.hoursOnly:
+        return InvoiceContentFilter.hoursOnly;
+      case _InvoiceContentOption.servicesOnly:
+        return InvoiceContentFilter.servicesOnly;
+      case _InvoiceContentOption.both:
+        return InvoiceContentFilter.both;
+    }
+  }
+
+  String _invoiceContentSummary(_InvoiceContentOption option) {
+    switch (option) {
+      case _InvoiceContentOption.hoursOnly:
+        return 'so horas';
+      case _InvoiceContentOption.servicesOnly:
+        return 'so servicos adicionais';
+      case _InvoiceContentOption.both:
+        return 'horas e servicos adicionais';
+    }
+  }
+
+  Future<_InvoiceContentOption?> _pickInvoiceContentOption() async {
+    return showModalBottomSheet<_InvoiceContentOption>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 44,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(18, 16, 18, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Conteudo da fatura',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.tune_rounded),
+                  title: const Text('Horas e servicos adicionais'),
+                  subtitle: const Text('Inclui tudo o que existe no mes'),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_InvoiceContentOption.both),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.timer_outlined),
+                  title: const Text('So horas realizadas'),
+                  subtitle: const Text('Ignora servicos adicionais'),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_InvoiceContentOption.hoursOnly),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.add_task_outlined),
+                  title: const Text('So servicos adicionais'),
+                  subtitle: const Text('Ignora horas realizadas'),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_InvoiceContentOption.servicesOnly),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _shareInvoice(
     ClientInvoice invoice, {
     File? preGeneratedFile,
@@ -763,6 +950,26 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
     setState(() => _sharingInvoiceIds.add(invoice.id));
     try {
+      final desktopAction = _isDesktopPlatform
+          ? await _pickDesktopInvoiceAction(invoice)
+          : _DesktopInvoiceAction.share;
+      if (desktopAction == null) return;
+
+      if (desktopAction == _DesktopInvoiceAction.openWord) {
+        await _clientInvoiceService.openInvoiceDocumentInWord(
+          invoice,
+          preGeneratedFile: preGeneratedFile,
+        );
+        if (!mounted) return;
+        AppSnackBar.show(
+          context,
+          message: 'Fatura ${invoice.invoiceNumber} aberta no Word.',
+          icon: Icons.description_outlined,
+          background: Colors.green.shade700,
+        );
+        return;
+      }
+
       await _clientInvoiceService.shareInvoiceDocument(
         invoice,
         preGeneratedFile: preGeneratedFile,
@@ -772,7 +979,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       if (!mounted) return;
       AppSnackBar.show(
         context,
-        message: 'Nao foi possivel partilhar a fatura: $e',
+        message: 'Nao foi possivel partilhar/abrir a fatura: $e',
         icon: Icons.error_outline,
         background: Colors.red.shade700,
       );
@@ -781,6 +988,73 @@ class _ClientsdetailsState extends State<Clientsdetails> {
         setState(() => _sharingInvoiceIds.remove(invoice.id));
       }
     }
+  }
+
+  Future<_DesktopInvoiceAction?> _pickDesktopInvoiceAction(
+    ClientInvoice invoice,
+  ) async {
+    return showModalBottomSheet<_DesktopInvoiceAction>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 44,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Fatura ${invoice.invoiceNumber}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.share_outlined),
+                  title: const Text('Partilhar'),
+                  subtitle: const Text('Abrir menu de partilha'),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_DesktopInvoiceAction.share),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.description_outlined),
+                  title: const Text('Abrir no Word'),
+                  subtitle: const Text('Abre o ficheiro no computador'),
+                  onTap: () => Navigator.of(
+                    sheetContext,
+                  ).pop(_DesktopInvoiceAction.openWord),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _deleteInvoice(ClientInvoice invoice) async {
@@ -887,6 +1161,10 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                         onDeleteInvoice: _deleteInvoice,
                         canShareInvoices: true,
                         canDeleteInvoices: _isAdmin,
+                        monthLabel: _serviceMonthLabel,
+                        selectedMonthKey: _serviceMonthKey,
+                        onPreviousMonth: () => _shiftSelectedMonth(-1),
+                        onNextMonth: () => _shiftSelectedMonth(1),
                         serviceMonthLabel: _serviceMonthLabel,
                         appliedServicePrices: _appliedServicePrices,
                         onRemoveAppliedService: _removeAppliedService,

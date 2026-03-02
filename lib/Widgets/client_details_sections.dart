@@ -4,6 +4,61 @@ import 'package:teiker_app/Widgets/AppButton.dart';
 import 'package:teiker_app/models/client_invoice.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
+class ClientMonthSelectorCard extends StatelessWidget {
+  const ClientMonthSelectorCard({
+    super.key,
+    required this.primaryColor,
+    required this.borderColor,
+    required this.monthLabel,
+    required this.onPreviousMonth,
+    required this.onNextMonth,
+  });
+
+  final Color primaryColor;
+  final Color borderColor;
+  final String monthLabel;
+  final VoidCallback onPreviousMonth;
+  final VoidCallback onNextMonth;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'Mês anterior',
+            onPressed: onPreviousMonth,
+            icon: Icon(Icons.chevron_left_rounded, color: primaryColor),
+          ),
+          Expanded(
+            child: Text(
+              monthLabel,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: primaryColor,
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Mês seguinte',
+            onPressed: onNextMonth,
+            icon: Icon(Icons.chevron_right_rounded, color: primaryColor),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class ClientIssuedInvoicesCard extends StatelessWidget {
   const ClientIssuedInvoicesCard({
     super.key,
@@ -14,6 +69,8 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
     required this.deletingInvoiceIds,
     required this.onShareInvoice,
     required this.onDeleteInvoice,
+    required this.monthLabel,
+    required this.selectedMonthKey,
     this.canShareInvoices = true,
     this.canDeleteInvoices = true,
   });
@@ -29,6 +86,8 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
   })
   onShareInvoice;
   final Future<void> Function(ClientInvoice invoice) onDeleteInvoice;
+  final String monthLabel;
+  final String selectedMonthKey;
   final bool canShareInvoices;
   final bool canDeleteInvoices;
 
@@ -41,7 +100,24 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
       stream: invoicesStream,
       builder: (context, snapshot) {
         final invoices = snapshot.data ?? const <ClientInvoice>[];
-        final totalIssued = invoices.fold<double>(
+        final keyParts = selectedMonthKey.split('-');
+        final selectedYear = keyParts.isNotEmpty
+            ? int.tryParse(keyParts.first)
+            : null;
+        final selectedMonth = keyParts.length > 1
+            ? int.tryParse(keyParts[1])
+            : null;
+
+        bool matchesSelectedMonth(ClientInvoice invoice) {
+          if (invoice.periodMonthKey.trim() == selectedMonthKey) return true;
+          if (selectedYear == null || selectedMonth == null) return true;
+          final date = invoice.invoiceDate;
+          return date.year == selectedYear && date.month == selectedMonth;
+        }
+
+        final filteredInvoices = invoices.where(matchesSelectedMonth).toList();
+
+        final totalIssued = filteredInvoices.fold<double>(
           0,
           (running, item) => running + item.total,
         );
@@ -67,7 +143,7 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Faturas emitidas',
+                      'Faturas emitidas ($monthLabel)',
                       style: TextStyle(
                         color: primaryColor,
                         fontWeight: FontWeight.w800,
@@ -114,7 +190,7 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
                     ),
                   ),
                 )
-              else if (invoices.isEmpty)
+              else if (filteredInvoices.isEmpty)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
@@ -126,7 +202,7 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    'Ainda nao existem faturas para este cliente.',
+                    'Ainda nao existem faturas para este cliente neste mês.',
                     style: TextStyle(
                       color: Colors.black54,
                       fontWeight: FontWeight.w600,
@@ -135,7 +211,7 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
                 )
               else
                 Column(
-                  children: invoices
+                  children: filteredInvoices
                       .map(
                         (invoice) => Padding(
                           padding: const EdgeInsets.only(bottom: 8),
@@ -168,6 +244,17 @@ class ClientIssuedInvoicesCard extends StatelessWidget {
                                           fontSize: 12,
                                           color: Colors.black54,
                                           fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Conteudo: ${invoice.contentTypeLabel}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: primaryColor.withValues(
+                                            alpha: .88,
+                                          ),
+                                          fontWeight: FontWeight.w700,
                                         ),
                                       ),
                                     ],
@@ -421,11 +508,13 @@ class ClientOrcamentoSummaryCard extends StatelessWidget {
     required this.orcamento,
     required this.horas,
     required this.servicePrices,
+    required this.monthLabel,
   });
 
   final double orcamento;
   final double horas;
   final Map<String, double> servicePrices;
+  final String monthLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -491,17 +580,26 @@ class ClientOrcamentoSummaryCard extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 4),
+          Text(
+            'Mês de referência: $monthLabel',
+            style: const TextStyle(
+              color: Colors.black54,
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
           const SizedBox(height: 12),
           _ClientFinancialRow(
             icon: Icons.timer_outlined,
-            label: 'Total Horas (${horas.toStringAsFixed(1)}h)',
+            label: 'Total Horas do mês (${horas.toStringAsFixed(1)}h)',
             value: '${totalHoras.toStringAsFixed(2)} CHF',
             primary: primary,
           ),
           const SizedBox(height: 8),
           _ClientFinancialRow(
             icon: Icons.add_business_outlined,
-            label: 'Preço Serviço',
+            label: 'Serviços adicionais do mês',
             value: '${totalServicos.toStringAsFixed(2)} CHF',
             primary: primary,
           ),

@@ -10,6 +10,8 @@ import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/client_invoice.dart';
 import 'package:teiker_app/work_sessions/domain/fixed_holiday_hours_policy.dart';
 
+enum InvoiceContentFilter { both, hoursOnly, servicesOnly }
+
 class IssuedClientInvoice {
   const IssuedClientInvoice({
     required this.invoice,
@@ -28,6 +30,7 @@ class ClientInvoiceService {
        _docxService = docxService ?? InvoiceDocxService();
 
   static const double _defaultVatRate = 0.081;
+  static const double _minBillableAmount = 0.0001;
 
   final FirebaseFirestore _firestore;
   final InvoiceDocxService _docxService;
@@ -68,6 +71,7 @@ class ClientInvoiceService {
   Future<IssuedClientInvoice> issueInvoice({
     required Clientes cliente,
     required DateTime invoiceDate,
+    InvoiceContentFilter contentFilter = InvoiceContentFilter.both,
   }) async {
     final clientId = cliente.uid.trim();
     if (clientId.isEmpty) {
@@ -82,28 +86,51 @@ class ClientInvoiceService {
     final monthKey = _monthKey(normalizedDate);
     final monthLabel = DateFormat('MMMM yyyy', 'pt_PT').format(normalizedDate);
 
-    final monthlyHours = await _calculateMonthlyHours(
-      clientId: clientId,
-      referenceDate: normalizedDate,
-    );
-    final additionalServices = _servicePricesForMonth(
-      cliente: cliente,
-      monthKey: monthKey,
-    );
+    final includeHours = contentFilter != InvoiceContentFilter.servicesOnly;
+    final includeServices = contentFilter != InvoiceContentFilter.hoursOnly;
+
+    final monthlyHours = includeHours
+        ? await _calculateMonthlyHours(
+            clientId: clientId,
+            referenceDate: normalizedDate,
+          )
+        : 0.0;
+    final additionalServices = includeServices
+        ? _sanitizeAdditionalServices(
+            _servicePricesForMonth(cliente: cliente, monthKey: monthKey),
+          )
+        : const <String, double>{};
     final additionalServicesTotal = additionalServices.values.fold<double>(
       0,
       (runningTotal, value) => runningTotal + value,
     );
-    final monthlyServiceTotal = monthlyHours * cliente.orcamento;
+    final monthlyServiceTotal = includeHours
+        ? monthlyHours * cliente.orcamento
+        : 0.0;
+    final hasBillableHours =
+        includeHours &&
+        monthlyHours > _minBillableAmount &&
+        monthlyServiceTotal > _minBillableAmount;
 
-    if (monthlyServiceTotal <= 0 && additionalServicesTotal <= 0) {
-      throw Exception(
-        'Nao existem horas nem servicos para faturar no mes selecionado.',
-      );
+    if (monthlyServiceTotal <= _minBillableAmount &&
+        additionalServicesTotal <= _minBillableAmount) {
+      switch (contentFilter) {
+        case InvoiceContentFilter.hoursOnly:
+          throw Exception('Nao existem horas para faturar no mes selecionado.');
+        case InvoiceContentFilter.servicesOnly:
+          throw Exception(
+            'Nao existem servicos adicionais para faturar no mes selecionado.',
+          );
+        case InvoiceContentFilter.both:
+          throw Exception(
+            'Nao existem horas nem servicos para faturar no mes selecionado.',
+          );
+      }
     }
 
-    final vatAmount = monthlyServiceTotal * _defaultVatRate;
-    final total = monthlyServiceTotal + vatAmount + additionalServicesTotal;
+    final hourlySubtotal = hasBillableHours ? monthlyServiceTotal : 0.0;
+    final vatAmount = hourlySubtotal * _defaultVatRate;
+    final total = hourlySubtotal + vatAmount + additionalServicesTotal;
     final invoiceNumber = await _nextInvoiceNumber(normalizedDate);
     final now = DateTime.now();
     final documentRef = _clientInvoicesCollection(clientId).doc();
@@ -121,11 +148,11 @@ class ClientInvoiceService {
       clientAddress: cliente.moradaCliente.trim(),
       clientPostalCode: addressParts.$1,
       clientCity: explicitCity.isNotEmpty ? explicitCity : addressParts.$2,
-      totalHours: monthlyHours,
-      hourlyRate: cliente.orcamento,
+      totalHours: hasBillableHours ? monthlyHours : 0.0,
+      hourlyRate: hasBillableHours ? cliente.orcamento : 0.0,
       additionalServices: additionalServices,
       servicesTotal: additionalServicesTotal,
-      subtotal: monthlyServiceTotal,
+      subtotal: hourlySubtotal,
       vatRate: _defaultVatRate,
       vatAmount: vatAmount,
       total: total,
@@ -176,6 +203,58 @@ class ClientInvoiceService {
         sharePositionOrigin: sharePositionOrigin,
       );
     }
+  }
+
+  Future<void> openInvoiceDocumentInWord(
+    ClientInvoice invoice, {
+    File? preGeneratedFile,
+  }) async {
+    final documentFile =
+        preGeneratedFile ?? await _docxService.buildInvoiceDocument(invoice);
+
+    if (Platform.isMacOS) {
+      final wordAttempt = await Process.run('open', [
+        '-a',
+        'Microsoft Word',
+        documentFile.path,
+      ]);
+      if (wordAttempt.exitCode == 0) return;
+
+      final fallbackAttempt = await Process.run('open', [documentFile.path]);
+      if (fallbackAttempt.exitCode == 0) return;
+
+      throw Exception('Nao foi possivel abrir a fatura no Word.');
+    }
+
+    if (Platform.isWindows) {
+      final normalizedPath = documentFile.path.replaceAll('/', '\\');
+      final wordAttempt = await Process.run('cmd', [
+        '/c',
+        'start',
+        '',
+        'winword',
+        normalizedPath,
+      ], runInShell: true);
+      if (wordAttempt.exitCode == 0) return;
+
+      final fallbackAttempt = await Process.run('cmd', [
+        '/c',
+        'start',
+        '',
+        normalizedPath,
+      ], runInShell: true);
+      if (fallbackAttempt.exitCode == 0) return;
+
+      throw Exception('Nao foi possivel abrir a fatura no Word.');
+    }
+
+    if (Platform.isLinux) {
+      final result = await Process.run('xdg-open', [documentFile.path]);
+      if (result.exitCode == 0) return;
+      throw Exception('Nao foi possivel abrir a fatura no desktop.');
+    }
+
+    await shareInvoiceDocument(invoice, preGeneratedFile: documentFile);
   }
 
   Future<double> _calculateMonthlyHours({
@@ -248,17 +327,31 @@ class ClientInvoiceService {
     );
   }
 
+  Map<String, double> _sanitizeAdditionalServices(Map<String, double> raw) {
+    final normalized = <String, double>{};
+    raw.forEach((key, value) {
+      final serviceName = key.trim();
+      if (serviceName.isEmpty) return;
+      if (!value.isFinite || value <= _minBillableAmount) return;
+      normalized[serviceName] = value;
+    });
+    return normalized;
+  }
+
   Map<String, double> _servicePricesForMonth({
     required Clientes cliente,
     required String monthKey,
   }) {
-    final nowKey = _monthKey(DateTime.now());
     final monthlyServices = cliente.additionalServicePricesByMonth[monthKey];
     if (monthlyServices != null) {
       return Map<String, double>.from(monthlyServices);
     }
 
-    if (monthKey == nowKey) {
+    final nowKey = _monthKey(DateTime.now());
+    if (monthKey == nowKey &&
+        cliente.additionalServicePricesByMonth.isEmpty &&
+        cliente.additionalServicePrices.isNotEmpty) {
+      // Legacy fallback for old records without monthly separation.
       return Map<String, double>.from(cliente.additionalServicePrices);
     }
     return const <String, double>{};

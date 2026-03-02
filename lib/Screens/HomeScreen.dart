@@ -3167,7 +3167,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Text(
-                                              'Acoes Rapidas',
+                                              'Ações Rapidas',
                                               style: TextStyle(
                                                 color: selectedColor,
                                                 fontWeight: FontWeight.w800,

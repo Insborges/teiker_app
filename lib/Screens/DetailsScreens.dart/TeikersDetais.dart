@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/auth/app_user_role.dart';
@@ -12,7 +15,9 @@ import 'package:teiker_app/Widgets/teiker_details_tab_contents.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import 'package:teiker_app/backend/auth_service.dart';
+import 'package:teiker_app/backend/teiker_document_service.dart';
 import 'package:teiker_app/backend/teiker_marcacao_calendar_sync_service.dart';
+import 'package:teiker_app/models/teiker_document.dart';
 import '../../models/Teikers.dart';
 import '../../Widgets/AppBar.dart';
 import '../../Widgets/AppSnackBar.dart';
@@ -39,6 +44,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   final AuthService _authService = AuthService();
   final TeikerMarcacaoCalendarSyncService _marcacaoCalendarSyncService =
       TeikerMarcacaoCalendarSyncService();
+  final TeikerDocumentService _teikerDocumentService = TeikerDocumentService();
   late TextEditingController _emailController;
   late TextEditingController _telemovelController;
   late List<FeriasPeriodo> _feriasPeriodos;
@@ -48,6 +54,15 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   late List<Consulta> _consultas;
   late List<TeikerMarcacao> _marcacoes;
   late String _savedEmail;
+  bool _uploadingDocument = false;
+  final Set<String> _deletingDocumentIds = <String>{};
+  final Set<String> _openingDocumentIds = <String>{};
+
+  bool get _canManageTeikerDocuments =>
+      _authService.currentUserRole == AppUserRole.admin;
+
+  bool get _showTeikerDocumentsCard =>
+      _authService.currentUserRole == AppUserRole.admin;
 
   @override
   void initState() {
@@ -807,6 +822,160 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     await _saveConsultas(successMessage: "Consulta eliminada.");
   }
 
+  Future<void> _addTeikerDocument() async {
+    if (!_canManageTeikerDocuments) return;
+    if (_uploadingDocument) return;
+
+    File? file;
+    try {
+      file = await _pickDocumentFile();
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Não foi possível selecionar o ficheiro: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
+    if (file == null) return;
+    if (!file.existsSync()) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Ficheiro não encontrado.',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
+
+    setState(() => _uploadingDocument = true);
+    try {
+      await _teikerDocumentService.uploadDocument(
+        teikerId: widget.teiker.uid,
+        file: file,
+      );
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Documento associado com sucesso.',
+        icon: Icons.upload_file_rounded,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro ao associar documento: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _uploadingDocument = false);
+      }
+    }
+  }
+
+  Future<File?> _pickDocumentFile() async {
+    if (Platform.isMacOS) {
+      final fromMacDialog = await _pickWithMacSystemDialog();
+      if (fromMacDialog != null) return fromMacDialog;
+    }
+    return _pickWithFileSelector();
+  }
+
+  Future<File?> _pickWithFileSelector() async {
+    final selected = await openFile(confirmButtonText: 'Selecionar');
+    if (selected == null || selected.path.trim().isEmpty) {
+      return null;
+    }
+    return File(selected.path);
+  }
+
+  Future<File?> _pickWithMacSystemDialog() async {
+    final result = await Process.run('osascript', const [
+      '-e',
+      'POSIX path of (choose file with prompt "Selecionar documento")',
+    ]);
+
+    if (result.exitCode != 0) {
+      return null;
+    }
+
+    final rawPath = '${result.stdout}'.trim();
+    if (rawPath.isEmpty) {
+      return null;
+    }
+
+    return File(rawPath);
+  }
+
+  Future<void> _openTeikerDocument(TeikerDocument document) async {
+    if (_openingDocumentIds.contains(document.id)) return;
+
+    setState(() => _openingDocumentIds.add(document.id));
+    try {
+      await _teikerDocumentService.openDocument(document);
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Não foi possível abrir o documento: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _openingDocumentIds.remove(document.id));
+      }
+    }
+  }
+
+  Future<void> _deleteTeikerDocument(TeikerDocument document) async {
+    if (!_canManageTeikerDocuments) return;
+    if (_deletingDocumentIds.contains(document.id)) return;
+
+    final shouldDelete = await AppConfirmDialog.show(
+      context: context,
+      title: 'Remover documento',
+      message:
+          'Queres remover o documento "${document.fileName}" desta teiker?',
+      confirmLabel: 'Remover',
+      confirmColor: Colors.red.shade700,
+    );
+    if (!shouldDelete) return;
+
+    setState(() => _deletingDocumentIds.add(document.id));
+    try {
+      await _teikerDocumentService.deleteDocument(
+        teikerId: widget.teiker.uid,
+        document: document,
+      );
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Documento removido.',
+        icon: Icons.delete_outline_rounded,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro ao remover documento: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _deletingDocumentIds.remove(document.id));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final teiker = widget.teiker;
@@ -843,6 +1012,15 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       },
                       onSaveChanges: _guardarAlteracoes,
                       hoursFuture: _hoursFuture,
+                      showDocumentsCard: _showTeikerDocumentsCard,
+                      canManageDocuments: _canManageTeikerDocuments,
+                      uploadingDocument: _uploadingDocument,
+                      documentsStream: _teikerDocumentService
+                          .watchTeikerDocuments(widget.teiker.uid),
+                      deletingDocumentIds: _deletingDocumentIds,
+                      onAddDocument: _addTeikerDocument,
+                      onOpenDocument: _openTeikerDocument,
+                      onDeleteDocument: _deleteTeikerDocument,
                     ),
                     TeikerDetailsMarcacoesTab(
                       primaryColor: _primaryColor,

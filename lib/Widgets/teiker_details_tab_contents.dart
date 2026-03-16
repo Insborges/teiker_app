@@ -8,6 +8,7 @@ import 'package:teiker_app/Widgets/teiker_baixas_content.dart';
 import 'package:teiker_app/Widgets/teiker_ferias_content.dart';
 import 'package:teiker_app/Widgets/teiker_personal_info_content.dart';
 import 'package:teiker_app/models/Teikers.dart';
+import 'package:teiker_app/models/teiker_document.dart';
 
 class TeikerDetailsInfoTab extends StatelessWidget {
   const TeikerDetailsInfoTab({
@@ -22,6 +23,14 @@ class TeikerDetailsInfoTab extends StatelessWidget {
     required this.onPhoneCountryChanged,
     required this.onSaveChanges,
     required this.hoursFuture,
+    required this.showDocumentsCard,
+    required this.canManageDocuments,
+    required this.uploadingDocument,
+    required this.documentsStream,
+    required this.deletingDocumentIds,
+    required this.onAddDocument,
+    required this.onOpenDocument,
+    required this.onDeleteDocument,
   });
 
   final Teiker teiker;
@@ -34,6 +43,14 @@ class TeikerDetailsInfoTab extends StatelessWidget {
   final ValueChanged<String> onPhoneCountryChanged;
   final VoidCallback onSaveChanges;
   final Future<Map<DateTime, double>> hoursFuture;
+  final bool showDocumentsCard;
+  final bool canManageDocuments;
+  final bool uploadingDocument;
+  final Stream<List<TeikerDocument>> documentsStream;
+  final Set<String> deletingDocumentIds;
+  final Future<void> Function() onAddDocument;
+  final Future<void> Function(TeikerDocument document) onOpenDocument;
+  final Future<void> Function(TeikerDocument document) onDeleteDocument;
 
   @override
   Widget build(BuildContext context) {
@@ -129,10 +146,187 @@ class TeikerDetailsInfoTab extends StatelessWidget {
               ),
             ],
           ),
+          if (showDocumentsCard) ...[
+            const SizedBox(height: 12),
+            _TeikerDocumentsCard(
+              primaryColor: primaryColor,
+              documentsStream: documentsStream,
+              canManageDocuments: canManageDocuments,
+              uploadingDocument: uploadingDocument,
+              deletingDocumentIds: deletingDocumentIds,
+              onAddDocument: onAddDocument,
+              onOpenDocument: onOpenDocument,
+              onDeleteDocument: onDeleteDocument,
+            ),
+          ],
           const SizedBox(height: 12),
         ],
       ),
     );
+  }
+}
+
+class _TeikerDocumentsCard extends StatelessWidget {
+  const _TeikerDocumentsCard({
+    required this.primaryColor,
+    required this.documentsStream,
+    required this.canManageDocuments,
+    required this.uploadingDocument,
+    required this.deletingDocumentIds,
+    required this.onAddDocument,
+    required this.onOpenDocument,
+    required this.onDeleteDocument,
+  });
+
+  final Color primaryColor;
+  final Stream<List<TeikerDocument>> documentsStream;
+  final bool canManageDocuments;
+  final bool uploadingDocument;
+  final Set<String> deletingDocumentIds;
+  final Future<void> Function() onAddDocument;
+  final Future<void> Function(TeikerDocument document) onOpenDocument;
+  final Future<void> Function(TeikerDocument document) onDeleteDocument;
+
+  @override
+  Widget build(BuildContext context) {
+    final dateFormat = DateFormat('dd/MM/yyyy HH:mm', 'pt_PT');
+
+    return AppSectionCard(
+      title: 'Documentos da Teiker',
+      titleColor: primaryColor,
+      titleIcon: Icons.folder_shared_outlined,
+      children: [
+        if (canManageDocuments) ...[
+          AppButton(
+            text: uploadingDocument
+                ? 'A enviar ficheiro...'
+                : 'Adicionar Ficheiro',
+            icon: Icons.upload_file_rounded,
+            color: primaryColor,
+            enabled: !uploadingDocument,
+            onPressed: () => onAddDocument(),
+          ),
+          const SizedBox(height: 10),
+        ],
+        StreamBuilder<List<TeikerDocument>>(
+          stream: documentsStream,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return const Text(
+                'Não foi possível carregar os documentos.',
+                style: TextStyle(color: Colors.redAccent),
+              );
+            }
+
+            final documents = snapshot.data ?? const <TeikerDocument>[];
+            if (documents.isEmpty) {
+              return const Text(
+                'Sem documentos associados a esta teiker.',
+                style: TextStyle(color: Colors.grey),
+              );
+            }
+
+            return Column(
+              children: documents.map((document) {
+                final isDeleting = deletingDocumentIds.contains(document.id);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: primaryColor.withValues(alpha: .18),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                document.fileName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${dateFormat.format(document.uploadedAt)} • ${_formatFileSize(document.sizeBytes)}',
+                                style: const TextStyle(
+                                  color: Colors.black54,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Abrir / Transferir',
+                          icon: Icon(
+                            Icons.download_rounded,
+                            color: primaryColor,
+                            size: 20,
+                          ),
+                          onPressed: () => onOpenDocument(document),
+                        ),
+                        if (canManageDocuments)
+                          isDeleting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : IconButton(
+                                  tooltip: 'Remover ficheiro',
+                                  icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: Colors.redAccent,
+                                    size: 20,
+                                  ),
+                                  onPressed: () => onDeleteDocument(document),
+                                ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  String _formatFileSize(int sizeBytes) {
+    if (sizeBytes <= 0) return '0 B';
+    if (sizeBytes < 1024) return '$sizeBytes B';
+    final kb = sizeBytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+    final mb = kb / 1024;
+    if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
+    final gb = mb / 1024;
+    return '${gb.toStringAsFixed(1)} GB';
   }
 }
 

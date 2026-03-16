@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function hasEmail() {
+      return isAuthenticated() && request.auth.token.email != null;
+    }
+
+    function isPrivilegedUser() {
+      return hasEmail() &&
+          (request.auth.token.email == 'maryborgeshealing@gmail.com' ||
+              request.auth.token.email.matches('.*@teiker\\.ch$'));
+    }
+
+    function isTeikerOwner(teikerId) {
+      return isAuthenticated() && request.auth.uid == teikerId;
+    }
+
+    match /teiker_documents/{teikerId}/{fileName} {
+      allow read: if isPrivilegedUser() || isTeikerOwner(teikerId);
+      allow write: if isPrivilegedUser();
+    }
+  }
+}

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:teiker_app/Screens/AdminInvoicesScreen.dart';
 import 'package:teiker_app/Screens/AllTeikersHoursScreen.dart';
+import 'package:teiker_app/Screens/TeikerDocumentsScreen.dart';
 import 'package:teiker_app/Screens/TeikerHorasScreen.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
@@ -209,6 +210,19 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const TeikerHorasScreen()),
+            );
+          },
+          color: _mainColor,
+        ),
+      );
+      buttons.add(
+        SettingsOptionCard(
+          icon: Icons.folder_copy_outlined,
+          label: 'Ver Documentos',
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TeikerDocumentsScreen()),
             );
           },
           color: _mainColor,

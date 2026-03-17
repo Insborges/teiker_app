@@ -1,6 +1,7 @@
 {
     "name": "teiker_app",
     "short_name": "teiker_app",
+    "version": "1.0.0",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

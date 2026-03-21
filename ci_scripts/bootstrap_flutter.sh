@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="${CI_PRIMARY_REPOSITORY_PATH:-$(cd "$(dirname "$0")/.." && pwd)}"
-FLUTTER_VERSION="${FLUTTER_VERSION:-3.35.4}"
+FLUTTER_VERSION="${FLUTTER_VERSION:-3.41.2}"
 FLUTTER_DIR="${HOME}/flutter"
 
 ensure_flutter() {

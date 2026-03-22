@@ -24,6 +24,9 @@ prepare_ios() {
   cd "${REPO_ROOT}"
   flutter pub get
   flutter build ios --release --no-codesign --config-only
+  # Garante que o Profile.xcconfig está incluído no Release.xcconfig
+  grep -qF 'Pods-Runner.profile.xcconfig' ios/Flutter/Release.xcconfig || \
+    sed -i '' '1s/^/#include? "Pods\/Target Support Files\/Pods-Runner\/Pods-Runner.profile.xcconfig"\n/' ios/Flutter/Release.xcconfig
   cd ios
   pod install
 }
@@ -33,6 +36,9 @@ prepare_macos() {
   cd "${REPO_ROOT}"
   flutter pub get
   flutter build macos --release --config-only
+  # Garante que o Profile.xcconfig está incluído
+  grep -qF 'Pods-Runner.profile.xcconfig' macos/Flutter/Flutter-Release.xcconfig || \
+    sed -i '' '1s/^/#include? "Pods\/Target Support Files\/Pods-Runner\/Pods-Runner.profile.xcconfig"\n/' macos/Flutter/Flutter-Release.xcconfig
   cd macos
   pod install
 }

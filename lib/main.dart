@@ -10,13 +10,16 @@ import 'package:teiker_app/theme/app_colors.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  //Formatos de data portuguesa
+  // Formatos de data portuguesa
   await initializeDateFormatting('pt_PT', null);
   Intl.defaultLocale = 'pt_PT';
 
-  //Inicializar o backend(firebase)
-  await FirebaseService().init();
-  await NotificationService().init();
+  try {
+    await FirebaseService().init();
+    NotificationService().init();
+  } catch (e) {
+    debugPrint("Erro ao inicializar serviços: $e");
+  }
 
   runApp(ProviderScope(child: MyApp()));
 }

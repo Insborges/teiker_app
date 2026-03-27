@@ -30,6 +30,8 @@
 	<string>Precisamos de aceder à sua câmara para atualizar a foto de perfil.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Precisamos de aceder à sua galeria para selecionar uma foto de perfil.</string>
+	<key>NSRemoteNotificationUsageDescription</key>
+<string>Precisamos de enviar notificações para o manter atualizado sobre o estado dos seus envios e alertas da plataforma Teiker.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

@@ -6,18 +6,26 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/auth/app_user_role.dart';
+import 'package:teiker_app/Widgets/AppButton.dart';
+import 'package:teiker_app/Widgets/AppTextInput.dart';
 import 'package:teiker_app/Widgets/DatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/SingleTimePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/app_bottom_sheet_shell.dart';
 import 'package:teiker_app/Widgets/app_pill_tab_bar.dart';
 import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
 import 'package:teiker_app/Widgets/teiker_marcacao_notes_dialog.dart';
 import 'package:teiker_app/Widgets/teiker_details_sheets.dart';
 import 'package:teiker_app/Widgets/teiker_details_tab_contents.dart';
 import 'package:teiker_app/theme/app_colors.dart';
+import 'package:teiker_app/utils/ferias_day_count.dart';
 import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/teiker_document_service.dart';
 import 'package:teiker_app/backend/teiker_marcacao_calendar_sync_service.dart';
+import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/models/teiker_document.dart';
+import '../../models/Clientes.dart';
 import '../../models/Teikers.dart';
 import '../../Widgets/AppBar.dart';
 import '../../Widgets/AppSnackBar.dart';
@@ -45,8 +53,10 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   final TeikerMarcacaoCalendarSyncService _marcacaoCalendarSyncService =
       TeikerMarcacaoCalendarSyncService();
   final TeikerDocumentService _teikerDocumentService = TeikerDocumentService();
+  final WorkSessionService _workSessionService = WorkSessionService();
   late TextEditingController _emailController;
   late TextEditingController _telemovelController;
+  late DateTime? _birthDate;
   late List<FeriasPeriodo> _feriasPeriodos;
   late List<BaixaPeriodo> _baixasPeriodos;
   late String _phoneCountryIso;
@@ -61,6 +71,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   bool get _canManageTeikerDocuments =>
       _authService.currentUserRole == AppUserRole.admin;
 
+  bool get _canAddTeikerHoursByAdmin =>
+      _authService.currentUserRole == AppUserRole.admin;
+
   bool get _showTeikerDocumentsCard =>
       _authService.currentUserRole == AppUserRole.admin;
 
@@ -72,6 +85,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     _telemovelController = TextEditingController(
       text: widget.teiker.telemovel.toString(),
     );
+    _birthDate = widget.teiker.birthDate;
     _phoneCountryIso = widget.teiker.phoneCountryIso;
 
     _feriasPeriodos = List<FeriasPeriodo>.from(widget.teiker.feriasPeriodos);
@@ -140,6 +154,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       final updatedTeiker = widget.teiker.copyWith(
         email: normalizedEmail,
         telemovel: newTelemovel,
+        birthDate: _birthDate,
         phoneCountryIso: _phoneCountryIso,
         consultas: _consultas,
         marcacoes: _marcacoes,
@@ -735,25 +750,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   }
 
   int _countFeriasDays(List<FeriasPeriodo> periodos) {
-    final dayKeys = <DateTime>{};
-    for (final periodo in periodos) {
-      final start = DateTime(
-        periodo.inicio.year,
-        periodo.inicio.month,
-        periodo.inicio.day,
-      );
-      final end = DateTime(
-        periodo.fim.year,
-        periodo.fim.month,
-        periodo.fim.day,
-      );
-      var cursor = start;
-      while (!cursor.isAfter(end)) {
-        dayKeys.add(DateTime(cursor.year, cursor.month, cursor.day));
-        cursor = cursor.add(const Duration(days: 1));
-      }
-    }
-    return dayKeys.length;
+    return countFeriasBusinessDays(periodos);
   }
 
   int _countBaixasDays(List<BaixaPeriodo> periodos) {
@@ -776,6 +773,128 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       }
     }
     return dayKeys.length;
+  }
+
+  Future<void> _pickBirthDate() async {
+    if (!widget.canEditPersonalInfo) return;
+
+    final picked = await SingleDatePickerBottomSheet.show(
+      context,
+      initialDate: _birthDate,
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+      title: 'Data de nascimento',
+      subtitle: 'Escolhe a nova data de nascimento',
+      confirmLabel: 'Usar data',
+    );
+    if (picked == null) return;
+
+    setState(() {
+      _birthDate = DateTime(picked.year, picked.month, picked.day);
+    });
+  }
+
+  Future<List<Clientes>> _loadManualHoursClientes() async {
+    final clientes = await _authService.getClientes();
+    final teikerId = widget.teiker.uid.trim();
+    final linkedClientIds = widget.teiker.clientesIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    final linked = clientes.where((cliente) {
+      final clienteId = cliente.uid.trim();
+      return linkedClientIds.contains(clienteId) ||
+          cliente.teikersIds.map((id) => id.trim()).contains(teikerId);
+    }).toList();
+
+    final available = linked.isNotEmpty ? linked : clientes;
+    available.sort(
+      (a, b) =>
+          a.nameCliente.toLowerCase().compareTo(b.nameCliente.toLowerCase()),
+    );
+    return available;
+  }
+
+  Future<void> _openAddManualHoursSheet() async {
+    if (!_canAddTeikerHoursByAdmin) {
+      AppSnackBar.show(
+        context,
+        message: 'Só a admin pode adicionar horas a uma teiker.',
+        icon: Icons.lock_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    List<Clientes> clientes;
+    try {
+      clientes = await _loadManualHoursClientes();
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Não foi possível carregar os clientes: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    if (clientes.isEmpty) {
+      AppSnackBar.show(
+        context,
+        message: 'Não há clientes disponíveis para associar estas horas.',
+        icon: Icons.info_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    final result = await showModalBottomSheet<_AdminManualHoursInput>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AdminManualHoursSheet(
+        primaryColor: _primaryColor,
+        teikerName: widget.teiker.nameTeiker,
+        clientes: clientes,
+      ),
+    );
+    if (result == null) return;
+
+    try {
+      await _workSessionService.addManualSessionForTeikerByAdmin(
+        clienteId: result.cliente.uid,
+        teikerId: widget.teiker.uid,
+        start: result.start,
+        end: result.end,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _hoursFuture = _hoursOverviewService.fetchMonthlyTotals(
+          teikerId: widget.teiker.uid,
+        );
+      });
+      final dateLabel = DateFormat('dd/MM/yyyy', 'pt_PT').format(result.start);
+      AppSnackBar.show(
+        context,
+        message: 'Horas de $dateLabel registadas para esta teiker.',
+        icon: Icons.save_rounded,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro a guardar horas: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
   }
 
   Future<void> _openConsultaSheet({Consulta? consulta, int? index}) async {
@@ -1001,17 +1120,21 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                   children: [
                     TeikerDetailsInfoTab(
                       teiker: teiker,
+                      birthDate: _birthDate,
                       primaryColor: _primaryColor,
                       hoursSectionTitle: _hoursSectionTitle,
                       emailController: _emailController,
                       telemovelController: _telemovelController,
                       canEditPersonalInfo: widget.canEditPersonalInfo,
+                      canAddManualHours: _canAddTeikerHoursByAdmin,
                       phoneCountryIso: _phoneCountryIso,
                       onPhoneCountryChanged: (iso) {
                         setState(() => _phoneCountryIso = iso);
                       },
+                      onEditBirthDate: _pickBirthDate,
                       onSaveChanges: _guardarAlteracoes,
                       hoursFuture: _hoursFuture,
+                      onAddManualHours: _openAddManualHoursSheet,
                       showDocumentsCard: _showTeikerDocumentsCard,
                       canManageDocuments: _canManageTeikerDocuments,
                       uploadingDocument: _uploadingDocument,
@@ -1047,6 +1170,527 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                   ],
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminManualHoursInput {
+  const _AdminManualHoursInput({
+    required this.cliente,
+    required this.start,
+    required this.end,
+  });
+
+  final Clientes cliente;
+  final DateTime start;
+  final DateTime end;
+}
+
+class _AdminManualHoursSheet extends StatefulWidget {
+  const _AdminManualHoursSheet({
+    required this.primaryColor,
+    required this.teikerName,
+    required this.clientes,
+  });
+
+  final Color primaryColor;
+  final String teikerName;
+  final List<Clientes> clientes;
+
+  @override
+  State<_AdminManualHoursSheet> createState() => _AdminManualHoursSheetState();
+}
+
+class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
+  late Clientes _selectedCliente;
+  DateTime _selectedDate = DateTime.now();
+  TimeOfDay? _startTime;
+  TimeOfDay? _endTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCliente = widget.clientes.first;
+  }
+
+  String _formatDate(DateTime date) {
+    return DateFormat('dd/MM/yyyy', 'pt_PT').format(date);
+  }
+
+  String _formatTime(TimeOfDay? time) {
+    if (time == null) return 'Selecionar';
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  DateTime _combine(DateTime date, TimeOfDay time) {
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await SingleDatePickerBottomSheet.show(
+      context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      title: 'Dia das horas',
+      subtitle: 'Escolhe o dia trabalhado',
+      confirmLabel: 'Usar dia',
+    );
+    if (picked == null) return;
+    setState(() {
+      _selectedDate = DateTime(picked.year, picked.month, picked.day);
+    });
+  }
+
+  Future<void> _pickStartTime() async {
+    final picked = await SingleTimePickerBottomSheet.show(
+      context,
+      initialTime: _startTime ?? TimeOfDay.now(),
+      title: 'Hora de início',
+      subtitle: 'Escolhe a hora inicial',
+      confirmLabel: 'Usar hora',
+    );
+    if (picked == null) return;
+    setState(() => _startTime = picked);
+  }
+
+  Future<void> _pickEndTime() async {
+    final picked = await SingleTimePickerBottomSheet.show(
+      context,
+      initialTime: _endTime ?? TimeOfDay.now(),
+      title: 'Hora de fim',
+      subtitle: 'Escolhe a hora final',
+      confirmLabel: 'Usar hora',
+    );
+    if (picked == null) return;
+    setState(() => _endTime = picked);
+  }
+
+  Future<void> _pickCliente() async {
+    final options = widget.clientes
+        .map(
+          (cliente) => _ManualHoursPickerOption(
+            id: cliente.uid,
+            label: cliente.nameCliente,
+            subtitle: cliente.moradaCliente,
+          ),
+        )
+        .toList();
+
+    final picked = await showModalBottomSheet<_ManualHoursPickerOption>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: .78,
+        child: _ManualHoursSearchablePickerSheet(
+          title: 'Selecionar cliente',
+          subtitle: 'Procura e escolhe o cliente',
+          searchHint: 'Pesquisar cliente',
+          options: options,
+          selectedId: _selectedCliente.uid,
+          primaryColor: widget.primaryColor,
+        ),
+      ),
+    );
+
+    if (picked == null) return;
+    setState(() {
+      _selectedCliente = widget.clientes.firstWhere(
+        (cliente) => cliente.uid == picked.id,
+        orElse: () => _selectedCliente,
+      );
+    });
+  }
+
+  void _submit() {
+    final startTime = _startTime;
+    final endTime = _endTime;
+    if (startTime == null || endTime == null) {
+      AppSnackBar.show(
+        context,
+        message: 'Escolhe a hora de início e a hora de fim.',
+        icon: Icons.info_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    final start = _combine(_selectedDate, startTime);
+    final end = _combine(_selectedDate, endTime);
+    final now = DateTime.now();
+    if (start.isAfter(now) || end.isAfter(now)) {
+      AppSnackBar.show(
+        context,
+        message: 'Não podes adicionar horas no futuro.',
+        icon: Icons.info_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
+    if (!end.isAfter(start)) {
+      AppSnackBar.show(
+        context,
+        message: 'A hora de fim deve ser posterior à hora de início.',
+        icon: Icons.info_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    Navigator.of(context).pop(
+      _AdminManualHoursInput(cliente: _selectedCliente, start: start, end: end),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBottomSheetShell(
+      title: 'Adicionar horas',
+      subtitle: 'Registar horas para ${widget.teikerName}',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ManualHoursSelectorField(
+            label: 'Cliente',
+            value: _selectedCliente.nameCliente,
+            icon: Icons.people_outline,
+            primaryColor: widget.primaryColor,
+            onTap: _pickCliente,
+          ),
+          const SizedBox(height: 12),
+          _ManualHoursPickerTile(
+            label: 'Dia',
+            value: _formatDate(_selectedDate),
+            icon: Icons.calendar_month_outlined,
+            primaryColor: widget.primaryColor,
+            onTap: _pickDate,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _ManualHoursPickerTile(
+                  label: 'Início',
+                  value: _formatTime(_startTime),
+                  icon: Icons.play_circle_outline,
+                  primaryColor: widget.primaryColor,
+                  onTap: _pickStartTime,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ManualHoursPickerTile(
+                  label: 'Fim',
+                  value: _formatTime(_endTime),
+                  icon: Icons.stop_circle_outlined,
+                  primaryColor: widget.primaryColor,
+                  onTap: _pickEndTime,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: AppButton(
+                  text: 'Cancelar',
+                  outline: true,
+                  color: widget.primaryColor,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: AppButton(
+                  text: 'Guardar',
+                  icon: Icons.save_rounded,
+                  color: widget.primaryColor,
+                  onPressed: _submit,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManualHoursPickerOption {
+  const _ManualHoursPickerOption({
+    required this.id,
+    required this.label,
+    this.subtitle,
+  });
+
+  final String id;
+  final String label;
+  final String? subtitle;
+}
+
+class _ManualHoursSelectorField extends StatelessWidget {
+  const _ManualHoursSelectorField({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.primaryColor,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color primaryColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: label,
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: primaryColor.withValues(alpha: .25)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: primaryColor),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  value,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Icon(Icons.expand_more_rounded, color: primaryColor),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ManualHoursSearchablePickerSheet extends StatefulWidget {
+  const _ManualHoursSearchablePickerSheet({
+    required this.title,
+    required this.subtitle,
+    required this.searchHint,
+    required this.options,
+    required this.selectedId,
+    required this.primaryColor,
+  });
+
+  final String title;
+  final String subtitle;
+  final String searchHint;
+  final List<_ManualHoursPickerOption> options;
+  final String? selectedId;
+  final Color primaryColor;
+
+  @override
+  State<_ManualHoursSearchablePickerSheet> createState() =>
+      _ManualHoursSearchablePickerSheetState();
+}
+
+class _ManualHoursSearchablePickerSheetState
+    extends State<_ManualHoursSearchablePickerSheet> {
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _searchController.text.trim().toLowerCase();
+    final filtered = widget.options.where((option) {
+      if (query.isEmpty) return true;
+      return option.label.toLowerCase().contains(query) ||
+          (option.subtitle ?? '').toLowerCase().contains(query);
+    }).toList();
+
+    return AppBottomSheetShell(
+      title: widget.title,
+      subtitle: widget.subtitle,
+      child: SizedBox(
+        height: 420,
+        child: Column(
+          children: [
+            AppTextField(
+              label: widget.searchHint,
+              controller: _searchController,
+              prefixIcon: Icons.search,
+              focusColor: widget.primaryColor,
+              borderColor: widget.primaryColor.withValues(alpha: .25),
+              fillColor: Colors.grey.shade100,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Sem resultados.',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final option = filtered[index];
+                        final selected = option.id == widget.selectedId;
+                        return InkWell(
+                          onTap: () => Navigator.pop(context, option),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? widget.primaryColor.withValues(alpha: .12)
+                                  : Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: selected
+                                    ? widget.primaryColor
+                                    : widget.primaryColor.withValues(
+                                        alpha: .15,
+                                      ),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        option.label,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                                      if (option.subtitle != null &&
+                                          option.subtitle!
+                                              .trim()
+                                              .isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          option.subtitle!,
+                                          style: TextStyle(
+                                            color: Colors.grey.shade700,
+                                            fontWeight: FontWeight.w500,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                                Icon(
+                                  selected
+                                      ? Icons.check_circle
+                                      : Icons.chevron_right_rounded,
+                                  color: selected
+                                      ? widget.primaryColor
+                                      : Colors.grey.shade600,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ManualHoursPickerTile extends StatelessWidget {
+  const _ManualHoursPickerTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.primaryColor,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color primaryColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: primaryColor.withValues(alpha: .35)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: primaryColor),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.keyboard_arrow_down_rounded, color: primaryColor),
             ],
           ),
         ),

@@ -63,7 +63,10 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
 
   void _handleFocusChange() {
     if (!_focusNode.hasFocus && mounted) {
-      setState(() => _suggestions = const <AddressSuggestion>[]);
+      Future<void>.delayed(const Duration(milliseconds: 160), () {
+        if (!mounted || _focusNode.hasFocus) return;
+        setState(() => _suggestions = const <AddressSuggestion>[]);
+      });
     }
   }
 
@@ -100,7 +103,13 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
   }
 
   void _applySuggestion(AddressSuggestion suggestion) {
-    widget.addressController.text = suggestion.addressLine;
+    final selectedAddress = suggestion.addressLine.trim().isNotEmpty
+        ? suggestion.addressLine.trim()
+        : suggestion.label.trim();
+    widget.addressController.value = TextEditingValue(
+      text: selectedAddress,
+      selection: TextSelection.collapsed(offset: selectedAddress.length),
+    );
     if (suggestion.city.isNotEmpty) {
       widget.cityController.text = suggestion.city;
     }
@@ -172,7 +181,9 @@ class _AddressAutocompleteFieldState extends State<AddressAutocompleteField> {
                     size: 20,
                   ),
                   title: Text(
-                    suggestion.addressLine,
+                    suggestion.label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   subtitle: Text(

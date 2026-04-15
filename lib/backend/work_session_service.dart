@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/work_sessions/application/finish_work_session_use_case.dart';
 import 'package:teiker_app/work_sessions/domain/work_session.dart';
 import 'package:teiker_app/work_sessions/domain/work_session_repository.dart';
@@ -148,6 +149,47 @@ class WorkSessionService {
 
     return _repository.calculateMonthlyTotal(
       clienteId: clienteId,
+      referenceDate: start,
+    );
+  }
+
+  Future<double> addManualSessionForTeikerByAdmin({
+    required String clienteId,
+    required String teikerId,
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final adminId = _requireUser();
+    final role = AppUserRoleResolver.fromEmail(_auth.currentUser?.email);
+    if (!role.isAdmin) {
+      throw Exception('Só a admin pode adicionar horas a outra teiker.');
+    }
+    if (clienteId.trim().isEmpty) {
+      throw Exception('Cliente inválido.');
+    }
+    if (teikerId.trim().isEmpty) {
+      throw Exception('Teiker inválida.');
+    }
+    if (!end.isAfter(start)) {
+      throw Exception('A hora de fim deve ser posterior ao início.');
+    }
+    _ensureNotFuture(start);
+    _ensureNotFuture(end);
+
+    await _ensureNoOverlap(teikerId: teikerId, start: start, end: end);
+
+    await _repository.addManualSession(
+      clienteId: clienteId,
+      teikerId: teikerId,
+      start: start,
+      end: end,
+      createdById: adminId,
+      createdByRole: role.name,
+    );
+
+    return _repository.calculateMonthlyTotalForTeiker(
+      clienteId: clienteId,
+      teikerId: teikerId,
       referenceDate: start,
     );
   }

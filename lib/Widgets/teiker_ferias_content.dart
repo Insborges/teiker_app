@@ -133,6 +133,9 @@ class TeikerFeriasContent extends StatelessWidget {
   String _periodLabel(FeriasPeriodo periodo) {
     final start = DateFormat('dd MMM yyyy', 'pt_PT').format(periodo.inicio);
     final end = DateFormat('dd MMM yyyy', 'pt_PT').format(periodo.fim);
+    if (DateUtils.isSameDay(periodo.inicio, periodo.fim)) {
+      return start;
+    }
     return '$start - $end';
   }
 }

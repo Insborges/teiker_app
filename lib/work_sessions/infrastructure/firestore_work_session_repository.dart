@@ -279,6 +279,8 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     required String teikerId,
     required DateTime start,
     required DateTime end,
+    String? createdById,
+    String? createdByRole,
   }) async {
     if (!end.isAfter(start)) {
       throw Exception('A hora de fim deve ser posterior ao início.');
@@ -287,7 +289,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     final durationMultiplier = FixedHolidayHoursPolicy.multiplierFor(start);
     final duration = rawDuration * durationMultiplier;
 
-    final doc = await firestore.collection('workSessions').add({
+    final payload = <String, dynamic>{
       'clienteId': clienteId,
       'teikerId': teikerId,
       'startTime': Timestamp.fromDate(start),
@@ -296,7 +298,15 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       'rawDurationHours': rawDuration,
       'durationMultiplier': durationMultiplier,
       'isFixedHolidayRateApplied': durationMultiplier > 1,
-    });
+    };
+    if (createdById != null && createdById.trim().isNotEmpty) {
+      payload['createdById'] = createdById.trim();
+    }
+    if (createdByRole != null && createdByRole.trim().isNotEmpty) {
+      payload['createdByRole'] = createdByRole.trim();
+    }
+
+    final doc = await firestore.collection('workSessions').add(payload);
 
     return WorkSession(
       id: doc.id,

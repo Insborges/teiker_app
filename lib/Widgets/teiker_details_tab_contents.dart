@@ -14,15 +14,19 @@ class TeikerDetailsInfoTab extends StatelessWidget {
   const TeikerDetailsInfoTab({
     super.key,
     required this.teiker,
+    required this.birthDate,
     required this.primaryColor,
     required this.hoursSectionTitle,
     required this.emailController,
     required this.telemovelController,
     required this.canEditPersonalInfo,
+    required this.canAddManualHours,
     required this.phoneCountryIso,
     required this.onPhoneCountryChanged,
+    required this.onEditBirthDate,
     required this.onSaveChanges,
     required this.hoursFuture,
+    required this.onAddManualHours,
     required this.showDocumentsCard,
     required this.canManageDocuments,
     required this.uploadingDocument,
@@ -34,15 +38,19 @@ class TeikerDetailsInfoTab extends StatelessWidget {
   });
 
   final Teiker teiker;
+  final DateTime? birthDate;
   final Color primaryColor;
   final String hoursSectionTitle;
   final TextEditingController emailController;
   final TextEditingController telemovelController;
   final bool canEditPersonalInfo;
+  final bool canAddManualHours;
   final String phoneCountryIso;
   final ValueChanged<String> onPhoneCountryChanged;
+  final Future<void> Function() onEditBirthDate;
   final VoidCallback onSaveChanges;
   final Future<Map<DateTime, double>> hoursFuture;
+  final Future<void> Function() onAddManualHours;
   final bool showDocumentsCard;
   final bool canManageDocuments;
   final bool uploadingDocument;
@@ -64,12 +72,13 @@ class TeikerDetailsInfoTab extends StatelessWidget {
             titleColor: primaryColor,
             children: [
               TeikerPersonalInfoContent(
-                birthDate: teiker.birthDate,
+                birthDate: birthDate,
                 emailController: emailController,
                 telemovelController: telemovelController,
                 readOnly: !canEditPersonalInfo,
                 phoneCountryIso: phoneCountryIso,
                 onPhoneCountryChanged: onPhoneCountryChanged,
+                onEditBirthDate: onEditBirthDate,
                 primaryColor: primaryColor,
               ),
             ],
@@ -144,6 +153,15 @@ class TeikerDetailsInfoTab extends StatelessWidget {
                   );
                 },
               ),
+              if (canAddManualHours) ...[
+                const SizedBox(height: 12),
+                AppButton(
+                  text: 'Adicionar Horas',
+                  icon: Icons.add_alarm_rounded,
+                  color: primaryColor,
+                  onPressed: () => onAddManualHours(),
+                ),
+              ],
             ],
           ),
           if (showDocumentsCard) ...[
@@ -435,6 +453,7 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
                 : _TeikerDaysBadge(
                     primaryColor: primaryColor,
                     days: baixasDaysCount,
+                    label: baixasDaysCount == 1 ? 'dia' : 'dias',
                   ),
             children: [
               TeikerBaixasContent(
@@ -490,6 +509,7 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
                 : _TeikerDaysBadge(
                     primaryColor: primaryColor,
                     days: feriasDaysCount,
+                    label: feriasDaysCount == 1 ? 'dia útil' : 'dias úteis',
                   ),
             children: [
               TeikerFeriasContent(
@@ -710,10 +730,15 @@ class _TeikerHoursInfoChip extends StatelessWidget {
 }
 
 class _TeikerDaysBadge extends StatelessWidget {
-  const _TeikerDaysBadge({required this.primaryColor, required this.days});
+  const _TeikerDaysBadge({
+    required this.primaryColor,
+    required this.days,
+    this.label = 'dias',
+  });
 
   final Color primaryColor;
   final int days;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -725,7 +750,7 @@ class _TeikerDaysBadge extends StatelessWidget {
         border: Border.all(color: primaryColor.withValues(alpha: .2)),
       ),
       child: Text(
-        '$days dias',
+        '$days $label',
         style: TextStyle(color: primaryColor, fontWeight: FontWeight.w700),
       ),
     );

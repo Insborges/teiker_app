@@ -282,7 +282,7 @@ class ClientDetailsAdminInfoTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 ClientDetailsStyledField(
-                  label: 'Preço/Hora',
+                  label: 'Preço/Hora (CHF)',
                   controller: orcamentoController,
                   readOnly: readOnly,
                   keyboard: TextInputType.number,

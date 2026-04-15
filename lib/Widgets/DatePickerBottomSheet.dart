@@ -49,7 +49,7 @@ class _DatePickerSheetState extends State<_DatePickerSheet> {
   void _onRangeSelected(DateTime? start, DateTime? end, DateTime focused) {
     setState(() {
       startDate = start;
-      endDate = end;
+      endDate = end ?? start;
       focusedDay = focused;
     });
   }

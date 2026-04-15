@@ -12,6 +12,7 @@ class TeikerPersonalInfoContent extends StatelessWidget {
     this.readOnly = false,
     required this.phoneCountryIso,
     required this.onPhoneCountryChanged,
+    this.onEditBirthDate,
     required this.primaryColor,
   });
 
@@ -21,6 +22,7 @@ class TeikerPersonalInfoContent extends StatelessWidget {
   final bool readOnly;
   final String phoneCountryIso;
   final ValueChanged<String> onPhoneCountryChanged;
+  final VoidCallback? onEditBirthDate;
   final Color primaryColor;
 
   @override
@@ -68,6 +70,12 @@ class TeikerPersonalInfoContent extends StatelessWidget {
                   ],
                 ),
               ),
+              if (!readOnly && onEditBirthDate != null)
+                IconButton(
+                  tooltip: 'Alterar data de nascimento',
+                  icon: Icon(Icons.edit_calendar_outlined, color: primaryColor),
+                  onPressed: onEditBirthDate,
+                ),
             ],
           ),
         ),

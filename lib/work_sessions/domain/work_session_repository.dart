@@ -24,6 +24,8 @@ abstract class WorkSessionRepository {
     required String teikerId,
     required DateTime start,
     required DateTime end,
+    String? createdById,
+    String? createdByRole,
   });
 
   Future<bool> hasSessionOverlap({

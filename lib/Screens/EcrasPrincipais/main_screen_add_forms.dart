@@ -381,7 +381,7 @@ Future<ClienteFormData?> showAddClienteFormSheet(BuildContext context) async {
                 ),
                 const SizedBox(height: 10),
                 _formInput(
-                  'Preço/Hora (€)',
+                  'Preço(CHF)',
                   orcamentoController,
                   keyboard: TextInputType.number,
                 ),

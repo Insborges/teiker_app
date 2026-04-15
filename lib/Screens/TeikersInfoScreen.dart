@@ -10,6 +10,7 @@ import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/backend/TeikerService.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/theme/app_colors.dart';
+import 'package:teiker_app/utils/ferias_day_count.dart';
 import 'package:teiker_app/work_sessions/application/monthly_teiker_hours_service.dart';
 import '../models/Teikers.dart';
 
@@ -187,33 +188,6 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
     return filtered;
   }
 
-  int _countFeriasDays(
-    List<FeriasPeriodo> periodos, {
-    DateTime? legacyStart,
-    DateTime? legacyEnd,
-  }) {
-    final dayKeys = <DateTime>{};
-
-    void addRange(DateTime start, DateTime end) {
-      final normalizedStart = DateTime(start.year, start.month, start.day);
-      final normalizedEnd = DateTime(end.year, end.month, end.day);
-      var cursor = normalizedStart;
-      while (!cursor.isAfter(normalizedEnd)) {
-        dayKeys.add(DateTime(cursor.year, cursor.month, cursor.day));
-        cursor = cursor.add(const Duration(days: 1));
-      }
-    }
-
-    for (final periodo in periodos) {
-      addRange(periodo.inicio, periodo.fim);
-    }
-    if (legacyStart != null && legacyEnd != null) {
-      addRange(legacyStart, legacyEnd);
-    }
-
-    return dayKeys.length;
-  }
-
   double? _monthHoursForTeiker(String teikerId) {
     return _totalHoursCache[teikerId];
   }
@@ -224,7 +198,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
     final isHrEntry = AppUserRoleResolver.isHrEmail(teiker.email);
     final consultasCount = teiker.consultas.length;
     final feriasPeriodos = teiker.feriasPeriodos;
-    final feriasDays = _countFeriasDays(
+    final feriasDays = countFeriasBusinessDays(
       feriasPeriodos,
       legacyStart: teiker.feriasInicio,
       legacyEnd: teiker.feriasFim,
@@ -337,7 +311,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                           icon: Icons.beach_access,
                           color: Colors.orange.shade700,
                           text:
-                              'Férias: $feriasDays dia${feriasDays == 1 ? '' : 's'}',
+                              'Férias: $feriasDays dia${feriasDays == 1 ? ' útil' : 's úteis'}',
                         ),
                       _infoChip(
                         icon: Icons.event_note,

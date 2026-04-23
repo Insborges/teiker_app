@@ -12,6 +12,7 @@ service firebase.storage {
     function isPrivilegedUser() {
       return hasEmail() &&
           (request.auth.token.email == 'maryborgeshealing@gmail.com' ||
+              request.auth.token.email == 'spacecutcompany@gmail.com' ||
               request.auth.token.email.matches('.*@teiker\\.ch$'));
     }
 

@@ -78,7 +78,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   final Set<String> _deletingInvoiceIds = <String>{};
   bool _issuingInvoice = false;
 
-  bool get _isAdmin => _role == AppUserRole.admin;
+  bool get _isAdmin => _role?.isAdmin == true;
   bool get _isHr => _role == AppUserRole.hr;
   bool get _isPrivileged => _role?.isPrivileged == true;
   bool get _isDesktopPlatform =>

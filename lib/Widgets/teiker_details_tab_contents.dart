@@ -20,6 +20,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
     required this.emailController,
     required this.telemovelController,
     required this.canEditPersonalInfo,
+    required this.showHoursSection,
     required this.canAddManualHours,
     required this.phoneCountryIso,
     required this.onPhoneCountryChanged,
@@ -27,6 +28,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
     required this.onSaveChanges,
     required this.hoursFuture,
     required this.onAddManualHours,
+    required this.onEditManualHours,
     required this.showDocumentsCard,
     required this.canManageDocuments,
     required this.uploadingDocument,
@@ -44,6 +46,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
   final TextEditingController emailController;
   final TextEditingController telemovelController;
   final bool canEditPersonalInfo;
+  final bool showHoursSection;
   final bool canAddManualHours;
   final String phoneCountryIso;
   final ValueChanged<String> onPhoneCountryChanged;
@@ -51,6 +54,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
   final VoidCallback onSaveChanges;
   final Future<Map<DateTime, double>> hoursFuture;
   final Future<void> Function() onAddManualHours;
+  final Future<void> Function() onEditManualHours;
   final bool showDocumentsCard;
   final bool canManageDocuments;
   final bool uploadingDocument;
@@ -94,78 +98,96 @@ class TeikerDetailsInfoTab extends StatelessWidget {
             const SizedBox(height: 20),
           ] else
             const SizedBox(height: 12),
-          AppSectionCard(
-            title: hoursSectionTitle,
-            titleColor: primaryColor,
-            titleIcon: Icons.bar_chart_rounded,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: _TeikerHoursInfoChip(
-                      primaryColor: primaryColor,
-                      icon: Icons.work_outline_rounded,
-                      label: 'Regime',
-                      value: teiker.workPercentageLabel,
+          if (showHoursSection)
+            AppSectionCard(
+              title: hoursSectionTitle,
+              titleColor: primaryColor,
+              titleIcon: Icons.bar_chart_rounded,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _TeikerHoursInfoChip(
+                        primaryColor: primaryColor,
+                        icon: Icons.work_outline_rounded,
+                        label: 'Regime',
+                        value: teiker.workPercentageLabel,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _TeikerHoursInfoChip(
-                      primaryColor: primaryColor,
-                      icon: Icons.schedule_rounded,
-                      label: 'Meta semanal',
-                      value: '${teiker.weeklyTargetHours.toStringAsFixed(0)} h',
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _TeikerHoursInfoChip(
+                        primaryColor: primaryColor,
+                        icon: Icons.schedule_rounded,
+                        label: 'Meta semanal',
+                        value:
+                            '${teiker.weeklyTargetHours.toStringAsFixed(0)} h',
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              FutureBuilder<Map<DateTime, double>>(
-                future: hoursFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                FutureBuilder<Map<DateTime, double>>(
+                  future: hoursFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      );
+                    }
+
+                    if (snapshot.hasError) {
+                      return const Text(
+                        'Não foi possível carregar as horas.',
+                        style: TextStyle(color: Colors.redAccent),
+                      );
+                    }
+
+                    return MonthlyHoursOverviewCard(
+                      monthlyTotals: snapshot.data ?? const {},
+                      primaryColor: primaryColor,
+                      title: hoursSectionTitle,
+                      showHeader: false,
+                      emptyMessage: 'Sem horas registadas.',
+                    );
+                  },
+                ),
+                if (canAddManualHours) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: AppButton(
+                          text: 'Adicionar Horas',
+                          icon: Icons.add_alarm_rounded,
+                          color: primaryColor,
+                          onPressed: () => onAddManualHours(),
                         ),
                       ),
-                    );
-                  }
-
-                  if (snapshot.hasError) {
-                    return const Text(
-                      'Não foi possível carregar as horas.',
-                      style: TextStyle(color: Colors.redAccent),
-                    );
-                  }
-
-                  return MonthlyHoursOverviewCard(
-                    monthlyTotals: snapshot.data ?? const {},
-                    primaryColor: primaryColor,
-                    title: hoursSectionTitle,
-                    showHeader: false,
-                    emptyMessage: 'Sem horas registadas.',
-                  );
-                },
-              ),
-              if (canAddManualHours) ...[
-                const SizedBox(height: 12),
-                AppButton(
-                  text: 'Adicionar Horas',
-                  icon: Icons.add_alarm_rounded,
-                  color: primaryColor,
-                  onPressed: () => onAddManualHours(),
-                ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: AppButton(
+                          text: 'Alterar Horas',
+                          icon: Icons.edit_calendar_rounded,
+                          color: primaryColor,
+                          outline: true,
+                          onPressed: () => onEditManualHours(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
-            ],
-          ),
+            ),
+          if (showHoursSection) const SizedBox(height: 12),
           if (showDocumentsCard) ...[
-            const SizedBox(height: 12),
             _TeikerDocumentsCard(
               primaryColor: primaryColor,
               documentsStream: documentsStream,
@@ -357,6 +379,9 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
     required this.onOpenMarcacaoNotes,
     required this.onEditMarcacao,
     required this.onDeleteMarcacao,
+    this.showBaixas = true,
+    this.showConsultas = true,
+    this.showFerias = true,
     required this.baixasPeriodos,
     required this.baixasDaysCount,
     required this.onAddBaixa,
@@ -380,6 +405,9 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
   final Future<void> Function({TeikerMarcacao? marcacao, int? index})
   onEditMarcacao;
   final Future<void> Function(int index) onDeleteMarcacao;
+  final bool showBaixas;
+  final bool showConsultas;
+  final bool showFerias;
   final List<BaixaPeriodo> baixasPeriodos;
   final int baixasDaysCount;
   final VoidCallback onAddBaixa;
@@ -443,84 +471,90 @@ class TeikerDetailsMarcacoesTab extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          AppSectionCard(
-            title: 'Baixas',
-            titleIcon: Icons.healing_outlined,
-            titleColor: primaryColor,
-            titleTrailing: baixasPeriodos.isEmpty
-                ? null
-                : _TeikerDaysBadge(
-                    primaryColor: primaryColor,
-                    days: baixasDaysCount,
-                    label: baixasDaysCount == 1 ? 'dia' : 'dias',
-                  ),
-            children: [
-              TeikerBaixasContent(
-                baixasPeriodos: baixasPeriodos,
-                primaryColor: primaryColor,
-                onAddBaixa: onAddBaixa,
-                onEditBaixa: onEditBaixa,
-                onDeleteBaixa: onDeleteBaixa,
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          AppSectionCard(
-            title: 'Consultas',
-            titleIcon: Icons.event_note_outlined,
-            titleColor: primaryColor,
-            children: [
-              if (consultas.isEmpty)
-                const Text(
-                  'Nenhuma consulta registada.',
-                  style: TextStyle(color: Colors.grey),
-                )
-              else
-                Column(
-                  children: consultas.asMap().entries.map((entry) {
-                    return ConsultaItemCard(
-                      consulta: entry.value,
+          if (showBaixas) ...[
+            const SizedBox(height: 20),
+            AppSectionCard(
+              title: 'Baixas',
+              titleIcon: Icons.healing_outlined,
+              titleColor: primaryColor,
+              titleTrailing: baixasPeriodos.isEmpty
+                  ? null
+                  : _TeikerDaysBadge(
                       primaryColor: primaryColor,
-                      onEdit: () => onEditConsulta(
-                        consulta: entry.value,
-                        index: entry.key,
-                      ),
-                      onDelete: () => onDeleteConsulta(entry.key),
-                    );
-                  }).toList(),
+                      days: baixasDaysCount,
+                      label: baixasDaysCount == 1 ? 'dia' : 'dias',
+                    ),
+              children: [
+                TeikerBaixasContent(
+                  baixasPeriodos: baixasPeriodos,
+                  primaryColor: primaryColor,
+                  onAddBaixa: onAddBaixa,
+                  onEditBaixa: onEditBaixa,
+                  onDeleteBaixa: onDeleteBaixa,
                 ),
-              const SizedBox(height: 12),
-              AppButton(
-                text: 'Adicionar consulta',
-                color: primaryColor,
-                icon: Icons.medical_information,
-                onPressed: onAddConsulta,
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          AppSectionCard(
-            title: 'Férias',
-            titleIcon: Icons.beach_access_outlined,
-            titleColor: primaryColor,
-            titleTrailing: feriasPeriodos.isEmpty
-                ? null
-                : _TeikerDaysBadge(
-                    primaryColor: primaryColor,
-                    days: feriasDaysCount,
-                    label: feriasDaysCount == 1 ? 'dia útil' : 'dias úteis',
+              ],
+            ),
+          ],
+          if (showConsultas) ...[
+            const SizedBox(height: 20),
+            AppSectionCard(
+              title: 'Consultas',
+              titleIcon: Icons.event_note_outlined,
+              titleColor: primaryColor,
+              children: [
+                if (consultas.isEmpty)
+                  const Text(
+                    'Nenhuma consulta registada.',
+                    style: TextStyle(color: Colors.grey),
+                  )
+                else
+                  Column(
+                    children: consultas.asMap().entries.map((entry) {
+                      return ConsultaItemCard(
+                        consulta: entry.value,
+                        primaryColor: primaryColor,
+                        onEdit: () => onEditConsulta(
+                          consulta: entry.value,
+                          index: entry.key,
+                        ),
+                        onDelete: () => onDeleteConsulta(entry.key),
+                      );
+                    }).toList(),
                   ),
-            children: [
-              TeikerFeriasContent(
-                feriasPeriodos: feriasPeriodos,
-                primaryColor: primaryColor,
-                onAddFerias: onAddFerias,
-                onEditFerias: onEditFerias,
-                onDeleteFerias: onDeleteFerias,
-              ),
-            ],
-          ),
+                const SizedBox(height: 12),
+                AppButton(
+                  text: 'Adicionar consulta',
+                  color: primaryColor,
+                  icon: Icons.medical_information,
+                  onPressed: onAddConsulta,
+                ),
+              ],
+            ),
+          ],
+          if (showFerias) ...[
+            const SizedBox(height: 20),
+            AppSectionCard(
+              title: 'Férias',
+              titleIcon: Icons.beach_access_outlined,
+              titleColor: primaryColor,
+              titleTrailing: feriasPeriodos.isEmpty
+                  ? null
+                  : _TeikerDaysBadge(
+                      primaryColor: primaryColor,
+                      days: feriasDaysCount,
+                      label: feriasDaysCount == 1 ? 'dia útil' : 'dias úteis',
+                    ),
+              children: [
+                TeikerFeriasContent(
+                  feriasPeriodos: feriasPeriodos,
+                  primaryColor: primaryColor,
+                  onAddFerias: onAddFerias,
+                  onEditFerias: onEditFerias,
+                  onDeleteFerias: onDeleteFerias,
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
         ],
       ),

@@ -9,6 +9,7 @@ import 'package:teiker_app/Widgets/app_search_bar.dart';
 import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/backend/TeikerService.dart';
 import 'package:teiker_app/backend/auth_service.dart';
+import 'package:teiker_app/models/teiker_workload.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import 'package:teiker_app/utils/ferias_day_count.dart';
 import 'package:teiker_app/work_sessions/application/monthly_teiker_hours_service.dart';
@@ -35,6 +36,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
   late final bool _isAdmin;
   late final bool _isHr;
   late final bool _isPrivileged;
+  late final AppUserRole _currentRole;
 
   bool _showFilters = false;
   bool _selectionMode = false;
@@ -45,9 +47,10 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
   void initState() {
     super.initState();
     _currentUserUid = FirebaseAuth.instance.currentUser?.uid;
-    _isAdmin = _authService.isCurrentUserAdmin;
-    _isHr = _authService.isCurrentUserHr;
-    _isPrivileged = _authService.isCurrentUserPrivileged;
+    _currentRole = _authService.currentUserRole;
+    _isAdmin = _currentRole.isAdmin;
+    _isHr = _currentRole.isHr;
+    _isPrivileged = _currentRole.isPrivileged;
     _teikersStream = TeikerService().streamTeikers();
   }
 
@@ -119,7 +122,11 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
     if (_selectedTeikers.isEmpty) return;
 
     final selected = teikers
-        .where((teiker) => _selectedTeikers.contains(teiker.uid))
+        .where(
+          (teiker) =>
+              _selectedTeikers.contains(teiker.uid) &&
+              teiker.uid.trim() != (_currentUserUid ?? '').trim(),
+        )
         .toList();
     if (selected.isEmpty) return;
 
@@ -192,10 +199,60 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
     return _totalHoursCache[teikerId];
   }
 
+  AppUserRole? _roleForProfile(Teiker teiker) {
+    final role = AppUserRoleResolver.fromEmail(teiker.email);
+    return role.isPrivileged ? role : null;
+  }
+
+  bool _isCurrentSpecialProfile(Teiker teiker) {
+    return _currentUserUid != null &&
+        teiker.uid.trim() == _currentUserUid.trim() &&
+        _roleForProfile(teiker) != null;
+  }
+
+  Teiker? _buildCurrentSpecialProfile(List<Teiker> teikers) {
+    if (!_currentRole.isAdmin || _currentUserUid == null) return null;
+    final uid = _currentUserUid.trim();
+    if (uid.isEmpty || teikers.any((teiker) => teiker.uid.trim() == uid)) {
+      return null;
+    }
+
+    final user = FirebaseAuth.instance.currentUser;
+    final email = (user?.email ?? '').trim();
+    final displayName = (user?.displayName ?? '').trim();
+    final name = _currentRole.isDeveloper
+        ? AppUserRoleResolver.developerName
+        : displayName.isNotEmpty
+        ? displayName
+        : AppUserRoleResolver.displayNameForRole(_currentRole);
+    final fullTimeHours = TeikerWorkload.weeklyHoursForPercentage(
+      TeikerWorkload.fullTime,
+    );
+
+    return Teiker(
+      uid: uid,
+      nameTeiker: name,
+      email: email,
+      birthDate: _currentRole.isDeveloper ? DateTime(2004, 2, 5) : null,
+      telemovel: 0,
+      phoneCountryIso: 'PT',
+      horas: fullTimeHours,
+      workPercentage: TeikerWorkload.fullTime,
+      clientesIds: const [],
+      consultas: const [],
+      marcacoes: const [],
+      corIdentificadora: AppColors.primaryGreen,
+      isWorking: false,
+    );
+  }
+
   Widget _teikerCard(Teiker teiker) {
     final selected = _selectedTeikers.contains(teiker.uid);
     final primary = teiker.corIdentificadora;
-    final isHrEntry = AppUserRoleResolver.isHrEmail(teiker.email);
+    final profileRole = _roleForProfile(teiker);
+    final isHrEntry = profileRole == AppUserRole.hr;
+    final isDeveloperEntry = profileRole == AppUserRole.developer;
+    final isCurrentSpecialEntry = _isCurrentSpecialProfile(teiker);
     final consultasCount = teiker.consultas.length;
     final feriasPeriodos = teiker.feriasPeriodos;
     final feriasDays = countFeriasBusinessDays(
@@ -207,15 +264,20 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
 
     return InkWell(
       onTap: () {
-        if (_isAdmin && _selectionMode) {
+        if (_isAdmin && _selectionMode && !isCurrentSpecialEntry) {
           _toggleSelected(teiker.uid);
           return;
         }
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) =>
-                TeikersDetails(teiker: teiker, canEditPersonalInfo: _isAdmin),
+            builder: (_) => TeikersDetails(
+              teiker: teiker,
+              canEditPersonalInfo: _isAdmin && !isCurrentSpecialEntry,
+              isAdminSelfProfile:
+                  isCurrentSpecialEntry && profileRole == AppUserRole.admin,
+              specialProfileRole: isCurrentSpecialEntry ? profileRole : null,
+            ),
           ),
         );
       },
@@ -256,7 +318,9 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                 children: [
                   Row(
                     children: [
-                      if (_isAdmin && _selectionMode) ...[
+                      if (_isAdmin &&
+                          _selectionMode &&
+                          !isCurrentSpecialEntry) ...[
                         Icon(
                           selected ? Icons.check_circle : Icons.circle_outlined,
                           color: selected
@@ -274,31 +338,6 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                           ),
                         ),
                       ),
-                      if (_isAdmin && isHrEntry)
-                        Container(
-                          margin: const EdgeInsets.only(left: 8),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryGreen.withValues(alpha: .1),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: AppColors.primaryGreen.withValues(
-                                alpha: .25,
-                              ),
-                            ),
-                          ),
-                          child: const Text(
-                            'Recursos Humanos',
-                            style: TextStyle(
-                              color: AppColors.primaryGreen,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -306,19 +345,30 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                     spacing: 10,
                     runSpacing: 8,
                     children: [
-                      if (feriasDays > 0)
+                      if (profileRole != null)
+                        _infoChip(
+                          icon: profileRole.isDeveloper
+                              ? Icons.code_rounded
+                              : profileRole.isHr
+                              ? Icons.groups_2_outlined
+                              : Icons.admin_panel_settings_outlined,
+                          color: AppColors.primaryGreen,
+                          text: AppUserRoleResolver.roleLabel(profileRole),
+                        ),
+                      if (!isDeveloperEntry && feriasDays > 0)
                         _infoChip(
                           icon: Icons.beach_access,
                           color: Colors.orange.shade700,
                           text:
                               'Férias: $feriasDays dia${feriasDays == 1 ? ' útil' : 's úteis'}',
                         ),
-                      _infoChip(
-                        icon: Icons.event_note,
-                        color: primary,
-                        text:
-                            '$consultasCount consulta${consultasCount == 1 ? '' : 's'}',
-                      ),
+                      if (!isDeveloperEntry)
+                        _infoChip(
+                          icon: Icons.event_note,
+                          color: primary,
+                          text:
+                              '$consultasCount consulta${consultasCount == 1 ? '' : 's'}',
+                        ),
                     ],
                   ),
                 ],
@@ -328,7 +378,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (!isHrEntry) ...[
+                  if (!isHrEntry && !isDeveloperEntry) ...[
                     Text(
                       currentMonthHours == null
                           ? '...h'
@@ -425,7 +475,14 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
           );
         }
 
-        final teikers = snapshot.data ?? [];
+        final firestoreTeikers = snapshot.data ?? [];
+        final currentAdminProfile = _buildCurrentSpecialProfile(
+          firestoreTeikers,
+        );
+        final teikers = [
+          if (currentAdminProfile != null) currentAdminProfile,
+          ...firestoreTeikers,
+        ];
         _preloadHoursTotals(teikers);
         final filteredTeikers = _applyFilters(teikers);
 

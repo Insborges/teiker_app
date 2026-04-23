@@ -28,6 +28,18 @@ abstract class WorkSessionRepository {
     String? createdByRole,
   });
 
+  Future<WorkSession?> findSessionById({required String sessionId});
+
+  Future<WorkSession> updateManualSession({
+    required String sessionId,
+    required String clienteId,
+    required String teikerId,
+    required DateTime start,
+    required DateTime end,
+    String? updatedById,
+    String? updatedByRole,
+  });
+
   Future<bool> hasSessionOverlap({
     required String teikerId,
     required DateTime start,

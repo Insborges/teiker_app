@@ -102,6 +102,9 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
 
   String _currentMarcacaoWriterName() {
     final user = ref.read(authStateProvider).asData?.value;
+    final role = ref.read(userRoleProvider);
+    if (role.isDeveloper) return AppUserRoleResolver.developerName;
+
     final displayName = (user?.displayName ?? '').trim();
     if (displayName.isNotEmpty) return displayName;
 
@@ -111,7 +114,6 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       if (localPart.isNotEmpty) return localPart;
     }
 
-    final role = ref.read(userRoleProvider);
     if (role.isAdmin) return 'Admin';
     if (role.isHr) return 'Recursos Humanos';
 
@@ -600,6 +602,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   String _creatorNameForCurrentUser(AppUserRole role, String? userId) {
+    if (role.isDeveloper) return AppUserRoleResolver.developerName;
     if (role.isAdmin) return 'Admin';
     if (role.isHr) return 'Recursos Humanos';
     if (userId == null || userId.trim().isEmpty) return 'Utilizador';

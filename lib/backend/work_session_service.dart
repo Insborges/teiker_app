@@ -187,6 +187,79 @@ class WorkSessionService {
       createdByRole: role.name,
     );
 
+    await _repository.calculateMonthlyTotal(
+      clienteId: clienteId,
+      referenceDate: start,
+    );
+
+    return _repository.calculateMonthlyTotalForTeiker(
+      clienteId: clienteId,
+      teikerId: teikerId,
+      referenceDate: start,
+    );
+  }
+
+  Future<double> updateManualSessionForTeikerByAdmin({
+    required String sessionId,
+    required String clienteId,
+    required String teikerId,
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    final adminId = _requireUser();
+    final role = AppUserRoleResolver.fromEmail(_auth.currentUser?.email);
+    if (!role.isAdmin) {
+      throw Exception('Só a admin pode alterar horas de uma teiker.');
+    }
+    if (sessionId.trim().isEmpty) {
+      throw Exception('Sessão inválida.');
+    }
+    if (clienteId.trim().isEmpty) {
+      throw Exception('Cliente inválido.');
+    }
+    if (teikerId.trim().isEmpty) {
+      throw Exception('Teiker inválida.');
+    }
+    if (!end.isAfter(start)) {
+      throw Exception('A hora de fim deve ser posterior ao início.');
+    }
+    _ensureNotFuture(start);
+    _ensureNotFuture(end);
+
+    final existing = await _repository.findSessionById(sessionId: sessionId);
+    if (existing == null) {
+      throw Exception('Sessão não encontrada.');
+    }
+    if (existing.teikerId != teikerId) {
+      throw Exception('Esta sessão pertence a outra teiker.');
+    }
+
+    await _ensureNoOverlap(
+      teikerId: teikerId,
+      start: start,
+      end: end,
+      excludingSessionId: sessionId,
+    );
+
+    await _repository.updateManualSession(
+      sessionId: sessionId,
+      clienteId: clienteId,
+      teikerId: teikerId,
+      start: start,
+      end: end,
+      updatedById: adminId,
+      updatedByRole: role.name,
+    );
+
+    await _repository.calculateMonthlyTotal(
+      clienteId: existing.clienteId,
+      referenceDate: existing.startTime,
+    );
+    await _repository.calculateMonthlyTotal(
+      clienteId: clienteId,
+      referenceDate: start,
+    );
+
     return _repository.calculateMonthlyTotalForTeiker(
       clienteId: clienteId,
       teikerId: teikerId,

@@ -34,10 +34,14 @@ import 'package:teiker_app/backend/TeikerService.dart';
 class TeikersDetails extends StatefulWidget {
   final Teiker teiker;
   final bool canEditPersonalInfo;
+  final bool isAdminSelfProfile;
+  final AppUserRole? specialProfileRole;
   const TeikersDetails({
     super.key,
     required this.teiker,
     this.canEditPersonalInfo = true,
+    this.isAdminSelfProfile = false,
+    this.specialProfileRole,
   });
 
   @override
@@ -68,14 +72,15 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   final Set<String> _deletingDocumentIds = <String>{};
   final Set<String> _openingDocumentIds = <String>{};
 
-  bool get _canManageTeikerDocuments =>
-      _authService.currentUserRole == AppUserRole.admin;
+  bool get _canManageTeikerDocuments => _authService.currentUserRole.isAdmin;
 
-  bool get _canAddTeikerHoursByAdmin =>
-      _authService.currentUserRole == AppUserRole.admin;
+  bool get _canAddTeikerHoursByAdmin => _authService.currentUserRole.isAdmin;
 
-  bool get _showTeikerDocumentsCard =>
-      _authService.currentUserRole == AppUserRole.admin;
+  bool get _showTeikerDocumentsCard => _authService.currentUserRole.isAdmin;
+
+  bool get _isDeveloperProfile =>
+      widget.specialProfileRole == AppUserRole.developer ||
+      AppUserRoleResolver.isDeveloperEmail(widget.teiker.email);
 
   @override
   void initState() {
@@ -83,7 +88,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     _savedEmail = widget.teiker.email.trim().toLowerCase();
     _emailController = TextEditingController(text: widget.teiker.email);
     _telemovelController = TextEditingController(
-      text: widget.teiker.telemovel.toString(),
+      text: widget.teiker.telemovel > 0
+          ? widget.teiker.telemovel.toString()
+          : '',
     );
     _birthDate = widget.teiker.birthDate;
     _phoneCountryIso = widget.teiker.phoneCountryIso;
@@ -223,10 +230,19 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     bool showSuccessSnack = true,
   }) async {
     try {
-      await FirebaseFirestore.instance
+      final docRef = FirebaseFirestore.instance
           .collection('teikers')
-          .doc(widget.teiker.uid)
-          .update({'marcacoes': _marcacoes.map((m) => m.toMap()).toList()});
+          .doc(widget.teiker.uid);
+      if (widget.specialProfileRole != null) {
+        await docRef.set(
+          widget.teiker.copyWith(marcacoes: _marcacoes).toMap(),
+          SetOptions(merge: true),
+        );
+      } else {
+        await docRef.update({
+          'marcacoes': _marcacoes.map((m) => m.toMap()).toList(),
+        });
+      }
 
       if (!mounted) return;
       if (showSuccessSnack) {
@@ -266,6 +282,10 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   ({String name, AppUserRole role}) _currentMarcacaoNoteWriter() {
     final user = FirebaseAuth.instance.currentUser;
     final role = AppUserRoleResolver.fromEmail(user?.email);
+
+    if (role.isDeveloper) {
+      return (name: AppUserRoleResolver.developerName, role: role);
+    }
 
     final displayName = (user?.displayName ?? '').trim();
     if (displayName.isNotEmpty) {
@@ -386,7 +406,11 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       return;
     }
 
-    final creatorName = role.isAdmin ? 'Admin' : 'Recursos Humanos';
+    final creatorName = role.isDeveloper
+        ? AppUserRoleResolver.developerName
+        : role.isAdmin
+        ? 'Admin'
+        : 'Recursos Humanos';
     final createdAt = DateTime.now();
     final firestore = FirebaseFirestore.instance;
     final reminderRef = firestore
@@ -794,8 +818,12 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     });
   }
 
-  Future<List<Clientes>> _loadManualHoursClientes() async {
-    final clientes = await _authService.getClientes();
+  Future<List<Clientes>> _loadManualHoursClientes({
+    bool includeArchived = false,
+  }) async {
+    final clientes = await _authService.getClientes(
+      includeArchived: includeArchived,
+    );
     final teikerId = widget.teiker.uid.trim();
     final linkedClientIds = widget.teiker.clientesIds
         .map((id) => id.trim())
@@ -891,6 +919,179 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       AppSnackBar.show(
         context,
         message: 'Erro a guardar horas: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  Clientes _placeholderCliente(String clienteId) {
+    return Clientes(
+      uid: clienteId,
+      nameCliente: clienteId.isEmpty ? 'Cliente' : clienteId,
+      moradaCliente: '',
+      cidadeCliente: '',
+      codigoPostal: '',
+      hourasCasa: 0,
+      telemovel: 0,
+      email: '',
+      orcamento: 0,
+      teikersIds: const [],
+    );
+  }
+
+  double _durationForSessionData(Map<String, dynamic> data) {
+    final stored = (data['durationHours'] as num?)?.toDouble();
+    if (stored != null) return stored;
+
+    final raw = (data['rawDurationHours'] as num?)?.toDouble();
+    if (raw != null) {
+      final multiplier = (data['durationMultiplier'] as num?)?.toDouble();
+      return multiplier != null && multiplier > 0 ? raw * multiplier : raw;
+    }
+
+    final start = (data['startTime'] as Timestamp?)?.toDate();
+    final end = (data['endTime'] as Timestamp?)?.toDate();
+    if (start == null || end == null || !end.isAfter(start)) return 0;
+    return end.difference(start).inMinutes / 60.0;
+  }
+
+  Future<List<_EditableWorkSession>> _loadEditableHourSessions(
+    List<Clientes> clientes,
+  ) async {
+    final clientsById = {for (final cliente in clientes) cliente.uid: cliente};
+    final snapshot = await FirebaseFirestore.instance
+        .collection('workSessions')
+        .where('teikerId', isEqualTo: widget.teiker.uid)
+        .get();
+
+    final sessions = <_EditableWorkSession>[];
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final clienteId = (data['clienteId'] as String?)?.trim() ?? '';
+      final start = (data['startTime'] as Timestamp?)?.toDate();
+      final end = (data['endTime'] as Timestamp?)?.toDate();
+      if (clienteId.isEmpty || start == null || end == null) continue;
+
+      final cliente = clientsById[clienteId] ?? _placeholderCliente(clienteId);
+      sessions.add(
+        _EditableWorkSession(
+          id: doc.id,
+          cliente: cliente,
+          start: start,
+          end: end,
+          durationHours: _durationForSessionData(data),
+        ),
+      );
+    }
+
+    sessions.sort((a, b) => b.start.compareTo(a.start));
+    return sessions;
+  }
+
+  Future<void> _openEditManualHoursSheet() async {
+    if (!_canAddTeikerHoursByAdmin) {
+      AppSnackBar.show(
+        context,
+        message: 'Só a admin pode alterar horas de uma teiker.',
+        icon: Icons.lock_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    List<Clientes> clientes;
+    List<_EditableWorkSession> sessions;
+    try {
+      clientes = await _loadManualHoursClientes(includeArchived: true);
+      sessions = await _loadEditableHourSessions(clientes);
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Não foi possível carregar os registos: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    if (sessions.isEmpty) {
+      AppSnackBar.show(
+        context,
+        message: 'Ainda não há horas para alterar nesta teiker.',
+        icon: Icons.info_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    final clientIds = clientes.map((cliente) => cliente.uid).toSet();
+    final editableClientes = [...clientes];
+    for (final session in sessions) {
+      if (clientIds.add(session.cliente.uid)) {
+        editableClientes.add(session.cliente);
+      }
+    }
+
+    final selectedSession = await showModalBottomSheet<_EditableWorkSession>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _EditableHoursPickerSheet(
+        primaryColor: _primaryColor,
+        teikerName: widget.teiker.nameTeiker,
+        sessions: sessions,
+      ),
+    );
+    if (selectedSession == null || !mounted) return;
+
+    final result = await showModalBottomSheet<_AdminManualHoursInput>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AdminManualHoursSheet(
+        primaryColor: _primaryColor,
+        teikerName: widget.teiker.nameTeiker,
+        clientes: editableClientes,
+        initialCliente: selectedSession.cliente,
+        initialStart: selectedSession.start,
+        initialEnd: selectedSession.end,
+        title: 'Alterar horas',
+        submitLabel: 'Atualizar',
+      ),
+    );
+    if (result == null) return;
+
+    try {
+      await _workSessionService.updateManualSessionForTeikerByAdmin(
+        sessionId: selectedSession.id,
+        clienteId: result.cliente.uid,
+        teikerId: widget.teiker.uid,
+        start: result.start,
+        end: result.end,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _hoursFuture = _hoursOverviewService.fetchMonthlyTotals(
+          teikerId: widget.teiker.uid,
+        );
+      });
+      AppSnackBar.show(
+        context,
+        message: 'Registo de horas atualizado.',
+        icon: Icons.edit_calendar_rounded,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro a atualizar horas: $e',
         icon: Icons.error_outline,
         background: Colors.red.shade700,
       );
@@ -1098,20 +1299,21 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   @override
   Widget build(BuildContext context) {
     final teiker = widget.teiker;
+    final showMarcacoesTab = !widget.isAdminSelfProfile;
 
     return Scaffold(
       appBar: buildAppBar(teiker.nameTeiker, seta: true),
       body: DefaultTabController(
-        length: 2,
+        length: showMarcacoesTab ? 2 : 1,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             children: [
               AppPillTabBar(
                 primaryColor: _primaryColor,
-                tabs: const [
-                  Tab(text: 'Informações'),
-                  Tab(text: 'Marcações'),
+                tabs: [
+                  const Tab(text: 'Informações'),
+                  if (showMarcacoesTab) const Tab(text: 'Marcações'),
                 ],
               ),
               const SizedBox(height: 12),
@@ -1126,7 +1328,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       emailController: _emailController,
                       telemovelController: _telemovelController,
                       canEditPersonalInfo: widget.canEditPersonalInfo,
-                      canAddManualHours: _canAddTeikerHoursByAdmin,
+                      showHoursSection: !_isDeveloperProfile,
+                      canAddManualHours:
+                          _canAddTeikerHoursByAdmin && !_isDeveloperProfile,
                       phoneCountryIso: _phoneCountryIso,
                       onPhoneCountryChanged: (iso) {
                         setState(() => _phoneCountryIso = iso);
@@ -1135,8 +1339,13 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       onSaveChanges: _guardarAlteracoes,
                       hoursFuture: _hoursFuture,
                       onAddManualHours: _openAddManualHoursSheet,
-                      showDocumentsCard: _showTeikerDocumentsCard,
-                      canManageDocuments: _canManageTeikerDocuments,
+                      onEditManualHours: _openEditManualHoursSheet,
+                      showDocumentsCard:
+                          _showTeikerDocumentsCard &&
+                          !widget.isAdminSelfProfile,
+                      canManageDocuments:
+                          _canManageTeikerDocuments &&
+                          !widget.isAdminSelfProfile,
                       uploadingDocument: _uploadingDocument,
                       documentsStream: _teikerDocumentService
                           .watchTeikerDocuments(widget.teiker.uid),
@@ -1145,28 +1354,32 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       onOpenDocument: _openTeikerDocument,
                       onDeleteDocument: _deleteTeikerDocument,
                     ),
-                    TeikerDetailsMarcacoesTab(
-                      primaryColor: _primaryColor,
-                      marcacoes: _marcacoes,
-                      onAddMarcacao: _openMarcacaoSheet,
-                      onOpenMarcacaoNotes: _openMarcacaoNotesDialog,
-                      onEditMarcacao: _openMarcacaoSheet,
-                      onDeleteMarcacao: _confirmDeleteMarcacao,
-                      baixasPeriodos: _baixasPeriodos,
-                      baixasDaysCount: _countBaixasDays(_baixasPeriodos),
-                      onAddBaixa: () => _adicionarBaixa(),
-                      onEditBaixa: _editarBaixaPeriodo,
-                      onDeleteBaixa: _eliminarBaixaPeriodo,
-                      consultas: _consultas,
-                      onEditConsulta: _openConsultaSheet,
-                      onDeleteConsulta: _confirmDeleteConsulta,
-                      onAddConsulta: () => _openConsultaSheet(),
-                      feriasPeriodos: _feriasPeriodos,
-                      feriasDaysCount: _countFeriasDays(_feriasPeriodos),
-                      onAddFerias: _adicionarFerias,
-                      onEditFerias: _editarFeriasPeriodo,
-                      onDeleteFerias: _eliminarFeriasPeriodo,
-                    ),
+                    if (showMarcacoesTab)
+                      TeikerDetailsMarcacoesTab(
+                        primaryColor: _primaryColor,
+                        showBaixas: !_isDeveloperProfile,
+                        showConsultas: !_isDeveloperProfile,
+                        showFerias: !_isDeveloperProfile,
+                        marcacoes: _marcacoes,
+                        onAddMarcacao: _openMarcacaoSheet,
+                        onOpenMarcacaoNotes: _openMarcacaoNotesDialog,
+                        onEditMarcacao: _openMarcacaoSheet,
+                        onDeleteMarcacao: _confirmDeleteMarcacao,
+                        baixasPeriodos: _baixasPeriodos,
+                        baixasDaysCount: _countBaixasDays(_baixasPeriodos),
+                        onAddBaixa: () => _adicionarBaixa(),
+                        onEditBaixa: _editarBaixaPeriodo,
+                        onDeleteBaixa: _eliminarBaixaPeriodo,
+                        consultas: _consultas,
+                        onEditConsulta: _openConsultaSheet,
+                        onDeleteConsulta: _confirmDeleteConsulta,
+                        onAddConsulta: () => _openConsultaSheet(),
+                        feriasPeriodos: _feriasPeriodos,
+                        feriasDaysCount: _countFeriasDays(_feriasPeriodos),
+                        onAddFerias: _adicionarFerias,
+                        onEditFerias: _editarFeriasPeriodo,
+                        onDeleteFerias: _eliminarFeriasPeriodo,
+                      ),
                   ],
                 ),
               ),
@@ -1190,16 +1403,42 @@ class _AdminManualHoursInput {
   final DateTime end;
 }
 
+class _EditableWorkSession {
+  const _EditableWorkSession({
+    required this.id,
+    required this.cliente,
+    required this.start,
+    required this.end,
+    required this.durationHours,
+  });
+
+  final String id;
+  final Clientes cliente;
+  final DateTime start;
+  final DateTime end;
+  final double durationHours;
+}
+
 class _AdminManualHoursSheet extends StatefulWidget {
   const _AdminManualHoursSheet({
     required this.primaryColor,
     required this.teikerName,
     required this.clientes,
+    this.initialCliente,
+    this.initialStart,
+    this.initialEnd,
+    this.title = 'Adicionar horas',
+    this.submitLabel = 'Guardar',
   });
 
   final Color primaryColor;
   final String teikerName;
   final List<Clientes> clientes;
+  final Clientes? initialCliente;
+  final DateTime? initialStart;
+  final DateTime? initialEnd;
+  final String title;
+  final String submitLabel;
 
   @override
   State<_AdminManualHoursSheet> createState() => _AdminManualHoursSheetState();
@@ -1214,7 +1453,20 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedCliente = widget.clientes.first;
+    _selectedCliente = widget.initialCliente ?? widget.clientes.first;
+    final initialStart = widget.initialStart;
+    final initialEnd = widget.initialEnd;
+    if (initialStart != null) {
+      _selectedDate = DateTime(
+        initialStart.year,
+        initialStart.month,
+        initialStart.day,
+      );
+      _startTime = TimeOfDay.fromDateTime(initialStart);
+    }
+    if (initialEnd != null) {
+      _endTime = TimeOfDay.fromDateTime(initialEnd);
+    }
   }
 
   String _formatDate(DateTime date) {
@@ -1352,7 +1604,7 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
   @override
   Widget build(BuildContext context) {
     return AppBottomSheetShell(
-      title: 'Adicionar horas',
+      title: widget.title,
       subtitle: 'Registar horas para ${widget.teikerName}',
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1411,7 +1663,7 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
               const SizedBox(width: 10),
               Expanded(
                 child: AppButton(
-                  text: 'Guardar',
+                  text: widget.submitLabel,
                   icon: Icons.save_rounded,
                   color: widget.primaryColor,
                   onPressed: _submit,
@@ -1420,6 +1672,109 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EditableHoursPickerSheet extends StatelessWidget {
+  const _EditableHoursPickerSheet({
+    required this.primaryColor,
+    required this.teikerName,
+    required this.sessions,
+  });
+
+  final Color primaryColor;
+  final String teikerName;
+  final List<_EditableWorkSession> sessions;
+
+  String _formatSessionDate(DateTime date) {
+    return DateFormat('dd/MM/yyyy', 'pt_PT').format(date);
+  }
+
+  String _formatTime(DateTime date) {
+    return DateFormat('HH:mm', 'pt_PT').format(date);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBottomSheetShell(
+      title: 'Alterar horas',
+      subtitle: 'Escolhe o registo de $teikerName que queres corrigir',
+      child: SizedBox(
+        height: 460,
+        child: ListView.separated(
+          itemCount: sessions.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final session = sessions[index];
+            return InkWell(
+              onTap: () => Navigator.of(context).pop(session),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: primaryColor.withValues(alpha: .16),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: .1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.edit_calendar, color: primaryColor),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            session.cliente.nameCliente,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${_formatSessionDate(session.start)} • ${_formatTime(session.start)} - ${_formatTime(session.end)}',
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${session.durationHours.toStringAsFixed(1)} h',
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: primaryColor),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

@@ -11,16 +11,17 @@ import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
-enum MainRole { admin, hr, teiker }
+enum MainRole { admin, developer, hr, teiker }
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key, required this.role});
 
   final MainRole role;
 
-  bool get isAdmin => role == MainRole.admin;
+  bool get isAdmin => role == MainRole.admin || role == MainRole.developer;
+  bool get isDeveloper => role == MainRole.developer;
   bool get isHr => role == MainRole.hr;
-  bool get isPrivileged => role == MainRole.admin || role == MainRole.hr;
+  bool get isPrivileged => isAdmin || isHr;
 
   @override
   State<MainScreen> createState() => _MainScreenState();
@@ -50,11 +51,15 @@ class _MainScreenState extends State<MainScreen> {
 
   List<Widget> _pages() {
     if (_isAdmin) {
-      return const [
+      return [
         HomeScreen(),
         TeikersInfoScreen(),
         ClientesScreen(),
-        DefinicoesScreen(role: SettingsRole.admin),
+        DefinicoesScreen(
+          role: widget.isDeveloper
+              ? SettingsRole.developer
+              : SettingsRole.admin,
+        ),
       ];
     }
 

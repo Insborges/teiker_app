@@ -15,20 +15,23 @@ import 'package:teiker_app/Widgets/ResetPasswordDialog.dart';
 import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
 import 'package:teiker_app/Widgets/profile_image_picker_sheet.dart';
 import 'package:teiker_app/Widgets/settings_option_card.dart';
+import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
-enum SettingsRole { admin, hr, teiker }
+enum SettingsRole { admin, developer, hr, teiker }
 
 class DefinicoesScreen extends StatefulWidget {
   const DefinicoesScreen({super.key, required this.role});
 
   final SettingsRole role;
 
-  bool get isAdmin => role == SettingsRole.admin;
+  bool get isAdmin =>
+      role == SettingsRole.admin || role == SettingsRole.developer;
+  bool get isDeveloper => role == SettingsRole.developer;
   bool get isHr => role == SettingsRole.hr;
-  bool get isPrivileged => isAdmin || isHr;
+  bool get isPrivileged => isAdmin || isHr || isDeveloper;
 
   @override
   State<DefinicoesScreen> createState() => _DefinicoesScreenState();
@@ -80,11 +83,14 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
       _profileImageUrl = photoUrl;
       _profileImageBytes = bytes;
 
-      if (widget.isAdmin) {
-        _displayName = 'Sónia Pereira';
+      if (widget.isDeveloper) {
+        _displayName = AppUserRoleResolver.developerName;
+        _displaySubtitle = 'Developer';
+      } else if (widget.isAdmin) {
+        _displayName = AppUserRoleResolver.adminName;
         _displaySubtitle = 'Gestora da Teiker';
       } else if (widget.isHr) {
-        _displayName = 'Mary Borges';
+        _displayName = AppUserRoleResolver.hrName;
         _displaySubtitle = 'Recursos Humanos';
       } else {
         _displayName =

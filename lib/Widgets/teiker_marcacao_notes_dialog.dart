@@ -125,12 +125,16 @@ class _TeikerMarcacaoNotesDialogViewState
   }
 
   String _writerSuffix() {
+    if (widget.writerRole.isDeveloper) return 'Developer';
     if (widget.writerRole.isAdmin) return 'Owner Teiker';
     if (widget.writerRole.isHr) return 'Recursos Humanos';
     return 'Teiker';
   }
 
   String _normalizedWriterName() {
+    if (widget.writerRole.isDeveloper) {
+      return AppUserRoleResolver.developerName;
+    }
     final trimmed = widget.writerName.trim();
     if (trimmed.isNotEmpty) return trimmed;
     if (widget.writerRole.isAdmin) return 'Admin';

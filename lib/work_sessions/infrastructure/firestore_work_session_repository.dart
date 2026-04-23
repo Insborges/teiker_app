@@ -9,10 +9,13 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
   FirestoreWorkSessionRepository(this.firestore);
 
   WorkSession _toWorkSession(
-    QueryDocumentSnapshot<Map<String, dynamic>> doc, {
+    DocumentSnapshot<Map<String, dynamic>> doc, {
     required String fallbackTeikerId,
   }) {
     final data = doc.data();
+    if (data == null) {
+      throw Exception('Sessão sem dados.');
+    }
     return WorkSession(
       id: doc.id,
       clienteId: data['clienteId'] as String,
@@ -23,6 +26,26 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
           : null,
       durationHours: (data['durationHours'] as num?)?.toDouble(),
     );
+  }
+
+  double _rawDurationHours(DateTime start, DateTime end) {
+    return end.difference(start).inMinutes / 60.0;
+  }
+
+  Map<String, dynamic> _sessionDurationPayload({
+    required DateTime start,
+    required DateTime end,
+  }) {
+    final rawDuration = _rawDurationHours(start, end);
+    final durationMultiplier = FixedHolidayHoursPolicy.multiplierFor(start);
+    final duration = rawDuration * durationMultiplier;
+
+    return {
+      'durationHours': duration,
+      'rawDurationHours': rawDuration,
+      'durationMultiplier': durationMultiplier,
+      'isFixedHolidayRateApplied': durationMultiplier > 1,
+    };
   }
 
   @override
@@ -285,19 +308,14 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     if (!end.isAfter(start)) {
       throw Exception('A hora de fim deve ser posterior ao início.');
     }
-    final rawDuration = end.difference(start).inMinutes / 60.0;
-    final durationMultiplier = FixedHolidayHoursPolicy.multiplierFor(start);
-    final duration = rawDuration * durationMultiplier;
+    final durationPayload = _sessionDurationPayload(start: start, end: end);
 
     final payload = <String, dynamic>{
       'clienteId': clienteId,
       'teikerId': teikerId,
       'startTime': Timestamp.fromDate(start),
       'endTime': Timestamp.fromDate(end),
-      'durationHours': duration,
-      'rawDurationHours': rawDuration,
-      'durationMultiplier': durationMultiplier,
-      'isFixedHolidayRateApplied': durationMultiplier > 1,
+      ...durationPayload,
     };
     if (createdById != null && createdById.trim().isNotEmpty) {
       payload['createdById'] = createdById.trim();
@@ -314,7 +332,67 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       teikerId: teikerId,
       startTime: start,
       endTime: end,
-      durationHours: duration,
+      durationHours: durationPayload['durationHours'] as double,
+    );
+  }
+
+  @override
+  Future<WorkSession?> findSessionById({required String sessionId}) async {
+    if (sessionId.trim().isEmpty) return null;
+
+    final doc = await firestore
+        .collection('workSessions')
+        .doc(sessionId.trim())
+        .get();
+    if (!doc.exists) return null;
+    return _toWorkSession(doc, fallbackTeikerId: '');
+  }
+
+  @override
+  Future<WorkSession> updateManualSession({
+    required String sessionId,
+    required String clienteId,
+    required String teikerId,
+    required DateTime start,
+    required DateTime end,
+    String? updatedById,
+    String? updatedByRole,
+  }) async {
+    if (sessionId.trim().isEmpty) {
+      throw Exception('Sessão inválida.');
+    }
+    if (!end.isAfter(start)) {
+      throw Exception('A hora de fim deve ser posterior ao início.');
+    }
+
+    final durationPayload = _sessionDurationPayload(start: start, end: end);
+    final payload = <String, dynamic>{
+      'clienteId': clienteId,
+      'teikerId': teikerId,
+      'startTime': Timestamp.fromDate(start),
+      'endTime': Timestamp.fromDate(end),
+      ...durationPayload,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+    if (updatedById != null && updatedById.trim().isNotEmpty) {
+      payload['updatedById'] = updatedById.trim();
+    }
+    if (updatedByRole != null && updatedByRole.trim().isNotEmpty) {
+      payload['updatedByRole'] = updatedByRole.trim();
+    }
+
+    await firestore
+        .collection('workSessions')
+        .doc(sessionId.trim())
+        .update(payload);
+
+    return WorkSession(
+      id: sessionId.trim(),
+      clienteId: clienteId,
+      teikerId: teikerId,
+      startTime: start,
+      endTime: end,
+      durationHours: durationPayload['durationHours'] as double,
     );
   }
 

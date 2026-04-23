@@ -497,7 +497,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/RunnerProfile.entitlements;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 6;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = V388MPVQKZ;
 				ENABLE_BITCODE = NO;
@@ -509,6 +509,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 2;
 				NEW_SETTING = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.company.teikers;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -691,7 +692,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 6;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = V388MPVQKZ;
 				ENABLE_BITCODE = NO;
@@ -703,6 +704,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 2;
 				NEW_SETTING = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.company.teikers;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -719,7 +721,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 6;
 				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = V388MPVQKZ;
 				ENABLE_BITCODE = NO;
@@ -731,6 +733,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = 2;
 				NEW_SETTING = "";
 				PRODUCT_BUNDLE_IDENTIFIER = com.company.teikers;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -25,6 +25,9 @@ class AuthGate extends ConsumerWidget {
       data: (user) {
         if (user == null) return LoginScreen();
 
+        if (role == AppUserRole.developer) {
+          return MainScreen(role: MainRole.developer);
+        }
         if (role == AppUserRole.admin) {
           return MainScreen(role: MainRole.admin);
         }

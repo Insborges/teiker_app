@@ -61,6 +61,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         controller: emailCtrl,
                         focusNode: _emailFocus,
                         keyboard: TextInputType.emailAddress,
+                        textCapitalization: TextCapitalization.none,
+                        autocorrect: false,
+                        enableSuggestions: false,
                         textInputAction: TextInputAction.next,
                         autofillHints: const [AutofillHints.email],
                         onFieldSubmitted: (_) {
@@ -78,6 +81,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         controller: passCtrl,
                         focusNode: _passFocus,
                         obscureText: obscurePassword,
+                        textCapitalization: TextCapitalization.none,
+                        autocorrect: false,
+                        enableSuggestions: false,
                         textInputAction: TextInputAction.done,
                         autofillHints: const [AutofillHints.password],
                         onFieldSubmitted: (_) => _login(context),
@@ -188,7 +194,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _login(BuildContext context) async {
     FocusScope.of(context).unfocus();
     final email = emailCtrl.text.trim();
-    final password = passCtrl.text.trim();
+    final password = passCtrl.text;
     final authNotifier = ref.read(authProvider.notifier);
 
     final ok = await authNotifier.login(email, password);

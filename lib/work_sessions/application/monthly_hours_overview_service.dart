@@ -35,6 +35,19 @@ class MonthlyHoursOverviewService {
       );
     }
 
+    if (totals.isEmpty) {
+      return {};
+    }
+
+    final months = totals.keys.toList()..sort((a, b) => a.compareTo(b));
+    final firstMonth = months.first;
+    final currentMonth = DateTime(DateTime.now().year, DateTime.now().month);
+    var cursor = DateTime(firstMonth.year, firstMonth.month);
+    while (!cursor.isAfter(currentMonth)) {
+      totals.putIfAbsent(cursor, () => 0);
+      cursor = DateTime(cursor.year, cursor.month + 1);
+    }
+
     return totals;
   }
 

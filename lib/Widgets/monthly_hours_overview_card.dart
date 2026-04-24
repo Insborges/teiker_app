@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:teiker_app/models/teiker_workload.dart';
 
 class MonthlyHoursOverviewCard extends StatefulWidget {
   const MonthlyHoursOverviewCard({
     super.key,
     required this.monthlyTotals,
     required this.primaryColor,
+    this.workPercentage,
     this.title = 'Horas por mês',
     this.emptyMessage = 'Sem horas registadas.',
     this.showHeader = true,
@@ -13,6 +15,7 @@ class MonthlyHoursOverviewCard extends StatefulWidget {
 
   final Map<DateTime, double> monthlyTotals;
   final Color primaryColor;
+  final int? workPercentage;
   final String title;
   final String emptyMessage;
   final bool showHeader;
@@ -60,16 +63,80 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
     return widget.monthlyTotals[DateTime(year, month)] ?? 0;
   }
 
+  double? _monthTarget(int year, int month) {
+    final workPercentage = widget.workPercentage;
+    if (workPercentage == null) return null;
+    return TeikerWorkload.monthlyHoursForPercentage(
+      workPercentage,
+      DateTime(year, month),
+    );
+  }
+
+  double? _monthBalance(int year, int month) {
+    final target = _monthTarget(year, month);
+    if (target == null) return null;
+    return _monthTotal(year, month) - target;
+  }
+
+  List<int> _monthsForYear(int year) {
+    final months = widget.monthlyTotals.keys
+        .where((month) => month.year == year)
+        .map((month) => month.month)
+        .toSet()
+        .toList();
+    months.sort();
+    return months;
+  }
+
+  double? _yearBalance(int year) {
+    if (widget.monthlyTotals.isEmpty || widget.workPercentage == null) {
+      return null;
+    }
+    final months = _monthsForYear(year);
+    if (months.isEmpty) return null;
+
+    return months.fold<double>(
+      0,
+      (total, month) => total + (_monthBalance(year, month) ?? 0),
+    );
+  }
+
+  Color _balanceColor(double balance) {
+    if (balance > 0.05) return Colors.green.shade700;
+    if (balance < -0.05) return Colors.red.shade700;
+    return Colors.grey.shade700;
+  }
+
+  String _balanceLabel(double balance) {
+    if (balance > 0.05) {
+      return '${balance.toStringAsFixed(1)} h a mais';
+    }
+    if (balance < -0.05) {
+      return '${balance.abs().toStringAsFixed(1)} h a menos';
+    }
+    return 'Meta do mês atingida';
+  }
+
+  String _yearBalanceLabel(double balance) {
+    if (balance > 0.05) {
+      return '${balance.toStringAsFixed(1)} h a mais';
+    }
+    if (balance < -0.05) {
+      return '${balance.abs().toStringAsFixed(1)} h a menos';
+    }
+    return '0.0 h';
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final currentMonthHours = _monthTotal(now.year, now.month);
+    final currentMonthBalance = _monthBalance(now.year, now.month);
+    final selectedYearBalance = _yearBalance(_selectedYear);
     final years = _availableYears;
     final monthsWithHours =
         widget.monthlyTotals.entries
-            .where(
-              (entry) => entry.key.year == _selectedYear && entry.value > 0,
-            )
+            .where((entry) => entry.key.year == _selectedYear)
             .toList()
           ..sort((a, b) => a.key.month.compareTo(b.key.month));
 
@@ -139,12 +206,26 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-              Text(
-                '${currentMonthHours.toStringAsFixed(1)} h',
-                style: TextStyle(
-                  color: widget.primaryColor,
-                  fontWeight: FontWeight.bold,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '${currentMonthHours.toStringAsFixed(1)} h',
+                    style: TextStyle(
+                      color: widget.primaryColor,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  if (currentMonthBalance != null)
+                    Text(
+                      _balanceLabel(currentMonthBalance),
+                      style: TextStyle(
+                        color: _balanceColor(currentMonthBalance),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
@@ -193,7 +274,11 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
               ),
               onPressed: () => setState(() => _expanded = true),
               icon: const Icon(Icons.expand_more),
-              label: Text('Ver meses de $_selectedYear'),
+              label: Text(
+                selectedYearBalance == null
+                    ? 'Ver meses de $_selectedYear'
+                    : 'Ver meses de $_selectedYear • ${_yearBalanceLabel(selectedYearBalance)}',
+              ),
             ),
           ),
           secondChild: Column(
@@ -211,7 +296,11 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
                   ),
                   onPressed: () => setState(() => _expanded = false),
                   icon: const Icon(Icons.expand_less),
-                  label: Text('Ocultar meses de $_selectedYear'),
+                  label: Text(
+                    selectedYearBalance == null
+                        ? 'Ocultar meses de $_selectedYear'
+                        : 'Ocultar meses de $_selectedYear • ${_yearBalanceLabel(selectedYearBalance)}',
+                  ),
                 ),
               ),
               Wrap(
@@ -220,6 +309,7 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
                 children: monthsWithHours.map((entry) {
                   final month = entry.key.month;
                   final total = entry.value;
+                  final balance = _monthBalance(_selectedYear, month);
                   return Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -232,8 +322,9 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
                         color: widget.primaryColor.withValues(alpha: .16),
                       ),
                     ),
-                    child: Row(
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           DateFormat(
@@ -242,7 +333,7 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
                           ).format(DateTime(_selectedYear, month)),
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
-                        const SizedBox(width: 6),
+                        const SizedBox(height: 4),
                         Text(
                           '${total.toStringAsFixed(1)}h',
                           style: TextStyle(
@@ -250,6 +341,17 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
+                        if (balance != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            _balanceLabel(balance),
+                            style: TextStyle(
+                              color: _balanceColor(balance),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   );

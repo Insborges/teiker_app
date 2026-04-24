@@ -76,6 +76,7 @@ class EventItemViewModel {
     final isTeikerMarcacao = AgendaEventUtils.isTeikerMarcacaoTag(rawTag);
     final isBirthday = event['isBirthday'] == true;
     final isFerias = event['isFerias'] == true;
+    final isHoliday = event['isHoliday'] == true;
     final isConsulta = event['isConsulta'] == true;
     final subtitle = (event['subtitle'] as String?)?.trim();
     final start = (event['start'] ?? '').toString();
@@ -95,6 +96,7 @@ class EventItemViewModel {
         !isAcontecimento &&
         !isTeikerMarcacao &&
         !isBirthday &&
+        !isHoliday &&
         subtitle != null &&
         subtitle.isNotEmpty;
     final showGenericTagChip =
@@ -108,6 +110,7 @@ class EventItemViewModel {
         !isAcontecimento &&
         !isTeikerMarcacao &&
         !isFerias &&
+        !isHoliday &&
         !isConsulta &&
         !isBirthday;
     final showBirthdayWishSubtitle =
@@ -159,6 +162,7 @@ class EventItemViewModel {
         isTeikerMarcacao: isTeikerMarcacao,
         isBirthday: isBirthday,
         isFerias: isFerias,
+        isHoliday: isHoliday,
         isConsulta: isConsulta,
       ),
       surfaceColor: selectedColor.withValues(alpha: isDone ? .14 : .07),
@@ -183,6 +187,7 @@ class EventItemViewModel {
         normalized == 'aniversario' ||
         normalized == 'consulta' ||
         normalized == 'baixa' ||
+        normalized == 'feriado' ||
         normalized == 'férias' ||
         normalized == 'ferias';
   }
@@ -193,6 +198,7 @@ class EventItemViewModel {
     required bool isTeikerMarcacao,
     required bool isBirthday,
     required bool isFerias,
+    required bool isHoliday,
     required bool isConsulta,
   }) {
     final normalized = (rawTag ?? '').trim().toLowerCase();
@@ -203,6 +209,9 @@ class EventItemViewModel {
           : Icons.groups_2_outlined;
     }
     if (isBirthday) return Icons.cake_outlined;
+    if (isHoliday || normalized.contains('feriado')) {
+      return Icons.celebration_outlined;
+    }
     if (isConsulta || normalized.contains('consulta')) {
       return Icons.medical_services_outlined;
     }

@@ -203,9 +203,13 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
+                  if (_selectedMonth != null) ...[
+                    _annualBalanceCard(_selectedMonth!),
+                    const SizedBox(height: 12),
+                  ],
                   if (_months.isNotEmpty)
                     SizedBox(
-                      height: 100,
+                      height: 114,
                       child: PageView.builder(
                         controller: _pageController,
                         itemCount: _months.length,
@@ -216,16 +220,20 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
                           return Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             child: _summaryCard(
+                              month,
                               DateFormat('MMMM yyyy', 'pt_PT').format(month),
                               total,
-                              _isAboveTarget(total),
                             ),
                           );
                         },
                       ),
                     )
                   else
-                    _summaryCard("Sem registos", 0, true),
+                    _summaryCard(
+                      DateTime(DateTime.now().year, DateTime.now().month),
+                      "Sem registos",
+                      0,
+                    ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
@@ -267,9 +275,111 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     );
   }
 
-  bool _isAboveTarget(double total) {
-    if (_targetHoras <= 0) return total >= 0;
-    return total >= _targetHoras;
+  double _monthlyTargetForMonth(DateTime month) {
+    return TeikerWorkload.monthlyHoursForPercentage(_workPercentage, month);
+  }
+
+  double _monthBalance(DateTime month, double total) {
+    return total - _monthlyTargetForMonth(month);
+  }
+
+  Color _balanceColor(double balance) {
+    if (balance > 0.05) return Colors.green.shade700;
+    if (balance < -0.05) return Colors.red.shade700;
+    return Colors.grey.shade700;
+  }
+
+  String _balanceLabel(double balance) {
+    if (balance > 0.05) {
+      return 'Fez ${balance.toStringAsFixed(1)} h a mais';
+    }
+    if (balance < -0.05) {
+      return 'Fez ${balance.abs().toStringAsFixed(1)} h a menos';
+    }
+    return 'Meta do mês atingida';
+  }
+
+  double _yearBalanceForYear(int year) {
+    final monthsInYear = _months.where((month) => month.year == year);
+    return monthsInYear.fold<double>(
+      0,
+      (total, month) =>
+          total + _monthBalance(month, _totalsByMonth[month] ?? 0),
+    );
+  }
+
+  String _yearBalanceLabel(double balance) {
+    if (balance > 0.05) {
+      return '${balance.toStringAsFixed(1)} h a mais';
+    }
+    if (balance < -0.05) {
+      return '${balance.abs().toStringAsFixed(1)} h a menos';
+    }
+    return '0.0 h';
+  }
+
+  Widget _annualBalanceCard(DateTime month) {
+    final yearBalance = _yearBalanceForYear(month.year);
+    final accent = _balanceColor(yearBalance);
+    final icon = yearBalance > 0.05
+        ? Icons.trending_up_rounded
+        : yearBalance < -0.05
+        ? Icons.trending_down_rounded
+        : Icons.balance_rounded;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _primary.withValues(alpha: .12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.10),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Saldo anual ${month.year}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _yearBalanceLabel(yearBalance),
+                  style: TextStyle(
+                    color: accent,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _onMonthChanged(int index) {
@@ -307,12 +417,26 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
                   ),
                 ),
-                trailing: Text(
-                  "${total.toStringAsFixed(1)} h",
-                  style: TextStyle(
-                    color: _primary,
-                    fontWeight: FontWeight.w700,
-                  ),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      "${total.toStringAsFixed(1)} h",
+                      style: TextStyle(
+                        color: _primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      _balanceLabel(_monthBalance(month, total)),
+                      style: TextStyle(
+                        color: _balanceColor(_monthBalance(month, total)),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
                 onTap: () {
                   Navigator.pop(context);
@@ -334,7 +458,12 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     );
   }
 
-  Widget _summaryCard(String label, double total, bool isPositive) {
+  Widget _summaryCard(DateTime month, String label, double total) {
+    final balance = _monthBalance(month, total);
+    final isPositive = balance >= 0;
+    final isNeutral = balance.abs() < 0.05;
+    final monthlyTarget = _monthlyTargetForMonth(month);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -353,7 +482,11 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
         children: [
           Icon(
             isPositive ? Icons.trending_up : Icons.trending_down,
-            color: isPositive ? Colors.green.shade700 : Colors.red.shade700,
+            color: isNeutral
+                ? Colors.grey.shade700
+                : isPositive
+                ? Colors.green.shade700
+                : Colors.red.shade700,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -385,9 +518,21 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 1),
+                const SizedBox(height: 2),
                 Text(
-                  "Meta semanal: ${_targetHoras.toStringAsFixed(0)} h ($_workPercentage%)",
+                  _balanceLabel(balance),
+                  style: TextStyle(
+                    color: _balanceColor(balance),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    height: 1.2,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  "Meta mês: ${monthlyTarget.toStringAsFixed(1)} h • Meta semanal: ${_targetHoras.toStringAsFixed(0)} h ($_workPercentage%)",
                   style: TextStyle(
                     color: Colors.grey.shade700,
                     fontWeight: FontWeight.w600,

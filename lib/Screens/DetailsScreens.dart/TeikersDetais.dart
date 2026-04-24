@@ -78,10 +78,6 @@ class _TeikersDetailsState extends State<TeikersDetails> {
 
   bool get _showTeikerDocumentsCard => _authService.currentUserRole.isAdmin;
 
-  bool get _isDeveloperProfile =>
-      widget.specialProfileRole == AppUserRole.developer ||
-      AppUserRoleResolver.isDeveloperEmail(widget.teiker.email);
-
   @override
   void initState() {
     super.initState();
@@ -1328,9 +1324,8 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       emailController: _emailController,
                       telemovelController: _telemovelController,
                       canEditPersonalInfo: widget.canEditPersonalInfo,
-                      showHoursSection: !_isDeveloperProfile,
-                      canAddManualHours:
-                          _canAddTeikerHoursByAdmin && !_isDeveloperProfile,
+                      showHoursSection: true,
+                      canAddManualHours: _canAddTeikerHoursByAdmin,
                       phoneCountryIso: _phoneCountryIso,
                       onPhoneCountryChanged: (iso) {
                         setState(() => _phoneCountryIso = iso);
@@ -1357,9 +1352,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                     if (showMarcacoesTab)
                       TeikerDetailsMarcacoesTab(
                         primaryColor: _primaryColor,
-                        showBaixas: !_isDeveloperProfile,
-                        showConsultas: !_isDeveloperProfile,
-                        showFerias: !_isDeveloperProfile,
+                        showBaixas: true,
+                        showConsultas: true,
+                        showFerias: true,
                         marcacoes: _marcacoes,
                         onAddMarcacao: _openMarcacaoSheet,
                         onOpenMarcacaoNotes: _openMarcacaoNotesDialog,

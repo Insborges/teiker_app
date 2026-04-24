@@ -33,12 +33,21 @@ class AppBottomNavBar extends StatelessWidget {
       return _buildDesktopBar(context, mediaQuery);
     }
 
-    return _buildMobileBar();
+    return _buildMobileBar(mediaQuery);
   }
 
-  Widget _buildMobileBar() {
+  Widget _buildMobileBar(MediaQueryData mediaQuery) {
+    final isCompact = mediaQuery.size.width <= 380;
+    final mobileBarHeight = isCompact ? 84.0 : barHeight;
+    final mobileFabSize = isCompact ? 56.0 : fabSize;
+    final navTop = isCompact ? 12.0 : 14.0;
+    final navLeft = isCompact ? 14.0 : 20.0;
+    final navRight = showFab
+        ? (isCompact ? 86.0 : 100.0)
+        : (isCompact ? 14.0 : 20.0);
+
     return SizedBox(
-      height: barHeight,
+      height: mobileBarHeight,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -50,8 +59,8 @@ class AppBottomNavBar extends StatelessWidget {
               right: 10,
               top: -20,
               child: Container(
-                width: fabSize + 12,
-                height: fabSize + 12,
+                width: mobileFabSize + 12,
+                height: mobileFabSize + 12,
                 decoration: BoxDecoration(
                   color: appBackground,
                   borderRadius: BorderRadius.circular(22),
@@ -61,9 +70,9 @@ class AppBottomNavBar extends StatelessWidget {
 
           // NAV ITEMS
           Positioned(
-            left: 20,
-            right: showFab ? 100 : 20,
-            top: 14,
+            left: navLeft,
+            right: navRight,
+            top: navTop,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -74,6 +83,7 @@ class AppBottomNavBar extends StatelessWidget {
                     activeIcon: items[i].activeIcon ?? items[i].icon,
                     label: items[i].label,
                     onTap: () => onTap(i),
+                    compact: isCompact,
                   ),
               ],
             ),
@@ -90,8 +100,8 @@ class AppBottomNavBar extends StatelessWidget {
                   children: [
                     // BOTÃO PRINCIPAL
                     Container(
-                      width: fabSize,
-                      height: fabSize,
+                      width: mobileFabSize,
+                      height: mobileFabSize,
                       decoration: BoxDecoration(
                         color: barColor,
                         borderRadius: BorderRadius.circular(16),
@@ -106,7 +116,7 @@ class AppBottomNavBar extends StatelessWidget {
                       child: Icon(
                         fabOpen ? CupertinoIcons.xmark : Icons.add,
                         color: Colors.white,
-                        size: 26,
+                        size: isCompact ? 24 : 26,
                       ),
                     ),
                   ],
@@ -207,6 +217,7 @@ class _NavItem extends StatelessWidget {
   final IconData activeIcon;
   final String label;
   final VoidCallback onTap;
+  final bool compact;
 
   const _NavItem({
     required this.active,
@@ -214,14 +225,20 @@ class _NavItem extends StatelessWidget {
     required this.activeIcon,
     required this.label,
     required this.onTap,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final width = compact ? 48.0 : 56.0;
+    final iconSize = compact ? 26.0 : 30.0;
+    final labelSize = compact ? 11.0 : 12.0;
+    final spacing = compact ? 4.0 : 6.0;
+
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
-        width: 56,
+        width: width,
         child: Column(
           children: [
             AnimatedSwitcher(
@@ -229,19 +246,22 @@ class _NavItem extends StatelessWidget {
               child: Icon(
                 active ? activeIcon : icon,
                 key: ValueKey(active),
-                size: 30,
+                size: iconSize,
                 color: Colors.white,
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: spacing),
             AnimatedOpacity(
               duration: const Duration(milliseconds: 180),
               opacity: active ? 1 : 0,
               child: active
                   ? Text(
                       label,
-                      style: const TextStyle(
-                        fontSize: 12,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: labelSize,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
                       ),

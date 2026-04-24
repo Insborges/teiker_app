@@ -213,7 +213,7 @@ Future<TeikerFormData?> showAddTeikerFormSheet(BuildContext context) async {
                   onConfirm: () {
                     final name = nameController.text.trim();
                     final email = emailController.text.trim();
-                    final password = passwordController.text.trim();
+                    final password = passwordController.text;
                     final telemovel = telemovelController.text.trim();
 
                     if (_hasEmpty([name, telemovel])) {

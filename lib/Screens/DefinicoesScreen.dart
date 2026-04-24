@@ -6,11 +6,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:teiker_app/Screens/AdminInvoicesScreen.dart';
+import 'package:teiker_app/Screens/DetailsScreens.dart/TeikersDetais.dart';
 import 'package:teiker_app/Screens/AllTeikersHoursScreen.dart';
 import 'package:teiker_app/Screens/TeikerDocumentsScreen.dart';
 import 'package:teiker_app/Screens/TeikerHorasScreen.dart';
 import 'package:teiker_app/Widgets/AppSnackBar.dart';
 import 'package:teiker_app/Widgets/CurveAppBarClipper.dart';
+import 'package:teiker_app/Widgets/app_section_card.dart';
 import 'package:teiker_app/Widgets/ResetPasswordDialog.dart';
 import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
 import 'package:teiker_app/Widgets/profile_image_picker_sheet.dart';
@@ -18,6 +20,8 @@ import 'package:teiker_app/Widgets/settings_option_card.dart';
 import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
+import 'package:teiker_app/models/Teikers.dart';
+import 'package:teiker_app/models/teiker_workload.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
 enum SettingsRole { admin, developer, hr, teiker }
@@ -47,7 +51,11 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
   String _displayName = '';
   String _displaySubtitle = '';
 
-  String get _collection => widget.isPrivileged ? 'admins' : 'teikers';
+  String get _collection => widget.isDeveloper
+      ? 'teikers'
+      : widget.isPrivileged
+      ? 'admins'
+      : 'teikers';
   Color get _mainColor => AppColors.primaryGreen;
 
   @override
@@ -85,7 +93,7 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
 
       if (widget.isDeveloper) {
         _displayName = AppUserRoleResolver.developerName;
-        _displaySubtitle = 'Developer';
+        _displaySubtitle = 'Developer • Admin + Teiker';
       } else if (widget.isAdmin) {
         _displayName = AppUserRoleResolver.adminName;
         _displaySubtitle = 'Gestora da Teiker';
@@ -169,6 +177,58 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
     );
   }
 
+  Future<void> _openDeveloperProfile() async {
+    final user = FirebaseService().currentUser;
+    if (user == null) return;
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('teikers')
+          .doc(user.uid)
+          .get();
+
+      final teiker = doc.exists && doc.data() != null
+          ? Teiker.fromMap(doc.data()!, doc.id)
+          : Teiker(
+              uid: user.uid,
+              nameTeiker: AppUserRoleResolver.developerName,
+              email: user.email ?? AppUserRoleResolver.developerEmail,
+              birthDate: DateTime(2004, 2, 5),
+              telemovel: 0,
+              phoneCountryIso: 'PT',
+              horas: TeikerWorkload.weeklyHoursForPercentage(
+                TeikerWorkload.fullTime,
+              ),
+              workPercentage: TeikerWorkload.fullTime,
+              clientesIds: const [],
+              consultas: const [],
+              marcacoes: const [],
+              corIdentificadora: AppColors.primaryGreen,
+              isWorking: false,
+            );
+
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TeikersDetails(
+            teiker: teiker,
+            canEditPersonalInfo: false,
+            specialProfileRole: AppUserRole.developer,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Não foi possível abrir o perfil developer: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
   List<Widget> _buildActionButtons() {
     final buttons = <Widget>[
       SettingsOptionCard(
@@ -246,6 +306,108 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
     );
 
     return buttons;
+  }
+
+  List<Widget> _buildDeveloperSections() {
+    return [
+      AppSectionCard(
+        title: 'Visão Developer',
+        titleColor: _mainColor,
+        titleIcon: Icons.code_rounded,
+        children: [
+          Text(
+            'Aqui consegues validar a experiência da teiker e abrir o teu perfil completo sem perder o acesso de gestão.',
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SettingsOptionCard(
+            icon: Icons.account_circle_outlined,
+            label: 'Ver perfil completo',
+            onTap: _openDeveloperProfile,
+            color: _mainColor,
+          ),
+          SettingsOptionCard(
+            icon: Icons.timer_outlined,
+            label: 'Ver horas totais',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const TeikerHorasScreen()),
+              );
+            },
+            color: _mainColor,
+          ),
+          SettingsOptionCard(
+            icon: Icons.folder_copy_outlined,
+            label: 'Ver Documentos',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const TeikerDocumentsScreen(),
+                ),
+              );
+            },
+            color: _mainColor,
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      AppSectionCard(
+        title: 'Visão Admin',
+        titleColor: _mainColor,
+        titleIcon: Icons.admin_panel_settings_outlined,
+        children: [
+          SettingsOptionCard(
+            icon: Icons.receipt_long_outlined,
+            label: 'Ver as minhas faturas',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AdminInvoicesScreen()),
+              );
+            },
+            color: _mainColor,
+          ),
+          SettingsOptionCard(
+            icon: Icons.insights_outlined,
+            label: 'Horas de todas as teikers',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AllTeikersHoursScreen(),
+                ),
+              );
+            },
+            color: _mainColor,
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      AppSectionCard(
+        title: 'Conta',
+        titleColor: _mainColor,
+        titleIcon: Icons.settings_outlined,
+        children: [
+          SettingsOptionCard(
+            icon: Icons.lock_outline,
+            label: 'Recompor palavra-passe',
+            onTap: _openResetDialog,
+            color: _mainColor,
+          ),
+          SettingsOptionCard(
+            icon: Icons.logout,
+            label: 'Terminar Sessão',
+            onTap: _logout,
+            color: _mainColor,
+          ),
+        ],
+      ),
+    ];
   }
 
   @override
@@ -327,7 +489,11 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
                   20,
                   MediaQuery.of(context).padding.bottom + 20,
                 ),
-                child: Column(children: _buildActionButtons()),
+                child: Column(
+                  children: widget.isDeveloper
+                      ? _buildDeveloperSections()
+                      : _buildActionButtons(),
+                ),
               ),
             ),
           ),

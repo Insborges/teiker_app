@@ -57,6 +57,14 @@ class NotificationService {
     _managerEventOpenController.add(normalized);
   }
 
+  Future<void> _cancelLocalNotificationSafely(int id) async {
+    try {
+      await _local.cancel(id);
+    } catch (e) {
+      debugPrint('Falha ao cancelar notificação local $id: $e');
+    }
+  }
+
   Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
@@ -175,9 +183,14 @@ class NotificationService {
   }
 
   Future<void> cancelPendingSessionReminder(String sessionId) async {
-    await _local.cancel(_notificationId(sessionId));
-    await _local.cancel(_notificationId('${sessionId}_morning'));
-    await _local.cancel(_notificationId('${sessionId}_afternoon'));
+    if (sessionId.trim().isEmpty) return;
+    await _cancelLocalNotificationSafely(_notificationId(sessionId));
+    await _cancelLocalNotificationSafely(
+      _notificationId('${sessionId}_morning'),
+    );
+    await _cancelLocalNotificationSafely(
+      _notificationId('${sessionId}_afternoon'),
+    );
   }
 
   int _notificationId(String sessionId) => sessionId.hashCode & 0x7fffffff;
@@ -364,7 +377,7 @@ class NotificationService {
     required String scope,
     required String reminderId,
   }) async {
-    await _local.cancel(
+    await _cancelLocalNotificationSafely(
       _marcacaoStartsSoonNotificationId(scope: scope, reminderId: reminderId),
     );
   }
@@ -562,7 +575,7 @@ class NotificationService {
 
     if (user == null) {
       if (_birthdayNotificationUid != null) {
-        await _local.cancel(
+        await _cancelLocalNotificationSafely(
           _teikerBirthdayNotificationId(_birthdayNotificationUid!),
         );
       }
@@ -573,7 +586,7 @@ class NotificationService {
     final role = AppUserRoleResolver.fromEmail(user.email);
     if (role.isPrivileged) {
       if (_birthdayNotificationUid != null) {
-        await _local.cancel(
+        await _cancelLocalNotificationSafely(
           _teikerBirthdayNotificationId(_birthdayNotificationUid!),
         );
       }
@@ -583,7 +596,7 @@ class NotificationService {
 
     final uid = user.uid;
     if (_birthdayNotificationUid != null && _birthdayNotificationUid != uid) {
-      await _local.cancel(
+      await _cancelLocalNotificationSafely(
         _teikerBirthdayNotificationId(_birthdayNotificationUid!),
       );
     }
@@ -594,13 +607,13 @@ class NotificationService {
         .doc(uid)
         .get();
     if (!doc.exists) {
-      await _local.cancel(_teikerBirthdayNotificationId(uid));
+      await _cancelLocalNotificationSafely(_teikerBirthdayNotificationId(uid));
       return;
     }
 
     final data = doc.data();
     if (data == null) {
-      await _local.cancel(_teikerBirthdayNotificationId(uid));
+      await _cancelLocalNotificationSafely(_teikerBirthdayNotificationId(uid));
       return;
     }
 
@@ -608,7 +621,7 @@ class NotificationService {
         _parseBirthDate(data['birthDate']) ??
         _parseBirthDate(data['dataNascimento']);
     if (birthDate == null) {
-      await _local.cancel(_teikerBirthdayNotificationId(uid));
+      await _cancelLocalNotificationSafely(_teikerBirthdayNotificationId(uid));
       return;
     }
 

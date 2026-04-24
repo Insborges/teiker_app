@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'dart:ui';
+import 'package:teiker_app/utils/swiss_holiday_calendar.dart';
 
 class ModernCalendar extends StatefulWidget {
   final DateTime focusedDay;
@@ -64,16 +65,8 @@ class _ModernCalendarState extends State<ModernCalendar> {
 
   bool _isHoliday(DateTime d) {
     if (!widget.showHolidays) return false;
-    return _swissHolidays[d.month]?.contains(d.day) ?? false;
+    return SwissHolidayCalendar.isHoliday(d);
   }
-
-  Map<int, List<int>> get _swissHolidays => {
-    1: [1],
-    4: [18],
-    5: [1, 29],
-    8: [1],
-    12: [25, 26],
-  };
 
   void _goMonth(int delta) {
     setState(() {

@@ -19,6 +19,7 @@ class AgendaEventUtils {
 
   static bool isReminder(Map<String, dynamic> event) {
     if (isAcontecimento(event)) return false;
+    if (event['isHoliday'] == true) return false;
     if (event['isFerias'] == true) return false;
     if (event['isConsulta'] == true) return false;
     if (event['isBirthday'] == true) return false;
@@ -45,6 +46,7 @@ class AgendaEventUtils {
   static int eventOrderWeight(Map<String, dynamic> event) {
     if (isAcontecimento(event)) return 4;
     if (isTeikerMarcacaoAgendaEvent(event)) return 3;
+    if (event['isHoliday'] == true) return 1;
     if (event['isConsulta'] == true) return 2;
     if (event['isBirthday'] == true) return 0;
     if (event['isFerias'] == true) return 1;

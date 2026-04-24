@@ -29,11 +29,18 @@ class AppButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = MediaQuery.of(context).size.width <= 380;
     final borderColor = enabled ? color : Colors.grey.shade400;
     final backgroundColor = outline
         ? Colors.transparent
         : (enabled ? color : Colors.grey.shade400);
     final foregroundColor = outline ? borderColor : textColor;
+    final effectiveVerticalPadding = isCompact
+        ? (verticalPadding > 14 ? 14.0 : verticalPadding)
+        : verticalPadding;
+    final effectiveMinHeight = isCompact && minHeight >= 48 ? 44.0 : minHeight;
+    final fontSize = isCompact ? 15.0 : 16.0;
+    final iconSize = isCompact ? 20.0 : 24.0;
 
     return Material(
       color: Colors.transparent,
@@ -41,10 +48,10 @@ class AppButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(borderRadius),
         onTap: enabled ? onPressed : null,
         child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: minHeight),
+          constraints: BoxConstraints(minHeight: effectiveMinHeight),
           child: Container(
             width: double.infinity,
-            padding: EdgeInsets.symmetric(vertical: verticalPadding),
+            padding: EdgeInsets.symmetric(vertical: effectiveVerticalPadding),
             decoration: BoxDecoration(
               color: backgroundColor,
               borderRadius: BorderRadius.circular(borderRadius),
@@ -65,7 +72,7 @@ class AppButton extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (icon != null) ...[
-                  Icon(icon, color: foregroundColor),
+                  Icon(icon, color: foregroundColor, size: iconSize),
                   const SizedBox(width: 8),
                 ],
                 Flexible(
@@ -76,7 +83,7 @@ class AppButton extends StatelessWidget {
                     style: TextStyle(
                       color: foregroundColor,
                       fontWeight: FontWeight.bold,
-                      fontSize: 16,
+                      fontSize: fontSize,
                     ),
                   ),
                 ),

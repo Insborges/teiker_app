@@ -39,6 +39,12 @@ class TeikerWorkload {
     }
   }
 
+  static double monthlyHoursForPercentage(int percentage, DateTime month) {
+    final weeklyTarget = weeklyHoursForPercentage(percentage);
+    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
+    return weeklyTarget * (daysInMonth / 7.0);
+  }
+
   static String labelForPercentage(int percentage) {
     switch (percentage) {
       case fiftyPercent:

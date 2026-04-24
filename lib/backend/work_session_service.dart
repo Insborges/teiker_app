@@ -303,12 +303,12 @@ class WorkSessionService {
 
     final teikerId = _requireUser();
 
-    final session = await _repository.findOpenSession(
-      clienteId: clienteId,
-      teikerId: teikerId,
-    );
+    final session = await _repository.findSessionById(sessionId: sessionId);
 
-    if (session == null || session.id != sessionId) {
+    if (session == null ||
+        session.clienteId != clienteId ||
+        session.teikerId != teikerId ||
+        !session.isOpen) {
       throw Exception('Não existe sessão iniciada para este cliente.');
     }
     _ensureNotFuture(end);
@@ -345,20 +345,20 @@ class WorkSessionService {
     required DateTime startTime,
   }) async {
     final teikerId = _requireUser();
-    final open = await _repository.findOpenSession(
-      clienteId: clienteId,
-      teikerId: teikerId,
-    );
+    final session = await _repository.findSessionById(sessionId: sessionId);
 
-    if (open == null || open.id != sessionId) {
+    if (session == null ||
+        session.clienteId != clienteId ||
+        session.teikerId != teikerId ||
+        !session.isOpen) {
       throw Exception('Não existe sessão iniciada para este cliente.');
     }
     final end = DateTime.now();
     await _ensureNoOverlap(
       teikerId: teikerId,
-      start: open.startTime,
+      start: session.startTime,
       end: end,
-      excludingSessionId: open.id,
+      excludingSessionId: session.id,
     );
 
     await _repository.closeSession(sessionId: sessionId, end: end);

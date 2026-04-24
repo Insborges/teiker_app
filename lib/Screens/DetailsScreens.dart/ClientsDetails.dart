@@ -44,12 +44,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   static const List<String> _serviceCatalog = [
     'Shopping',
     'Laundry',
-    'Preparação de refeições',
-    'Passar a ferro',
-    'Medicação',
-    'Companhia',
-    'Transporte',
-    'Limpeza profunda',
+    'Deep Cleaning Carpet',
+    'Deep Cleaning',
   ];
 
   // Controllers

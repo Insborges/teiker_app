@@ -617,6 +617,8 @@ class _ClientesScreenState extends State<ClientesScreen> {
                             itemCount: filteredClientes.length,
                             itemBuilder: (context, index) {
                               final cliente = filteredClientes[index];
+                              final isCompactPhone =
+                                  MediaQuery.of(context).size.width <= 380;
                               final working =
                                   _openSessions[cliente.uid] != null;
                               final selected = _selectedClientes.contains(
@@ -692,7 +694,9 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                                   cliente.nameCliente,
                                                   style: TextStyle(
                                                     fontWeight: FontWeight.w600,
-                                                    fontSize: 20,
+                                                    fontSize: isCompactPhone
+                                                        ? 18
+                                                        : 20,
                                                     color: isArchived
                                                         ? Colors.white
                                                         : Colors.black87,
@@ -824,150 +828,39 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                         !_onlyArchived &&
                                         !_isHr) ...[
                                       const SizedBox(height: 10),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: AppButton(
-                                              text: 'Começar',
-                                              color: const Color.fromARGB(
-                                                255,
-                                                4,
-                                                76,
-                                                32,
-                                              ),
-                                              enabled:
-                                                  !working &&
-                                                  !_hasAnyOpenSession,
-                                              onPressed: () async {
-                                                try {
-                                                  final session =
-                                                      await _workSessionService
-                                                          .startSession(
-                                                            clienteId:
-                                                                cliente.uid,
-                                                            clienteName: cliente
-                                                                .nameCliente,
-                                                          );
-
-                                                  setState(() {
-                                                    _openSessions[cliente.uid] =
-                                                        session;
-                                                  });
-
-                                                  AppSnackBar.show(
-                                                    context,
-                                                    message:
-                                                        'Começaste às ${TimeOfDay.now().format(context)}!',
-                                                    icon: Icons.play_arrow,
-                                                    background:
-                                                        const Color.fromARGB(
-                                                          255,
-                                                          4,
-                                                          76,
-                                                          32,
-                                                        ),
-                                                  );
-                                                } catch (e) {
-                                                  AppSnackBar.show(
-                                                    context,
-                                                    message:
-                                                        'Não foi possivel iniciar: $e',
-                                                    icon: Icons.error,
-                                                    background:
-                                                        Colors.red.shade700,
-                                                  );
-                                                }
-                                              },
+                                      isCompactPhone
+                                          ? Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.stretch,
+                                              children: [
+                                                _sessionStartButton(
+                                                  cliente: cliente,
+                                                  working: working,
+                                                ),
+                                                const SizedBox(height: 8),
+                                                _sessionStopButton(
+                                                  cliente: cliente,
+                                                  working: working,
+                                                ),
+                                              ],
+                                            )
+                                          : Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _sessionStartButton(
+                                                    cliente: cliente,
+                                                    working: working,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: _sessionStopButton(
+                                                    cliente: cliente,
+                                                    working: working,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: AppButton(
-                                              text: 'Terminar',
-                                              outline: true,
-                                              color: const Color.fromARGB(
-                                                255,
-                                                4,
-                                                76,
-                                                32,
-                                              ),
-                                              enabled: working,
-                                              onPressed: () async {
-                                                try {
-                                                  final session =
-                                                      _openSessions[cliente
-                                                          .uid];
-
-                                                  if (session == null) {
-                                                    throw Exception(
-                                                      'Sessão não encontrada localmente.',
-                                                    );
-                                                  }
-
-                                                  final total =
-                                                      await _workSessionService
-                                                          .finishSessionById(
-                                                            clienteId:
-                                                                cliente.uid,
-                                                            sessionId:
-                                                                session.id,
-                                                            startTime: session
-                                                                .startTime,
-                                                          );
-
-                                                  final displayTotal = _isAdmin
-                                                      ? total
-                                                      : await _workSessionService
-                                                            .calculateMonthlyTotalForCurrentUser(
-                                                              clienteId:
-                                                                  cliente.uid,
-                                                              referenceDate:
-                                                                  session
-                                                                      .startTime,
-                                                            );
-
-                                                  setState(() {
-                                                    _openSessions[cliente.uid] =
-                                                        null;
-                                                    cliente.hourasCasa =
-                                                        displayTotal;
-                                                    _currentMonthHoursCache[cliente
-                                                            .uid] =
-                                                        displayTotal;
-                                                  });
-
-                                                  AppSnackBar.show(
-                                                    context,
-                                                    message:
-                                                        'Terminaste! Total do mês: ${displayTotal.toStringAsFixed(2)}h',
-                                                    icon: Icons.square,
-                                                    background:
-                                                        const Color.fromARGB(
-                                                          255,
-                                                          188,
-                                                          82,
-                                                          82,
-                                                        ),
-                                                  );
-
-                                                  await _ensureOpenSessions([
-                                                    cliente,
-                                                  ]);
-                                                } catch (e) {
-                                                  AppSnackBar.show(
-                                                    context,
-                                                    message:
-                                                        'Não foi possivel terminar: $e',
-                                                    icon: Icons.error,
-                                                    background:
-                                                        Colors.red.shade700,
-                                                  );
-                                                }
-                                              },
-                                            ),
-                                          ),
-                                        ],
-                                      ),
                                     ],
                                   ],
                                 ),
@@ -1008,6 +901,110 @@ class _ClientesScreenState extends State<ClientesScreen> {
           color: active ? AppColors.primaryGreen : Colors.black87,
         ),
       ),
+    );
+  }
+
+  Widget _sessionStartButton({
+    required Clientes cliente,
+    required bool working,
+  }) {
+    return AppButton(
+      text: 'Começar',
+      color: const Color.fromARGB(255, 4, 76, 32),
+      enabled: !working && !_hasAnyOpenSession,
+      onPressed: () async {
+        try {
+          final session = await _workSessionService.startSession(
+            clienteId: cliente.uid,
+            clienteName: cliente.nameCliente,
+          );
+
+          setState(() {
+            _openSessions[cliente.uid] = session;
+          });
+
+          AppSnackBar.show(
+            context,
+            message: 'Começaste às ${TimeOfDay.now().format(context)}!',
+            icon: Icons.play_arrow,
+            background: const Color.fromARGB(255, 4, 76, 32),
+          );
+        } catch (e) {
+          AppSnackBar.show(
+            context,
+            message: 'Não foi possivel iniciar: $e',
+            icon: Icons.error,
+            background: Colors.red.shade700,
+          );
+        }
+      },
+    );
+  }
+
+  Widget _sessionStopButton({
+    required Clientes cliente,
+    required bool working,
+  }) {
+    return AppButton(
+      text: 'Terminar',
+      outline: true,
+      color: const Color.fromARGB(255, 4, 76, 32),
+      enabled: working,
+      onPressed: () async {
+        try {
+          var session = _openSessions[cliente.uid];
+
+          if (session == null) {
+            session = await _workSessionService.findOpenSession(cliente.uid);
+            if (!mounted) return;
+            setState(() {
+              _openSessions[cliente.uid] = session;
+            });
+          }
+
+          if (session == null) {
+            throw Exception(
+              'Não foi possível localizar a sessão ativa deste cliente.',
+            );
+          }
+
+          final total = await _workSessionService.finishSessionById(
+            clienteId: cliente.uid,
+            sessionId: session.id,
+            startTime: session.startTime,
+          );
+
+          final displayTotal = _isAdmin
+              ? total
+              : await _workSessionService.calculateMonthlyTotalForCurrentUser(
+                  clienteId: cliente.uid,
+                  referenceDate: session.startTime,
+                );
+
+          setState(() {
+            _openSessions[cliente.uid] = null;
+            cliente.hourasCasa = displayTotal;
+            _currentMonthHoursCache[cliente.uid] = displayTotal;
+          });
+
+          AppSnackBar.show(
+            context,
+            message:
+                'Terminaste! Total do mês: ${displayTotal.toStringAsFixed(2)}h',
+            icon: Icons.square,
+            background: const Color.fromARGB(255, 188, 82, 82),
+          );
+
+          await _ensureOpenSessions([cliente]);
+        } catch (e) {
+          AppSnackBar.show(
+            context,
+            message: 'Não foi possivel terminar: $e',
+            icon: Icons.error,
+            background: Colors.red.shade700,
+          );
+        }
+      },
     );
   }
 }

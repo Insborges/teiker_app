@@ -153,6 +153,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
                     return MonthlyHoursOverviewCard(
                       monthlyTotals: snapshot.data ?? const {},
                       primaryColor: primaryColor,
+                      workPercentage: teiker.workPercentage,
                       title: hoursSectionTitle,
                       showHeader: false,
                       emptyMessage: 'Sem horas registadas.',

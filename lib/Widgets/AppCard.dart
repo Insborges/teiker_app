@@ -32,10 +32,15 @@ class AppCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isCompact = MediaQuery.of(context).size.width <= 380;
+
     return Card(
       color: color ?? Theme.of(context).cardColor,
       elevation: 3,
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      margin: EdgeInsets.symmetric(
+        horizontal: isCompact ? 10 : 12,
+        vertical: isCompact ? 5 : 6,
+      ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: borderSide ?? BorderSide.none,
@@ -46,7 +51,10 @@ class AppCard extends StatelessWidget {
         child: Padding(
           padding:
               padding ??
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              EdgeInsets.symmetric(
+                horizontal: isCompact ? 10 : 12,
+                vertical: isCompact ? 9 : 10,
+              ),
           child:
               child ??
               Row(
@@ -59,7 +67,7 @@ class AppCard extends StatelessWidget {
                           iconColor ??
                           (whiteText ? Colors.white : Colors.black),
                     ),
-                  if (icon != null) const SizedBox(width: 8),
+                  if (icon != null) SizedBox(width: isCompact ? 6 : 8),
 
                   Expanded(
                     child: Column(
@@ -70,7 +78,7 @@ class AppCard extends StatelessWidget {
                             title!,
                             style: TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 18,
+                              fontSize: isCompact ? 17 : 18,
                               color: whiteText ? Colors.white : Colors.black,
                             ),
                           ),
@@ -86,7 +94,7 @@ class AppCard extends StatelessWidget {
                           Text(
                             subtitle!,
                             style: TextStyle(
-                              fontSize: 14,
+                              fontSize: isCompact ? 13 : 14,
                               color: whiteText
                                   ? Colors.white70
                                   : Colors.grey.shade700,

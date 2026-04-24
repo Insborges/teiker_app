@@ -116,11 +116,10 @@ class _AllTeikersHoursScreenState extends State<AllTeikersHoursScreen> {
   }
 
   double _monthlyTargetHours(Teiker teiker, DateTime month) {
-    final weeklyTarget = TeikerWorkload.weeklyHoursForPercentage(
+    return TeikerWorkload.monthlyHoursForPercentage(
       teiker.workPercentage,
+      month,
     );
-    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
-    return weeklyTarget * (daysInMonth / 7.0);
   }
 
   double _periodHours(_TeikerHoursSummary summary) {
@@ -328,7 +327,17 @@ class _TeikerHoursCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final positive = balance >= 0;
-    final accent = positive ? Colors.green.shade700 : Colors.red.shade700;
+    final neutral = balance.abs() < 0.05;
+    final accent = neutral
+        ? Colors.grey.shade700
+        : positive
+        ? Colors.green.shade700
+        : Colors.red.shade700;
+    final balanceLabel = balance.abs() < 0.05
+        ? 'Meta do mês atingida'
+        : positive
+        ? '${balance.toStringAsFixed(1)} h a mais'
+        : '${balance.abs().toStringAsFixed(1)} h a menos';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -354,9 +363,13 @@ class _TeikerHoursCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Text(
-                '${positive ? '+' : ''}${balance.toStringAsFixed(1)}h',
-                style: TextStyle(color: accent, fontWeight: FontWeight.w800),
+              Flexible(
+                child: Text(
+                  balanceLabel,
+                  textAlign: TextAlign.end,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: accent, fontWeight: FontWeight.w800),
+                ),
               ),
             ],
           ),

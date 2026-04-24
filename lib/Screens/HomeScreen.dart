@@ -23,6 +23,7 @@ import 'package:teiker_app/backend/notification_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/Teikers.dart';
 import 'package:teiker_app/theme/app_colors.dart';
+import 'package:teiker_app/utils/swiss_holiday_calendar.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -2438,6 +2439,26 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
     return map;
   }
 
+  List<Map<String, dynamic>> _holidayEventsForDay(DateTime dayKey) {
+    final holidayName = SwissHolidayCalendar.holidayName(dayKey);
+    if (holidayName == null || holidayName.isEmpty) {
+      return const <Map<String, dynamic>>[];
+    }
+
+    return <Map<String, dynamic>>[
+      {
+        'title': holidayName,
+        'subtitle': 'Feriado suíço',
+        'done': false,
+        'start': '',
+        'end': '',
+        'isHoliday': true,
+        'cor': Colors.red.shade700,
+        'tag': 'Feriado',
+      },
+    ];
+  }
+
   Widget _buildEventListBody({
     required List<Map<String, dynamic>> events,
     required DateTime dayKey,
@@ -2484,6 +2505,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       itemBuilder: (context, i) {
         final event = sortedEvents[i];
         final bool isFerias = event['isFerias'] == true;
+        final bool isHoliday = event['isHoliday'] == true;
         final bool isConsulta = event['isConsulta'] == true;
         final bool isAcontecimento = _isAcontecimento(event);
         final bool isTeikerMarcacao = _isTeikerMarcacaoAgendaEvent(event);
@@ -2491,9 +2513,17 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
         final end = (event['end'] ?? '').toString();
         final hasHourRange = start.isNotEmpty || end.isNotEmpty;
         final bool readOnly =
-            isFerias || isConsulta || isAcontecimento || isTeikerMarcacao;
+            isFerias ||
+            isHoliday ||
+            isConsulta ||
+            isAcontecimento ||
+            isTeikerMarcacao;
         final itemColor =
-            (isFerias || isConsulta || isAcontecimento || isTeikerMarcacao)
+            (isFerias ||
+                isHoliday ||
+                isConsulta ||
+                isAcontecimento ||
+                isTeikerMarcacao)
             ? (event['cor'] as Color? ?? color)
             : color;
         final rawTag = event['tag'] as String?;
@@ -2670,20 +2700,21 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
     required bool isAdmin,
     required bool isHr,
     bool isDesktop = false,
+    bool compact = false,
   }) {
-    final iconSize = isDesktop ? 22.0 : 20.0;
+    final iconSize = isDesktop ? 22.0 : (compact ? 18.0 : 20.0);
     final labelStyle = TextStyle(
       fontWeight: FontWeight.bold,
-      fontSize: isDesktop ? 15 : 14,
+      fontSize: isDesktop ? 15 : (compact ? 13 : 14),
       letterSpacing: isDesktop ? .1 : 0,
     );
     final actionStyle = ElevatedButton.styleFrom(
       backgroundColor: selectedColor,
       foregroundColor: Colors.white,
-      minimumSize: Size.fromHeight(isDesktop ? 54 : 48),
+      minimumSize: Size.fromHeight(isDesktop ? 54 : (compact ? 44 : 48)),
       padding: EdgeInsets.symmetric(
-        vertical: isDesktop ? 14 : 14,
-        horizontal: isDesktop ? 16 : 12,
+        vertical: isDesktop ? 14 : (compact ? 12 : 14),
+        horizontal: isDesktop ? 16 : (compact ? 10 : 12),
       ),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(isDesktop ? 14 : 12),
@@ -2732,6 +2763,17 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
               ],
             );
           },
+        );
+      }
+
+      if (compact) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            reminderButton(),
+            const SizedBox(height: 10),
+            acontecimentoButton(),
+          ],
         );
       }
 
@@ -2938,6 +2980,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       isAdmin: isPrivileged,
       userId: user?.uid,
     );
+    final holidayEvents = _holidayEventsForDay(dayKey);
 
     final feriasEventsAll = teikersFerias
         .where((t) => t['dias'].any((d) => _dayKey(d) == dayKey))
@@ -3000,12 +3043,14 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
               .toList();
     final acontecimentoEvents = normalEvents.where(_isAcontecimento).toList();
     final teikerAgendaEvents = [
+      ...holidayEvents,
       ...birthdayEvents,
       ...feriasEvents,
       ...baixasEvents,
       ...consultasEvents,
     ];
     final adminAgendaEvents = [
+      ...holidayEvents,
       ...feriasEvents,
       ...baixasEvents,
       ...consultasEvents,
@@ -3037,6 +3082,9 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: buildAppBar(_appBarTitle(), seta: false),
       body: LayoutBuilder(
         builder: (context, constraints) {
+          final isDesktopWideLayout = constraints.maxWidth >= 1024;
+          final isCompactPhone =
+              !isDesktopWideLayout && constraints.maxWidth <= 380;
           const controlsAndSpacingHeight = 84.0;
           const minEventsPanelHeight = 90.0;
           final targetCalendarHeight =
@@ -3051,7 +3099,6 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
             targetCalendarHeight,
             availableCalendarHeight,
           );
-          final isDesktopWideLayout = constraints.maxWidth >= 1024;
           final desktopAgendaEvents = isAdmin || isHr
               ? adminAgendaEvents
               : teikerAgendaEvents;
@@ -3208,8 +3255,12 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
                         children: [
                           // Calendário
                           Container(
-                            margin: const EdgeInsets.only(top: 8),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            margin: EdgeInsets.only(
+                              top: isCompactPhone ? 6 : 8,
+                            ),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isCompactPhone ? 12 : 16,
+                            ),
                             child: ModernCalendar(
                               focusedDay: _focusedDay,
                               selectedDay: _selectedDay,
@@ -3236,23 +3287,26 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
                           // Botão para adicionar lembrete
                           Container(
                             width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 4,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isCompactPhone ? 12 : 16,
+                              vertical: isCompactPhone ? 2 : 4,
                             ),
-                            margin: const EdgeInsets.only(top: 10),
+                            margin: EdgeInsets.only(
+                              top: isCompactPhone ? 8 : 10,
+                            ),
                             child: _buildAgendaActionButtons(
                               isAdmin: isAdmin,
                               isHr: isHr,
+                              compact: isCompactPhone,
                             ),
                           ),
-                          const SizedBox(height: 10),
+                          SizedBox(height: isCompactPhone ? 8 : 10),
                           // Lista de eventos
                           Expanded(
                             child: Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: isCompactPhone ? 12 : 16,
                               ),
                               child: isAdmin
                                   ? _buildAdminSwipableLists(

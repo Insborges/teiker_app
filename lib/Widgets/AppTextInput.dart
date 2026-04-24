@@ -24,6 +24,9 @@ class AppTextField extends StatelessWidget {
   final bool? enableInteractiveSelection;
   final FocusNode? focusNode;
   final bool prefixIconAlignTop;
+  final bool autocorrect;
+  final bool enableSuggestions;
+  final TextCapitalization textCapitalization;
 
   const AppTextField({
     super.key,
@@ -49,6 +52,9 @@ class AppTextField extends StatelessWidget {
     this.enableInteractiveSelection,
     this.focusNode,
     this.prefixIconAlignTop = false,
+    this.autocorrect = true,
+    this.enableSuggestions = true,
+    this.textCapitalization = TextCapitalization.sentences,
   });
 
   @override
@@ -86,6 +92,9 @@ class AppTextField extends StatelessWidget {
       autofillHints: autofillHints,
       style: style,
       maxLines: maxLines,
+      autocorrect: autocorrect,
+      enableSuggestions: enableSuggestions,
+      textCapitalization: textCapitalization,
       textAlignVertical: isMultiline ? TextAlignVertical.top : null,
       enableInteractiveSelection: enableInteractiveSelection ?? !readOnly,
       decoration: InputDecoration(

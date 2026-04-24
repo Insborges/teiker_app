@@ -251,7 +251,6 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
     final primary = teiker.corIdentificadora;
     final profileRole = _roleForProfile(teiker);
     final isHrEntry = profileRole == AppUserRole.hr;
-    final isDeveloperEntry = profileRole == AppUserRole.developer;
     final isCurrentSpecialEntry = _isCurrentSpecialProfile(teiker);
     final consultasCount = teiker.consultas.length;
     final feriasPeriodos = teiker.feriasPeriodos;
@@ -355,14 +354,14 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
                           color: AppColors.primaryGreen,
                           text: AppUserRoleResolver.roleLabel(profileRole),
                         ),
-                      if (!isDeveloperEntry && feriasDays > 0)
+                      if (feriasDays > 0)
                         _infoChip(
                           icon: Icons.beach_access,
                           color: Colors.orange.shade700,
                           text:
                               'Férias: $feriasDays dia${feriasDays == 1 ? ' útil' : 's úteis'}',
                         ),
-                      if (!isDeveloperEntry)
+                      if (!isHrEntry)
                         _infoChip(
                           icon: Icons.event_note,
                           color: primary,
@@ -378,7 +377,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (!isHrEntry && !isDeveloperEntry) ...[
+                  if (!isHrEntry) ...[
                     Text(
                       currentMonthHours == null
                           ? '...h'

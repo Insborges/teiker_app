@@ -41,7 +41,13 @@ class AuthService {
   CollectionReference<Map<String, dynamic>> get _workSessionsRef =>
       FirebaseFirestore.instance.collection('workSessions');
 
-  String _normalizeEmail(String email) => email.trim().toLowerCase();
+  String _normalizeEmail(String email) {
+    return email
+        .replaceAll(RegExp(r'[\s\u200B-\u200D\uFEFF]+'), '')
+        .trim()
+        .toLowerCase();
+  }
+
   bool _looksLikeEmail(String value) =>
       RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value.trim());
 
@@ -68,7 +74,7 @@ class AuthService {
     return null;
   }
 
-  Future<bool?> _hasAccountForEmail(String email) async {
+  Future<bool?> _hasTeikerProfileForEmail(String email) async {
     try {
       if (isPrivilegedEmail(email)) return null;
       final teiker = await _findTeikerByEmail(email);
@@ -193,12 +199,17 @@ class AuthService {
     required String email,
     String? fallbackMessage,
   }) async {
+    final hasTeikerProfile = await _hasTeikerProfileForEmail(email);
+
     switch (code) {
       case 'invalid-email':
         return 'Email invalido. Verifica o formato.';
       case 'user-disabled':
         return 'Esta conta esta desativada.';
       case 'user-not-found':
+        if (hasTeikerProfile == true) {
+          return 'O email está no perfil da teiker, mas a conta de login não está corretamente criada no Firebase Authentication. Hotmail e Outlook já são suportados.';
+        }
         return 'Conta nao existente.';
       case 'wrong-password':
         return 'A palavra-passe nao corresponde ao email.';
@@ -216,12 +227,11 @@ class AuthService {
       case 'invalid-user':
         return 'Conta inválida.';
       case 'invalid-credential':
-        final hasAccount = await _hasAccountForEmail(email);
-        if (hasAccount == false) {
+        if (hasTeikerProfile == false) {
           return 'Conta nao existente.';
         }
-        if (hasAccount == true) {
-          return 'A palavra-passe nao corresponde ao email.';
+        if (hasTeikerProfile == true) {
+          return 'O email está associado a uma teiker, mas a conta de login do Firebase Authentication pode não existir ou não estar sincronizada. Hotmail e Outlook já são suportados.';
         }
         return 'Email ou palavra-passe incorretos.';
       default:
@@ -356,7 +366,7 @@ class AuthService {
     if (hasLoginEmail && !_looksLikeEmail(normalizedEmail)) {
       throw Exception('Email da teiker inválido.');
     }
-    if (hasLoginEmail && password.trim().length < 6) {
+    if (hasLoginEmail && password.length < 6) {
       throw Exception(
         'Se a teiker tiver email, a password deve ter pelo menos 6 caracteres.',
       );

@@ -366,6 +366,7 @@ class ClientAdditionalServicesSection extends StatelessWidget {
     required this.serviceMonthLabel,
     required this.appliedServicePrices,
     required this.onRemoveAppliedService,
+    required this.onEditAppliedService,
     required this.onAddService,
     this.readOnly = false,
   });
@@ -375,6 +376,7 @@ class ClientAdditionalServicesSection extends StatelessWidget {
   final String serviceMonthLabel;
   final Map<String, double> appliedServicePrices;
   final Future<void> Function(String serviceKey) onRemoveAppliedService;
+  final Future<void> Function(String serviceKey) onEditAppliedService;
   final VoidCallback onAddService;
   final bool readOnly;
 
@@ -468,7 +470,16 @@ class ClientAdditionalServicesSection extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              if (!readOnly)
+                              if (!readOnly) ...[
+                                IconButton(
+                                  tooltip: 'Editar serviço',
+                                  onPressed: () =>
+                                      onEditAppliedService(entry.key),
+                                  icon: Icon(
+                                    Icons.edit_outlined,
+                                    color: primaryColor,
+                                  ),
+                                ),
                                 IconButton(
                                   tooltip: 'Remover serviço',
                                   onPressed: () =>
@@ -478,6 +489,7 @@ class ClientAdditionalServicesSection extends StatelessWidget {
                                     color: Colors.redAccent,
                                   ),
                                 ),
+                              ],
                             ],
                           ),
                         ),

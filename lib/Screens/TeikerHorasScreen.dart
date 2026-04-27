@@ -5,6 +5,7 @@ import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
+import 'package:teiker_app/models/Teikers.dart';
 import 'package:teiker_app/models/teiker_workload.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import 'package:teiker_app/work_sessions/domain/fixed_holiday_hours_policy.dart';
@@ -26,6 +27,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
   DateTime? _selectedMonth;
   double _targetHoras = 0;
   int _workPercentage = TeikerWorkload.fullTime;
+  double _hoursBalanceAdjustment = 0;
   late final PageController _pageController;
 
   @override
@@ -63,11 +65,10 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
           .get();
       final data = teikerDoc.data();
       if (data != null) {
-        workPercentage = TeikerWorkload.normalizePercentage(
-          data['workPercentage'],
-          fallbackWeeklyHours: (data['horas'] as num?)?.toDouble(),
-        );
-        targetHoras = TeikerWorkload.weeklyHoursForPercentage(workPercentage);
+        final teiker = Teiker.fromMap(data, teikerDoc.id);
+        workPercentage = teiker.workPercentage;
+        targetHoras = teiker.weeklyTargetHours;
+        _hoursBalanceAdjustment = teiker.hoursBalanceAdjustment;
       }
     } catch (_) {}
 
@@ -195,81 +196,103 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width <= 380;
+    final wide = width >= 900;
+
     return Scaffold(
       appBar: buildAppBar("Horas do mês", seta: true),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  if (_selectedMonth != null) ...[
-                    _annualBalanceCard(_selectedMonth!),
-                    const SizedBox(height: 12),
-                  ],
-                  if (_months.isNotEmpty)
-                    SizedBox(
-                      height: 114,
-                      child: PageView.builder(
-                        controller: _pageController,
-                        itemCount: _months.length,
-                        onPageChanged: _onMonthChanged,
-                        itemBuilder: (context, index) {
-                          final month = _months[index];
-                          final total = _totalsByMonth[month] ?? 0;
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: _summaryCard(
-                              month,
-                              DateFormat('MMMM yyyy', 'pt_PT').format(month),
-                              total,
-                            ),
-                          );
-                        },
-                      ),
-                    )
-                  else
-                    _summaryCard(
-                      DateTime(DateTime.now().year, DateTime.now().month),
-                      "Sem registos",
-                      0,
-                    ),
-                  const SizedBox(height: 12),
-                  Row(
+          : Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: wide ? 980 : 760),
+                child: Padding(
+                  padding: EdgeInsets.all(compact ? 12 : 16),
+                  child: Column(
                     children: [
+                      if (_selectedMonth != null) ...[
+                        _annualBalanceCard(_selectedMonth!),
+                        const SizedBox(height: 12),
+                      ],
                       if (_months.isNotEmpty)
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.calendar_month),
-                          label: const Text("Selecionar mês"),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _primary,
-                            side: BorderSide(color: _primary),
+                        SizedBox(
+                          height: compact ? 214 : (wide ? 196 : 206),
+                          child: PageView.builder(
+                            controller: _pageController,
+                            itemCount: _months.length,
+                            onPageChanged: _onMonthChanged,
+                            itemBuilder: (context, index) {
+                              final month = _months[index];
+                              final total = _totalsByMonth[month] ?? 0;
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                child: _summaryCard(
+                                  month,
+                                  DateFormat(
+                                    'MMMM yyyy',
+                                    'pt_PT',
+                                  ).format(month),
+                                  total,
+                                ),
+                              );
+                            },
                           ),
-                          onPressed: _openMonthPicker,
+                        )
+                      else
+                        _summaryCard(
+                          DateTime(DateTime.now().year, DateTime.now().month),
+                          "Sem registos",
+                          0,
                         ),
+                      const SizedBox(height: 12),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          if (_months.isNotEmpty)
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.calendar_month),
+                              label: const Text("Selecionar mês"),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _primary,
+                                side: BorderSide(color: _primary),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: compact ? 12 : 14,
+                                  vertical: compact ? 10 : 12,
+                                ),
+                              ),
+                              onPressed: _openMonthPicker,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: _hoursByDay.isEmpty
+                            ? Center(
+                                child: Text(
+                                  "Ainda sem registos este mês.",
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              )
+                            : ListView(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                children:
+                                    (_hoursByDay.entries.toList()..sort(
+                                          (a, b) => b.key.compareTo(a.key),
+                                        ))
+                                        .map((e) => _dayCard(e.key, e.value))
+                                        .toList(),
+                              ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: _hoursByDay.isEmpty
-                        ? Center(
-                            child: Text(
-                              "Ainda sem registos este mês.",
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          )
-                        : ListView(
-                            children:
-                                (_hoursByDay.entries.toList()
-                                      ..sort((a, b) => b.key.compareTo(a.key)))
-                                    .map((e) => _dayCard(e.key, e.value))
-                                    .toList(),
-                          ),
-                  ),
-                ],
+                ),
               ),
             ),
     );
@@ -302,10 +325,22 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
   double _yearBalanceForYear(int year) {
     final monthsInYear = _months.where((month) => month.year == year);
     return monthsInYear.fold<double>(
-      0,
-      (total, month) =>
-          total + _monthBalance(month, _totalsByMonth[month] ?? 0),
-    );
+          0,
+          (total, month) =>
+              total + _monthBalance(month, _totalsByMonth[month] ?? 0),
+        ) +
+        _yearBalanceAdjustment(year);
+  }
+
+  int _adjustmentYear() {
+    if (_months.isEmpty) return DateTime.now().year;
+    final years = _months.map((month) => month.year).toList()..sort();
+    return years.first;
+  }
+
+  double _yearBalanceAdjustment(int year) {
+    if (_hoursBalanceAdjustment.abs() < 0.05) return 0;
+    return year == _adjustmentYear() ? _hoursBalanceAdjustment : 0;
   }
 
   String _yearBalanceLabel(double balance) {
@@ -318,9 +353,62 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     return '0.0 h';
   }
 
+  Widget _metricChip({
+    required IconData icon,
+    required String label,
+    required String value,
+    required bool compact,
+    Color? valueColor,
+  }) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 8 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: _primary.withValues(alpha: .06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _primary.withValues(alpha: .12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: compact ? 15 : 17, color: _primary),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: compact ? 10 : 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(
+                  color: valueColor ?? Colors.black87,
+                  fontWeight: FontWeight.w800,
+                  fontSize: compact ? 12 : 13,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _annualBalanceCard(DateTime month) {
     final yearBalance = _yearBalanceForYear(month.year);
     final accent = _balanceColor(yearBalance);
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width <= 380;
+    final wide = width >= 900;
     final icon = yearBalance > 0.05
         ? Icons.trending_up_rounded
         : yearBalance < -0.05
@@ -329,54 +417,94 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: EdgeInsets.all(wide ? 18 : (compact ? 14 : 16)),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: _primary.withValues(alpha: .12)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
+            blurRadius: 16,
             offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: accent.withValues(alpha: 0.10),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: accent),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Saldo anual ${month.year}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: compact ? 44 : 48,
+                height: compact ? 44 : 48,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Horas Anuais ${month.year}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: compact ? 16 : 18,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Acumulado do ano face à meta mensal',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                        fontSize: compact ? 11 : 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (wide)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _yearBalanceLabel(yearBalance),
+                    style: TextStyle(
+                      color: accent,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  _yearBalanceLabel(yearBalance),
-                  style: TextStyle(
-                    color: accent,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
+          if (!wide) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _yearBalanceLabel(yearBalance),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: accent, fontWeight: FontWeight.w800),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -460,16 +588,19 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
 
   Widget _summaryCard(DateTime month, String label, double total) {
     final balance = _monthBalance(month, total);
-    final isPositive = balance >= 0;
-    final isNeutral = balance.abs() < 0.05;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width <= 380;
+    final wide = width >= 900;
     final monthlyTarget = _monthlyTargetForMonth(month);
+    final accent = _balanceColor(balance);
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.all(wide ? 18 : (compact ? 14 : 16)),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _primary.withValues(alpha: .12)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -478,72 +609,108 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            isPositive ? Icons.trending_up : Icons.trending_down,
-            color: isNeutral
-                ? Colors.grey.shade700
-                : isPositive
-                ? Colors.green.shade700
-                : Colors.red.shade700,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: compact ? 42 : 46,
+                height: compact ? 42 : 46,
+                decoration: BoxDecoration(
+                  color: _primary.withValues(alpha: .10),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.calendar_month_rounded, color: _primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: compact ? 16 : 18,
+                        height: 1.15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Resumo mensal face à meta de trabalho',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                        fontSize: compact ? 11 : 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (wide)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _balanceLabel(balance),
+                    style: TextStyle(
+                      color: accent,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    height: 1.2,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  "Total: ${total.toStringAsFixed(1)} h",
-                  style: TextStyle(
-                    color: isPositive
-                        ? Colors.green.shade700
-                        : Colors.red.shade700,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                    height: 1.2,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  _balanceLabel(balance),
-                  style: TextStyle(
-                    color: _balanceColor(balance),
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    height: 1.2,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  "Meta mês: ${monthlyTarget.toStringAsFixed(1)} h • Meta semanal: ${_targetHoras.toStringAsFixed(0)} h ($_workPercentage%)",
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                    height: 1.2,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+          if (!wide) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _balanceLabel(balance),
+                textAlign: TextAlign.center,
+                style: TextStyle(color: accent, fontWeight: FontWeight.w800),
+              ),
             ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _metricChip(
+                icon: Icons.schedule_rounded,
+                label: 'Horas',
+                value: '${total.toStringAsFixed(1)} h',
+                valueColor: _primary,
+                compact: compact,
+              ),
+              _metricChip(
+                icon: Icons.flag_outlined,
+                label: 'Meta mês',
+                value: '${monthlyTarget.toStringAsFixed(1)} h',
+                compact: compact,
+              ),
+              _metricChip(
+                icon: Icons.pie_chart_outline_rounded,
+                label: 'Meta semanal',
+                value:
+                    '${_targetHoras.toStringAsFixed(0)} h ($_workPercentage%)',
+                compact: compact,
+              ),
+            ],
           ),
         ],
       ),

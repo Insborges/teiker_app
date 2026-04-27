@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/models/teiker_workload.dart';
@@ -8,6 +10,7 @@ class MonthlyHoursOverviewCard extends StatefulWidget {
     required this.monthlyTotals,
     required this.primaryColor,
     this.workPercentage,
+    this.balanceAdjustmentHours = 0,
     this.title = 'Horas por mês',
     this.emptyMessage = 'Sem horas registadas.',
     this.showHeader = true,
@@ -16,6 +19,7 @@ class MonthlyHoursOverviewCard extends StatefulWidget {
   final Map<DateTime, double> monthlyTotals;
   final Color primaryColor;
   final int? workPercentage;
+  final double balanceAdjustmentHours;
   final String title;
   final String emptyMessage;
   final bool showHeader;
@@ -90,15 +94,31 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
 
   double? _yearBalance(int year) {
     if (widget.monthlyTotals.isEmpty || widget.workPercentage == null) {
-      return null;
+      final adjustment = _yearBalanceAdjustment(year);
+      return adjustment.abs() < 0.05 ? null : adjustment;
     }
     final months = _monthsForYear(year);
-    if (months.isEmpty) return null;
+    if (months.isEmpty) {
+      final adjustment = _yearBalanceAdjustment(year);
+      return adjustment.abs() < 0.05 ? null : adjustment;
+    }
 
     return months.fold<double>(
-      0,
-      (total, month) => total + (_monthBalance(year, month) ?? 0),
-    );
+          0,
+          (total, month) => total + (_monthBalance(year, month) ?? 0),
+        ) +
+        _yearBalanceAdjustment(year);
+  }
+
+  int _adjustmentYear() {
+    if (widget.monthlyTotals.isEmpty) return DateTime.now().year;
+    final years = widget.monthlyTotals.keys.map((m) => m.year).toList()..sort();
+    return years.first;
+  }
+
+  double _yearBalanceAdjustment(int year) {
+    if (widget.balanceAdjustmentHours.abs() < 0.05) return 0;
+    return year == _adjustmentYear() ? widget.balanceAdjustmentHours : 0;
   }
 
   Color _balanceColor(double balance) {
@@ -127,6 +147,377 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
     return '0.0 h';
   }
 
+  Widget _metricChip({
+    required IconData icon,
+    required String label,
+    required String value,
+    required bool compact,
+    Color? valueColor,
+  }) {
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 8 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: widget.primaryColor.withValues(alpha: .06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: widget.primaryColor.withValues(alpha: .12)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: compact ? 15 : 17, color: widget.primaryColor),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: compact ? 10 : 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: TextStyle(
+                  color: valueColor ?? Colors.black87,
+                  fontWeight: FontWeight.w800,
+                  fontSize: compact ? 12 : 13,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentMonthCard({
+    required DateTime now,
+    required double currentMonthHours,
+    required double? currentMonthBalance,
+    required bool compact,
+    required bool wide,
+  }) {
+    final currentMonthTarget = _monthTarget(now.year, now.month);
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(wide ? 16 : (compact ? 12 : 14)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: widget.primaryColor.withValues(alpha: .12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: compact ? 42 : 46,
+                height: compact ? 42 : 46,
+                decoration: BoxDecoration(
+                  color: widget.primaryColor.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.calendar_month_rounded,
+                  color: widget.primaryColor,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      DateFormat('MMMM yyyy', 'pt_PT').format(now),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: compact ? 16 : 18,
+                        height: 1.15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Resumo mensal face à meta de trabalho',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                        fontSize: compact ? 11 : 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (currentMonthBalance != null && wide)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _balanceColor(
+                      currentMonthBalance,
+                    ).withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    _balanceLabel(currentMonthBalance),
+                    style: TextStyle(
+                      color: _balanceColor(currentMonthBalance),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (currentMonthBalance != null && !wide) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: _balanceColor(
+                  currentMonthBalance,
+                ).withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _balanceLabel(currentMonthBalance),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: _balanceColor(currentMonthBalance),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _metricChip(
+                icon: Icons.schedule_rounded,
+                label: 'Horas',
+                value: '${currentMonthHours.toStringAsFixed(1)} h',
+                valueColor: widget.primaryColor,
+                compact: compact,
+              ),
+              if (currentMonthTarget != null)
+                _metricChip(
+                  icon: Icons.flag_outlined,
+                  label: 'Meta mês',
+                  value: '${currentMonthTarget.toStringAsFixed(1)} h',
+                  compact: compact,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildYearToggle({
+    required double? selectedYearBalance,
+    required bool compact,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => setState(() => _expanded = !_expanded),
+        child: Container(
+          width: double.infinity,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 12 : 14,
+            vertical: compact ? 10 : 12,
+          ),
+          decoration: BoxDecoration(
+            color: widget.primaryColor.withValues(alpha: .05),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: widget.primaryColor.withValues(alpha: .12),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Horas anuais $_selectedYear',
+                      style: TextStyle(
+                        color: widget.primaryColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: compact ? 14 : 15,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _expanded ? 'Ocultar meses' : 'Ver meses',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                        fontSize: compact ? 11 : 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (selectedYearBalance != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _balanceColor(
+                      selectedYearBalance,
+                    ).withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    _yearBalanceLabel(selectedYearBalance),
+                    style: TextStyle(
+                      color: _balanceColor(selectedYearBalance),
+                      fontWeight: FontWeight.w800,
+                      fontSize: compact ? 11 : 12,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 10),
+              Icon(
+                _expanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+                color: widget.primaryColor,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMonthTile({
+    required int year,
+    required int month,
+    required double total,
+    required double? balance,
+    required bool compact,
+    required bool dense,
+  }) {
+    final target = _monthTarget(year, month);
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: dense ? (compact ? 9 : 10) : (compact ? 10 : 12),
+        vertical: dense ? (compact ? 8 : 9) : (compact ? 10 : 12),
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: widget.primaryColor.withValues(alpha: .12)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: dense ? 8 : 12,
+            offset: Offset(0, dense ? 3 : 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      DateFormat(
+                        compact ? 'MMM' : 'MMMM',
+                        'pt_PT',
+                      ).format(DateTime(year, month)),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: dense ? 13 : (compact ? 14 : 15),
+                      ),
+                    ),
+                    if (target != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'Meta ${target.toStringAsFixed(1)} h',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w600,
+                          fontSize: dense ? 10.5 : (compact ? 11 : 12),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${total.toStringAsFixed(1)} h',
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                  color: widget.primaryColor,
+                  fontWeight: FontWeight.w800,
+                  fontSize: dense ? 13 : (compact ? 14 : 15),
+                ),
+              ),
+            ],
+          ),
+          if (balance != null) ...[
+            SizedBox(height: dense ? 6 : 8),
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.symmetric(
+                horizontal: dense ? 8 : 10,
+                vertical: dense ? 6 : 8,
+              ),
+              decoration: BoxDecoration(
+                color: _balanceColor(balance).withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(dense ? 9 : 10),
+              ),
+              child: Text(
+                _balanceLabel(balance),
+                style: TextStyle(
+                  color: _balanceColor(balance),
+                  fontWeight: FontWeight.w800,
+                  fontSize: dense ? 10.5 : (compact ? 11 : 12),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
@@ -134,6 +525,10 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
     final currentMonthBalance = _monthBalance(now.year, now.month);
     final selectedYearBalance = _yearBalance(_selectedYear);
     final years = _availableYears;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width <= 380;
+    final wide = width >= 900;
+    final denseMonths = !widget.showHeader;
     final monthsWithHours =
         widget.monthlyTotals.entries
             .where((entry) => entry.key.year == _selectedYear)
@@ -183,52 +578,12 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
             ],
           ),
         if (widget.showHeader) const SizedBox(height: 10),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: widget.primaryColor.withValues(alpha: .08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: widget.primaryColor.withValues(alpha: .2),
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.today, color: widget.primaryColor),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  DateFormat(
-                    'MMMM yyyy',
-                    'pt_PT',
-                  ).format(DateTime(now.year, now.month)),
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${currentMonthHours.toStringAsFixed(1)} h',
-                    style: TextStyle(
-                      color: widget.primaryColor,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (currentMonthBalance != null)
-                    Text(
-                      _balanceLabel(currentMonthBalance),
-                      style: TextStyle(
-                        color: _balanceColor(currentMonthBalance),
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
+        _buildCurrentMonthCard(
+          now: now,
+          currentMonthHours: currentMonthHours,
+          currentMonthBalance: currentMonthBalance,
+          compact: compact,
+          wide: wide,
         ),
         if (!widget.showHeader && years.length > 1) ...[
           Align(
@@ -257,117 +612,71 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
           ),
         ],
         SizedBox(height: widget.showHeader ? 10 : 6),
+        _buildYearToggle(
+          selectedYearBalance: selectedYearBalance,
+          compact: compact,
+        ),
         AnimatedCrossFade(
           duration: const Duration(milliseconds: 180),
           crossFadeState: _expanded
               ? CrossFadeState.showSecond
               : CrossFadeState.showFirst,
-          firstChild: Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              style: TextButton.styleFrom(
-                foregroundColor: widget.primaryColor,
-                textStyle: const TextStyle(fontWeight: FontWeight.w400),
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 0),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              onPressed: () => setState(() => _expanded = true),
-              icon: const Icon(Icons.expand_more),
-              label: Text(
-                selectedYearBalance == null
-                    ? 'Ver meses de $_selectedYear'
-                    : 'Ver meses de $_selectedYear • ${_yearBalanceLabel(selectedYearBalance)}',
-              ),
+          firstChild: const SizedBox.shrink(),
+          secondChild: Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final spacing = denseMonths ? 8.0 : 10.0;
+                    final targetWidth = denseMonths
+                        ? (wide ? 178.0 : (compact ? 132.0 : 152.0))
+                        : (wide ? 210.0 : (compact ? 150.0 : 180.0));
+                    final columns = math.max(
+                      1,
+                      ((constraints.maxWidth + spacing) /
+                              (targetWidth + spacing))
+                          .floor(),
+                    );
+                    final tileWidth =
+                        (constraints.maxWidth - (spacing * (columns - 1))) /
+                        columns;
+
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: monthsWithHours.map((entry) {
+                        final month = entry.key.month;
+                        final total = entry.value;
+                        final balance = _monthBalance(_selectedYear, month);
+                        return SizedBox(
+                          width: tileWidth,
+                          child: _buildMonthTile(
+                            year: _selectedYear,
+                            month: month,
+                            total: total,
+                            balance: balance,
+                            compact: compact,
+                            dense: denseMonths,
+                          ),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+                if (monthsWithHours.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      widget.monthlyTotals.isEmpty
+                          ? widget.emptyMessage
+                          : 'Sem horas registadas em $_selectedYear.',
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  ),
+              ],
             ),
-          ),
-          secondChild: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  style: TextButton.styleFrom(
-                    foregroundColor: widget.primaryColor,
-                    textStyle: const TextStyle(fontWeight: FontWeight.w400),
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(0, 0),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  onPressed: () => setState(() => _expanded = false),
-                  icon: const Icon(Icons.expand_less),
-                  label: Text(
-                    selectedYearBalance == null
-                        ? 'Ocultar meses de $_selectedYear'
-                        : 'Ocultar meses de $_selectedYear • ${_yearBalanceLabel(selectedYearBalance)}',
-                  ),
-                ),
-              ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: monthsWithHours.map((entry) {
-                  final month = entry.key.month;
-                  final total = entry.value;
-                  final balance = _monthBalance(_selectedYear, month);
-                  return Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: widget.primaryColor.withValues(alpha: .06),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: widget.primaryColor.withValues(alpha: .16),
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          DateFormat(
-                            'MMM',
-                            'pt_PT',
-                          ).format(DateTime(_selectedYear, month)),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '${total.toStringAsFixed(1)}h',
-                          style: TextStyle(
-                            color: widget.primaryColor,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        if (balance != null) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            _balanceLabel(balance),
-                            style: TextStyle(
-                              color: _balanceColor(balance),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-              if (monthsWithHours.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    widget.monthlyTotals.isEmpty
-                        ? widget.emptyMessage
-                        : 'Sem horas registadas em $_selectedYear.',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ),
-            ],
           ),
         ),
       ],

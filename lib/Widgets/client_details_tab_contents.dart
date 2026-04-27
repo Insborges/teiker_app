@@ -33,6 +33,7 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
     required this.serviceMonthLabel,
     required this.appliedServicePrices,
     required this.onRemoveAppliedService,
+    required this.onEditAppliedService,
     required this.onAddService,
     required this.canManageAdditionalServices,
   });
@@ -65,6 +66,7 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
   final String serviceMonthLabel;
   final Map<String, double> appliedServicePrices;
   final Future<void> Function(String serviceKey) onRemoveAppliedService;
+  final Future<void> Function(String serviceKey) onEditAppliedService;
   final VoidCallback onAddService;
   final bool canManageAdditionalServices;
 
@@ -128,6 +130,7 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
             serviceMonthLabel: serviceMonthLabel,
             appliedServicePrices: appliedServicePrices,
             onRemoveAppliedService: onRemoveAppliedService,
+            onEditAppliedService: onEditAppliedService,
             onAddService: onAddService,
             readOnly: !canManageAdditionalServices,
           ),

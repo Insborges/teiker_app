@@ -139,6 +139,12 @@ class _AllTeikersHoursScreenState extends State<AllTeikersHoursScreen> {
     return _monthlyTargetHours(summary.teiker, _selectedMonth);
   }
 
+  double _periodBalance(_TeikerHoursSummary summary) {
+    final base = _periodHours(summary) - _periodTarget(summary);
+    if (!_showGeneralSummary) return base;
+    return base + summary.teiker.hoursBalanceAdjustment;
+  }
+
   List<_TeikerHoursSummary> _filteredSummaries() {
     final query = _searchController.text.trim().toLowerCase();
     final list = _summaries.where((item) {
@@ -147,8 +153,8 @@ class _AllTeikersHoursScreenState extends State<AllTeikersHoursScreen> {
     }).toList();
 
     list.sort((a, b) {
-      final balanceA = _periodHours(a) - _periodTarget(a);
-      final balanceB = _periodHours(b) - _periodTarget(b);
+      final balanceA = _periodBalance(a);
+      final balanceB = _periodBalance(b);
       return balanceB.compareTo(balanceA);
     });
     return list;
@@ -213,86 +219,249 @@ class _AllTeikersHoursScreenState extends State<AllTeikersHoursScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-          ? Center(child: Text(_error!))
-          : Column(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final isCompactPhone = width <= 380;
+          final isTablet = width >= 720;
+          final isDesktop = width >= 1120;
+          final contentMaxWidth = isDesktop
+              ? 1220.0
+              : (isTablet ? 960.0 : 720.0);
+          final horizontalPadding = isDesktop ? 24.0 : (isTablet ? 18.0 : 12.0);
+          final gridColumns = isDesktop
+              ? (width >= 1450 ? 3 : 2)
+              : (isTablet ? 2 : 1);
+
+          Widget body;
+          if (_loading) {
+            body = const Center(child: CircularProgressIndicator());
+          } else if (_error != null) {
+            body = _ScreenStateCard(
+              icon: Icons.error_outline_rounded,
+              title: 'Erro ao carregar',
+              message: _error!,
+              accent: Colors.red.shade700,
+            );
+          } else {
+            body = Column(
               children: [
-                AppSearchBar(
-                  controller: _searchController,
-                  hintText: 'Pesquisar teiker',
-                  margin: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                  onChanged: (_) => setState(() {}),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Mês atual / selecionado'),
-                        selected: !_showGeneralSummary,
-                        onSelected: (_) =>
-                            setState(() => _showGeneralSummary = false),
-                      ),
-                      ChoiceChip(
-                        label: const Text('Resumo geral'),
-                        selected: _showGeneralSummary,
-                        onSelected: (_) =>
-                            setState(() => _showGeneralSummary = true),
-                      ),
-                      if (!_showGeneralSummary)
-                        ActionChip(
-                          label: Text(
-                            _months.isEmpty
-                                ? DateFormat(
-                                    'MMMM yyyy',
-                                    'pt_PT',
-                                  ).format(_selectedMonth)
-                                : DateFormat(
-                                    'MMMM yyyy',
-                                    'pt_PT',
-                                  ).format(_selectedMonth),
-                          ),
-                          avatar: const Icon(
-                            Icons.calendar_month,
-                            size: 18,
-                            color: AppColors.primaryGreen,
-                          ),
-                          onPressed: _pickMonth,
-                        ),
-                    ],
-                  ),
-                ),
+                _buildControlPanel(compact: isCompactPhone, wide: isTablet),
+                const SizedBox(height: 12),
                 Expanded(
                   child: filtered.isEmpty
-                      ? const Center(child: Text('Sem teikers para mostrar.'))
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                      ? const _ScreenStateCard(
+                          icon: Icons.people_outline_rounded,
+                          title: 'Sem teikers para mostrar',
+                          message:
+                              'Ajusta a pesquisa ou aguarda novos registos.',
+                          accent: AppColors.primaryGreen,
+                        )
+                      : gridColumns == 1
+                      ? ListView.separated(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (context, index) {
+                            final item = filtered[index];
+                            return _buildTeikerHoursCard(
+                              item,
+                              compact: isCompactPhone,
+                              wideLayout: false,
+                            );
+                          },
+                        )
+                      : GridView.builder(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: gridColumns,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                                mainAxisExtent: isDesktop ? 178 : 188,
+                              ),
                           itemCount: filtered.length,
                           itemBuilder: (context, index) {
                             final item = filtered[index];
-                            final hours = _periodHours(item);
-                            final target = _periodTarget(item);
-                            final balance = hours - target;
-                            return _TeikerHoursCard(
-                              teikerName: item.teiker.nameTeiker,
-                              workPercentage: item.teiker.workPercentage,
-                              weeklyTarget:
-                                  TeikerWorkload.weeklyHoursForPercentage(
-                                    item.teiker.workPercentage,
-                                  ),
-                              hours: hours,
-                              target: target,
-                              balance: balance,
+                            return _buildTeikerHoursCard(
+                              item,
+                              compact: false,
+                              wideLayout: true,
                             );
                           },
                         ),
                 ),
               ],
+            );
+          }
+
+          return SafeArea(
+            top: false,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: contentMaxWidth),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    10,
+                    horizontalPadding,
+                    0,
+                  ),
+                  child: body,
+                ),
+              ),
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildControlPanel({required bool compact, required bool wide}) {
+    final periodLabel = _showGeneralSummary
+        ? 'Resumo geral'
+        : DateFormat('MMMM yyyy', 'pt_PT').format(_selectedMonth);
+
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(wide ? 16 : 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.primaryGreen.withValues(alpha: .12),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (wide)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 6,
+                  child: AppSearchBar(
+                    controller: _searchController,
+                    hintText: 'Pesquisar teiker',
+                    margin: EdgeInsets.zero,
+                    onChanged: (_) => setState(() {}),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  flex: 5,
+                  child: _buildFilterWrap(
+                    compact: compact,
+                    wide: wide,
+                    periodLabel: periodLabel,
+                  ),
+                ),
+              ],
+            )
+          else ...[
+            AppSearchBar(
+              controller: _searchController,
+              hintText: 'Pesquisar teiker',
+              margin: EdgeInsets.zero,
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 10),
+            _buildFilterWrap(
+              compact: compact,
+              wide: wide,
+              periodLabel: periodLabel,
+            ),
+          ],
+          const SizedBox(height: 10),
+          Text(
+            _showGeneralSummary
+                ? 'Comparação anual acumulada por teiker.'
+                : 'Comparação do mês selecionado face à meta de trabalho.',
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontSize: compact ? 12 : 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterWrap({
+    required bool compact,
+    required bool wide,
+    required String periodLabel,
+  }) {
+    final labelStyle = TextStyle(
+      fontSize: compact ? 12 : 13,
+      fontWeight: FontWeight.w700,
+    );
+
+    return Align(
+      alignment: wide ? Alignment.topRight : Alignment.centerLeft,
+      child: Wrap(
+        alignment: wide ? WrapAlignment.end : WrapAlignment.start,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          ChoiceChip(
+            label: Text(
+              compact ? 'Mês' : 'Mês atual / selecionado',
+              style: labelStyle,
+            ),
+            selected: !_showGeneralSummary,
+            onSelected: (_) => setState(() => _showGeneralSummary = false),
+          ),
+          ChoiceChip(
+            label: Text(compact ? 'Geral' : 'Resumo geral', style: labelStyle),
+            selected: _showGeneralSummary,
+            onSelected: (_) => setState(() => _showGeneralSummary = true),
+          ),
+          if (!_showGeneralSummary)
+            ActionChip(
+              label: Text(periodLabel, style: labelStyle),
+              avatar: const Icon(
+                Icons.calendar_month,
+                size: 18,
+                color: AppColors.primaryGreen,
+              ),
+              onPressed: _pickMonth,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeikerHoursCard(
+    _TeikerHoursSummary item, {
+    required bool compact,
+    required bool wideLayout,
+  }) {
+    final hours = _periodHours(item);
+    final target = _periodTarget(item);
+    final balance = _periodBalance(item);
+
+    return _TeikerHoursCard(
+      teikerName: item.teiker.nameTeiker,
+      workPercentage: item.teiker.workPercentage,
+      weeklyTarget: TeikerWorkload.weeklyHoursForPercentage(
+        item.teiker.workPercentage,
+      ),
+      hours: hours,
+      target: target,
+      balance: balance,
+      compact: compact,
+      wideLayout: wideLayout,
     );
   }
 }
@@ -315,6 +484,8 @@ class _TeikerHoursCard extends StatelessWidget {
     required this.hours,
     required this.target,
     required this.balance,
+    required this.compact,
+    required this.wideLayout,
   });
 
   final String teikerName;
@@ -323,6 +494,8 @@ class _TeikerHoursCard extends StatelessWidget {
   final double hours;
   final double target;
   final double balance;
+  final bool compact;
+  final bool wideLayout;
 
   @override
   Widget build(BuildContext context) {
@@ -338,59 +511,266 @@ class _TeikerHoursCard extends StatelessWidget {
         : positive
         ? '${balance.toStringAsFixed(1)} h a mais'
         : '${balance.abs().toStringAsFixed(1)} h a menos';
+    final primary = AppColors.primaryGreen;
+    final titleStyle = TextStyle(
+      fontWeight: FontWeight.w800,
+      fontSize: wideLayout ? 16 : (compact ? 14 : 15),
+    );
+    final metricLabelStyle = TextStyle(
+      fontWeight: FontWeight.w700,
+      fontSize: compact ? 11 : 12,
+      color: Colors.grey.shade600,
+    );
+    final metricValueStyle = TextStyle(
+      fontWeight: FontWeight.w800,
+      fontSize: compact ? 12 : 13,
+      color: Colors.black87,
+    );
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      padding: EdgeInsets.all(wideLayout ? 16 : (compact ? 10 : 12)),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: AppColors.primaryGreen.withValues(alpha: .12),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  teikerName,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
+          if (wideLayout)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        teikerName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: titleStyle,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Meta semanal ${weeklyTarget.toStringAsFixed(0)}h • $workPercentage%',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                const SizedBox(width: 12),
+                _BalanceBadge(label: balanceLabel, color: accent),
+              ],
+            )
+          else ...[
+            Text(teikerName, style: titleStyle),
+            const SizedBox(height: 8),
+            _BalanceBadge(label: balanceLabel, color: accent, fullWidth: true),
+          ],
+          SizedBox(height: wideLayout ? 12 : 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _HoursMetricChip(
+                icon: Icons.schedule_rounded,
+                label: 'Horas',
+                value: '${hours.toStringAsFixed(1)}h',
+                labelStyle: metricLabelStyle,
+                valueStyle: metricValueStyle.copyWith(color: primary),
+                compact: compact,
               ),
-              Flexible(
-                child: Text(
-                  balanceLabel,
-                  textAlign: TextAlign.end,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: accent, fontWeight: FontWeight.w800),
+              _HoursMetricChip(
+                icon: Icons.flag_outlined,
+                label: 'Meta mês',
+                value: '${target.toStringAsFixed(1)}h',
+                labelStyle: metricLabelStyle,
+                valueStyle: metricValueStyle,
+                compact: compact,
+              ),
+              if (!wideLayout)
+                _HoursMetricChip(
+                  icon: Icons.pie_chart_outline_rounded,
+                  label: 'Meta semanal',
+                  value:
+                      '${weeklyTarget.toStringAsFixed(0)}h ($workPercentage%)',
+                  labelStyle: metricLabelStyle,
+                  valueStyle: metricValueStyle,
+                  compact: compact,
                 ),
-              ),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            'Horas: ${hours.toStringAsFixed(1)}h • Meta mês: ${target.toStringAsFixed(1)}h',
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Colors.black54,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Meta semanal: ${weeklyTarget.toStringAsFixed(0)}h ($workPercentage%)',
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
-              color: Colors.black45,
-              fontSize: 12,
+        ],
+      ),
+    );
+  }
+}
+
+class _BalanceBadge extends StatelessWidget {
+  const _BalanceBadge({
+    required this.label,
+    required this.color,
+    this.fullWidth = false,
+  });
+
+  final String label;
+  final Color color;
+  final bool fullWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final child = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        textAlign: fullWidth ? TextAlign.center : TextAlign.end,
+        style: TextStyle(color: color, fontWeight: FontWeight.w800),
+      ),
+    );
+
+    if (fullWidth) {
+      return SizedBox(width: double.infinity, child: child);
+    }
+    return child;
+  }
+}
+
+class _HoursMetricChip extends StatelessWidget {
+  const _HoursMetricChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.labelStyle,
+    required this.valueStyle,
+    required this.compact,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final TextStyle labelStyle;
+  final TextStyle valueStyle;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(minWidth: compact ? 118 : 132),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 10 : 12,
+        vertical: compact ? 8 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.primaryGreen.withValues(alpha: .06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primaryGreen.withValues(alpha: .1)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: compact ? 16 : 18, color: AppColors.primaryGreen),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label, style: labelStyle),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: valueStyle,
+                ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ScreenStateCard extends StatelessWidget {
+  const _ScreenStateCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+    required this.accent,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: double.infinity,
+        constraints: const BoxConstraints(maxWidth: 540),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: accent.withValues(alpha: .18)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: accent),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

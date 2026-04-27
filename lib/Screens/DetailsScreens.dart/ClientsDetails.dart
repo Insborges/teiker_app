@@ -41,6 +41,7 @@ class Clientsdetails extends StatefulWidget {
 }
 
 class _ClientsdetailsState extends State<Clientsdetails> {
+  static const String _customServiceOptionId = '__custom_service__';
   static const List<String> _serviceCatalog = [
     'Shopping',
     'Laundry',
@@ -107,10 +108,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       text: widget.cliente.orcamento.toString(),
     );
     _migrateLegacyCurrentMonthServicesIfNeeded();
-    _appliedServicePrices = Map<String, double>.fromEntries(
-      _servicePricesForMonth(_selectedReferenceMonth).entries.where(
-        (entry) => _serviceCatalog.contains(_serviceBaseName(entry.key)),
-      ),
+    _appliedServicePrices = Map<String, double>.from(
+      _servicePricesForMonth(_selectedReferenceMonth),
     );
 
     _horasCasa = widget.cliente.hourasCasa;
@@ -221,6 +220,27 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     return null;
   }
 
+  MapEntry<String, double>? _findOtherServiceEntryByBaseName(
+    String baseName, {
+    required String excludingKey,
+  }) {
+    final normalizedBase = baseName.trim().toLowerCase();
+    for (final entry in _appliedServicePrices.entries) {
+      if (entry.key == excludingKey) continue;
+      if (_serviceBaseName(entry.key).toLowerCase() == normalizedBase) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  bool _isCatalogService(String baseName) {
+    final normalizedBase = baseName.trim().toLowerCase();
+    return _serviceCatalog.any(
+      (service) => service.trim().toLowerCase() == normalizedBase,
+    );
+  }
+
   DateTime _monthStart(DateTime date) => DateTime(date.year, date.month, 1);
 
   String get _serviceMonthKey => _monthKey(_selectedReferenceMonth);
@@ -318,9 +338,16 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       return;
     }
 
-    final options = _serviceCatalog
-        .map((service) => ServicePickerOption(id: service, label: service))
-        .toList();
+    final options =
+        _serviceCatalog
+            .map((service) => ServicePickerOption(id: service, label: service))
+            .toList()
+          ..add(
+            const ServicePickerOption(
+              id: _customServiceOptionId,
+              label: 'Adicionar serviço personalizado',
+            ),
+          );
 
     final picked = await showModalBottomSheet<ServicePickerOption>(
       context: context,
@@ -342,33 +369,50 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     if (!mounted) return;
     if (picked == null) return;
 
-    final selectedService = picked.id;
-    final price = await showModalBottomSheet<double>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => ServicePriceSheet(
-        serviceName: selectedService,
-        primaryColor: AppColors.primaryGreen,
-        initialPrice: () {
-          final existing = _findServiceEntryByBaseName(selectedService);
-          if (existing == null) return null;
-          final quantity = _serviceQuantityFromKey(existing.key);
-          return existing.value / quantity;
-        }(),
-      ),
-    );
+    String? selectedService;
+    double? price;
 
-    if (!mounted) return;
-    if (price == null) return;
+    if (picked.id == _customServiceOptionId) {
+      final customResult = await showModalBottomSheet<CustomServiceResult>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) =>
+            CustomServiceSheet(primaryColor: AppColors.primaryGreen),
+      );
+      if (!mounted) return;
+      if (customResult == null) return;
+      selectedService = customResult.name.trim();
+      price = customResult.price;
+    } else {
+      selectedService = picked.id;
+      price = await showModalBottomSheet<double>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => ServicePriceSheet(
+          serviceName: selectedService!,
+          primaryColor: AppColors.primaryGreen,
+          initialPrice: () {
+            final existing = _findServiceEntryByBaseName(selectedService!);
+            if (existing == null) return null;
+            final quantity = _serviceQuantityFromKey(existing.key);
+            return existing.value / quantity;
+          }(),
+        ),
+      );
+      if (!mounted) return;
+      if (price == null) return;
+    }
+
     setState(() {
-      final existing = _findServiceEntryByBaseName(selectedService);
+      final existing = _findServiceEntryByBaseName(selectedService!);
       if (existing == null) {
-        _appliedServicePrices[selectedService] = price;
+        _appliedServicePrices[selectedService] = price!;
       } else {
         final previousQuantity = _serviceQuantityFromKey(existing.key);
         final nextQuantity = previousQuantity + 1;
-        final nextTotal = existing.value + price;
+        final nextTotal = existing.value + price!;
         _appliedServicePrices.remove(existing.key);
         _appliedServicePrices[_serviceKeyWithQuantity(
               selectedService,
@@ -384,6 +428,85 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       AppSnackBar.show(
         context,
         message: 'Erro ao guardar serviço: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  Future<void> _editAppliedService(String serviceKey) async {
+    final currentTotal = _appliedServicePrices[serviceKey];
+    if (currentTotal == null) return;
+
+    final baseName = _serviceBaseName(serviceKey);
+    final quantity = _serviceQuantityFromKey(serviceKey);
+    final initialUnitPrice = currentTotal / quantity;
+
+    String updatedBaseName = baseName;
+    double? updatedUnitPrice;
+
+    if (_isCatalogService(baseName)) {
+      updatedUnitPrice = await showModalBottomSheet<double>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => ServicePriceSheet(
+          serviceName: baseName,
+          primaryColor: AppColors.primaryGreen,
+          initialPrice: initialUnitPrice,
+        ),
+      );
+      if (!mounted) return;
+      if (updatedUnitPrice == null) return;
+    } else {
+      final customResult = await showModalBottomSheet<CustomServiceResult>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => CustomServiceSheet(
+          primaryColor: AppColors.primaryGreen,
+          initialName: baseName,
+          initialPrice: initialUnitPrice,
+        ),
+      );
+      if (!mounted) return;
+      if (customResult == null) return;
+      updatedBaseName = customResult.name.trim();
+      updatedUnitPrice = customResult.price;
+    }
+
+    final updatedTotal = updatedUnitPrice * quantity;
+    final updatedKey = _serviceKeyWithQuantity(updatedBaseName, quantity);
+
+    setState(() {
+      _appliedServicePrices.remove(serviceKey);
+      final mergeTarget = _findOtherServiceEntryByBaseName(
+        updatedBaseName,
+        excludingKey: serviceKey,
+      );
+
+      if (mergeTarget == null) {
+        _appliedServicePrices[updatedKey] = updatedTotal;
+      } else {
+        final mergedQuantity =
+            quantity + _serviceQuantityFromKey(mergeTarget.key);
+        final mergedTotal = updatedTotal + mergeTarget.value;
+        _appliedServicePrices.remove(mergeTarget.key);
+        _appliedServicePrices[_serviceKeyWithQuantity(
+              updatedBaseName,
+              mergedQuantity,
+            )] =
+            mergedTotal;
+      }
+    });
+
+    try {
+      await _persistAdditionalServices();
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro ao atualizar serviço: $e',
         icon: Icons.error_outline,
         background: Colors.red.shade700,
       );
@@ -421,10 +544,8 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
     setState(() {
       _selectedReferenceMonth = next;
-      _appliedServicePrices = Map<String, double>.fromEntries(
-        _servicePricesForMonth(next).entries.where(
-          (entry) => _serviceCatalog.contains(_serviceBaseName(entry.key)),
-        ),
+      _appliedServicePrices = Map<String, double>.from(
+        _servicePricesForMonth(next),
       );
     });
     await _loadHorasForSelectedMonth();
@@ -1164,6 +1285,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                         serviceMonthLabel: _serviceMonthLabel,
                         appliedServicePrices: _appliedServicePrices,
                         onRemoveAppliedService: _removeAppliedService,
+                        onEditAppliedService: _editAppliedService,
                         onAddService: _openAddServiceDialog,
                         canManageAdditionalServices: _isAdmin,
                       ),

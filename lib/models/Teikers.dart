@@ -9,6 +9,29 @@ DateTime? _parseDate(dynamic value) {
   return null;
 }
 
+double? _parseDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value.trim());
+  return null;
+}
+
+double _legacyHoursBalanceAdjustment({
+  required String name,
+  required String email,
+}) {
+  final normalizedName = name.trim().toLowerCase();
+  final normalizedEmail = email.trim().toLowerCase();
+
+  // Saldo pré-app da Márcia até ficar persistido diretamente no Firestore.
+  if (normalizedName.contains('márcia') ||
+      normalizedName.contains('marcia') ||
+      normalizedEmail.contains('marcia')) {
+    return 48.0;
+  }
+
+  return 0.0;
+}
+
 Color _parseColor(dynamic value) {
   if (value is int) return Color(value);
   if (value is String && value.isNotEmpty) {
@@ -202,6 +225,7 @@ class Teiker {
   final String phoneCountryIso;
   final double horas;
   final int workPercentage;
+  final double hoursBalanceAdjustment;
   final List<String> clientesIds;
   final List<Consulta> consultas;
   final List<TeikerMarcacao> marcacoes;
@@ -222,6 +246,7 @@ class Teiker {
     this.phoneCountryIso = 'PT',
     required this.horas,
     this.workPercentage = TeikerWorkload.fullTime,
+    this.hoursBalanceAdjustment = 0,
     required this.clientesIds,
     required this.consultas,
     this.marcacoes = const [],
@@ -272,11 +297,18 @@ class Teiker {
     final weeklyHours =
         storedWeeklyHours ??
         TeikerWorkload.weeklyHoursForPercentage(workPercentage);
+    final name = (data['name'] as String? ?? '').trim();
+    final email = (data['email'] as String? ?? '').trim();
+    final hoursBalanceAdjustment =
+        _parseDouble(data['hoursBalanceAdjustment']) ??
+        _parseDouble(data['balanceAdjustmentHours']) ??
+        _parseDouble(data['saldoHorasInicial']) ??
+        _legacyHoursBalanceAdjustment(name: name, email: email);
 
     return Teiker(
       uid: documentId,
-      nameTeiker: data['name'] ?? '',
-      email: data['email'] ?? '',
+      nameTeiker: name,
+      email: email,
       birthDate:
           _parseDate(data['birthDate']) ?? _parseDate(data['dataNascimento']),
       workPercentage: workPercentage,
@@ -285,6 +317,7 @@ class Teiker {
           .trim()
           .toUpperCase(),
       horas: weeklyHours,
+      hoursBalanceAdjustment: hoursBalanceAdjustment,
       corIdentificadora: _parseColor(data['cor']),
       clientesIds: List<String>.from(data['clientesIds'] ?? []),
       consultas: (data['consultas'] as List<dynamic>? ?? [])
@@ -316,6 +349,7 @@ class Teiker {
       'phoneCountryIso': phoneCountryIso,
       'horas': horas,
       'workPercentage': workPercentage,
+      'hoursBalanceAdjustment': hoursBalanceAdjustment,
       'cor': corIdentificadora.toARGB32(),
       'clientesIds': clientesIds,
       'consultas': consultas.map((c) => c.toMap()).toList(),
@@ -338,6 +372,7 @@ class Teiker {
     String? phoneCountryIso,
     double? horas,
     int? workPercentage,
+    double? hoursBalanceAdjustment,
     List<String>? clientesIds,
     List<Consulta>? consultas,
     List<TeikerMarcacao>? marcacoes,
@@ -358,6 +393,8 @@ class Teiker {
       phoneCountryIso: phoneCountryIso ?? this.phoneCountryIso,
       horas: horas ?? this.horas,
       workPercentage: workPercentage ?? this.workPercentage,
+      hoursBalanceAdjustment:
+          hoursBalanceAdjustment ?? this.hoursBalanceAdjustment,
       clientesIds: clientesIds ?? this.clientesIds,
       consultas: consultas ?? this.consultas,
       marcacoes: marcacoes ?? this.marcacoes,

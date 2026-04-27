@@ -154,6 +154,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
                       monthlyTotals: snapshot.data ?? const {},
                       primaryColor: primaryColor,
                       workPercentage: teiker.workPercentage,
+                      balanceAdjustmentHours: teiker.hoursBalanceAdjustment,
                       title: hoursSectionTitle,
                       showHeader: false,
                       emptyMessage: 'Sem horas registadas.',

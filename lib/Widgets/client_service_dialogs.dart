@@ -10,6 +10,13 @@ class ServicePickerOption {
   final String label;
 }
 
+class CustomServiceResult {
+  const CustomServiceResult({required this.name, required this.price});
+
+  final String name;
+  final double price;
+}
+
 class ServiceSearchPickerSheet extends StatefulWidget {
   const ServiceSearchPickerSheet({
     super.key,
@@ -203,6 +210,141 @@ class _ServicePriceSheetState extends State<ServicePriceSheet> {
               focusColor: widget.primaryColor,
               borderColor: widget.primaryColor.withValues(alpha: .25),
               fillColor: Colors.grey.shade100,
+            ),
+            if (_errorText != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _errorText!,
+                  style: TextStyle(
+                    color: Colors.red.shade700,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    text: 'Cancelar',
+                    outline: true,
+                    color: widget.primaryColor,
+                    onPressed: () => Navigator.of(context).pop(),
+                    verticalPadding: 13,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: AppButton(
+                    text: 'Adicionar',
+                    icon: Icons.check_rounded,
+                    color: widget.primaryColor,
+                    onPressed: _submit,
+                    verticalPadding: 13,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CustomServiceSheet extends StatefulWidget {
+  const CustomServiceSheet({
+    super.key,
+    required this.primaryColor,
+    this.initialName,
+    this.initialPrice,
+  });
+
+  final Color primaryColor;
+  final String? initialName;
+  final double? initialPrice;
+
+  @override
+  State<CustomServiceSheet> createState() => _CustomServiceSheetState();
+}
+
+class _CustomServiceSheetState extends State<CustomServiceSheet> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _priceController;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.initialName ?? '');
+    _priceController = TextEditingController(
+      text: widget.initialPrice == null
+          ? ''
+          : widget.initialPrice!.toStringAsFixed(2),
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _priceController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    final priceRaw = _priceController.text.trim();
+    final price = double.tryParse(priceRaw.replaceAll(',', '.'));
+
+    if (name.isEmpty) {
+      setState(() => _errorText = 'Define o nome do serviço.');
+      return;
+    }
+    if (priceRaw.isEmpty || price == null || price < 0) {
+      setState(() => _errorText = 'Define um preço válido para o serviço.');
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).pop(CustomServiceResult(name: name, price: price));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 200),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: AppBottomSheetShell(
+        title: 'Serviço personalizado',
+        subtitle: 'Adiciona um nome e o preço do serviço',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppTextField(
+              label: 'Nome do serviço',
+              controller: _nameController,
+              prefixIcon: Icons.design_services_outlined,
+              focusColor: widget.primaryColor,
+              borderColor: widget.primaryColor.withValues(alpha: .25),
+              fillColor: Colors.grey.shade100,
+              textInputAction: TextInputAction.next,
+            ),
+            const SizedBox(height: 12),
+            AppTextField(
+              label: 'Preço (CHF)',
+              controller: _priceController,
+              keyboard: const TextInputType.numberWithOptions(decimal: true),
+              prefixIcon: Icons.payments_outlined,
+              focusColor: widget.primaryColor,
+              borderColor: widget.primaryColor.withValues(alpha: .25),
+              fillColor: Colors.grey.shade100,
+              onFieldSubmitted: (_) => _submit(),
             ),
             if (_errorText != null) ...[
               const SizedBox(height: 8),

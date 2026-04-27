@@ -7,7 +7,7 @@ class AppUserRoleResolver {
   static const String developerEmail = 'spacecutcompany@gmail.com';
   static const String developerName = 'Inês Borges';
   static const String adminName = 'Sónia Pereira';
-  static const String hrName = 'Mary Borges';
+  static const String hrName = 'Maria Borges';
 
   static AppUserRole fromEmail(String? email) {
     final normalized = (email ?? '').trim().toLowerCase();

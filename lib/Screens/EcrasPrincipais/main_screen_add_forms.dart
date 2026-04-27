@@ -97,16 +97,12 @@ Future<TeikerFormData?> showAddTeikerFormSheet(BuildContext context) async {
                 _formInput('Nome', nameController),
                 const SizedBox(height: 10),
                 _formInput(
-                  'Email (opcional)',
+                  'Email',
                   emailController,
                   keyboard: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 10),
-                _formInput(
-                  'Password (se tiver email)',
-                  passwordController,
-                  obscure: true,
-                ),
+                _formInput('Password', passwordController, obscure: true),
                 const SizedBox(height: 10),
                 PhoneNumberInputRow(
                   controller: telemovelController,

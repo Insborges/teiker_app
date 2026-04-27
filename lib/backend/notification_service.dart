@@ -30,12 +30,16 @@ class NotificationService {
   _adminRemindersSubscription;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _userMarcacoesSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _managerBirthdaysSubscription;
   String? _adminReminderListenerUid;
   String? _userMarcacoesListenerUid;
   bool _adminReminderBaselineLoaded = false;
   bool _userMarcacoesBaselineLoaded = false;
+  bool _managerBirthdaysBaselineLoaded = false;
   final Set<String> _knownAdminReminderIds = <String>{};
   final Set<String> _knownUserMarcacaoReminderIds = <String>{};
+  final Set<String> _knownManagerBirthdayUids = <String>{};
   String? _birthdayNotificationUid;
   final StreamController<String> _managerEventOpenController =
       StreamController<String>.broadcast();
@@ -202,8 +206,12 @@ class NotificationService {
     required String scope,
     required String reminderId,
   }) => ('marcacao_30m_${scope}_$reminderId').hashCode & 0x7fffffff;
+  int _managerMarcacaoNotificationId(String reminderId) =>
+      ('manager_marcacao_$reminderId').hashCode & 0x7fffffff;
   int _teikerBirthdayNotificationId(String uid) =>
       ('teiker_birthday_$uid').hashCode & 0x7fffffff;
+  int _managerBirthdayNotificationId(String uid) =>
+      ('manager_teiker_birthday_$uid').hashCode & 0x7fffffff;
 
   Future<void> _requestLocalNotificationPermissions() async {
     if (Platform.isAndroid) {
@@ -326,11 +334,22 @@ class NotificationService {
               continue;
             }
 
+            final creatorRole = (data['createdByRole'] as String?)?.trim();
+            final isPrivilegedCreator = _isPrivilegedRoleName(creatorRole);
+            if (_isTeikerMarcacaoReminderTag(tag) && isPrivilegedCreator) {
+              if (createdById == managerUid) continue;
+              _showManagerMarcacaoAddedNotification(
+                notificationId: id,
+                creatorName: creatorName,
+                teikerName: (data['teikerName'] as String?)?.trim(),
+                tag: tag,
+              );
+              continue;
+            }
+
             if (tag == 'Acontecimento') {
-              final creatorRole = (data['createdByRole'] as String?)
-                  ?.trim()
-                  .toLowerCase();
-              if (creatorRole == 'admin' || creatorRole == 'hr') {
+              if (isPrivilegedCreator) {
+                if (createdById == managerUid) continue;
                 _showManagerEventAddedNotification(
                   notificationId: id,
                   creatorName: creatorName,
@@ -354,6 +373,13 @@ class NotificationService {
     return normalized == 'reunião de trabalho' ||
         normalized == 'reuniao de trabalho' ||
         normalized == 'acompanhamento';
+  }
+
+  bool _isPrivilegedRoleName(String? rawRole) {
+    final normalized = (rawRole ?? '').trim().toLowerCase();
+    return normalized == AppUserRole.admin.name ||
+        normalized == AppUserRole.hr.name ||
+        normalized == AppUserRole.developer.name;
   }
 
   DateTime? _parseReminderDate(dynamic raw) {
@@ -551,50 +577,64 @@ class NotificationService {
     int hour = 0,
     int minute = 10,
   }) {
-    DateTime occurrence = DateTime(
-      now.year,
-      birthDate.month,
-      birthDate.day,
-      hour,
-      minute,
+    DateTime occurrence = _birthdayOccurrenceForYear(
+      birthDate: birthDate,
+      year: now.year,
+      hour: hour,
+      minute: minute,
     );
     if (!occurrence.isAfter(now)) {
-      occurrence = DateTime(
-        now.year + 1,
-        birthDate.month,
-        birthDate.day,
-        hour,
-        minute,
+      occurrence = _birthdayOccurrenceForYear(
+        birthDate: birthDate,
+        year: now.year + 1,
+        hour: hour,
+        minute: minute,
       );
     }
     return occurrence;
+  }
+
+  DateTime _birthdayOccurrenceForYear({
+    required DateTime birthDate,
+    required int year,
+    int hour = 0,
+    int minute = 10,
+  }) {
+    final maxDay = DateTime(year, birthDate.month + 1, 0).day;
+    final safeDay = birthDate.day.clamp(1, maxDay).toInt();
+    return DateTime(year, birthDate.month, safeDay, hour, minute);
   }
 
   Future<void> _syncTeikerBirthdayNotification() async {
     final user = _auth.currentUser;
 
     if (user == null) {
-      if (_birthdayNotificationUid != null) {
-        await _cancelLocalNotificationSafely(
-          _teikerBirthdayNotificationId(_birthdayNotificationUid!),
-        );
-      }
-      _birthdayNotificationUid = null;
+      await _stopSelfBirthdayNotification();
+      await _stopManagerBirthdayNotifications();
       return;
     }
 
     final role = AppUserRoleResolver.fromEmail(user.email);
     if (role.isPrivileged) {
-      if (_birthdayNotificationUid != null) {
-        await _cancelLocalNotificationSafely(
-          _teikerBirthdayNotificationId(_birthdayNotificationUid!),
-        );
-      }
-      _birthdayNotificationUid = null;
+      await _stopSelfBirthdayNotification();
+      await _startManagerBirthdayNotifications();
       return;
     }
 
-    final uid = user.uid;
+    await _stopManagerBirthdayNotifications();
+    await _startSelfBirthdayNotification(user.uid);
+  }
+
+  Future<void> _stopSelfBirthdayNotification() async {
+    if (_birthdayNotificationUid != null) {
+      await _cancelLocalNotificationSafely(
+        _teikerBirthdayNotificationId(_birthdayNotificationUid!),
+      );
+    }
+    _birthdayNotificationUid = null;
+  }
+
+  Future<void> _startSelfBirthdayNotification(String uid) async {
     if (_birthdayNotificationUid != null && _birthdayNotificationUid != uid) {
       await _cancelLocalNotificationSafely(
         _teikerBirthdayNotificationId(_birthdayNotificationUid!),
@@ -652,6 +692,124 @@ class NotificationService {
           UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.dateAndTime,
       payload: jsonEncode({'tipo': 'teiker_birthday', 'uid': uid}),
+    );
+  }
+
+  Future<void> _startManagerBirthdayNotifications() async {
+    if (_managerBirthdaysSubscription != null) return;
+
+    _managerBirthdaysBaselineLoaded = false;
+    _managerBirthdaysSubscription = FirebaseFirestore.instance
+        .collection('teikers')
+        .snapshots()
+        .listen((snapshot) {
+          if (!_managerBirthdaysBaselineLoaded) {
+            for (final doc in snapshot.docs) {
+              _knownManagerBirthdayUids.add(doc.id);
+              final data = doc.data();
+              unawaited(
+                _scheduleManagerBirthdayNotification(
+                  uid: doc.id,
+                  teikerName:
+                      (data['nameTeiker'] as String?)?.trim().isNotEmpty == true
+                      ? (data['nameTeiker'] as String).trim()
+                      : 'Teiker',
+                  birthDate:
+                      _parseBirthDate(data['birthDate']) ??
+                      _parseBirthDate(data['dataNascimento']),
+                ),
+              );
+            }
+            _managerBirthdaysBaselineLoaded = true;
+            return;
+          }
+
+          for (final change in snapshot.docChanges) {
+            final uid = change.doc.id;
+            final data = change.doc.data();
+            if (change.type == DocumentChangeType.removed) {
+              _knownManagerBirthdayUids.remove(uid);
+              unawaited(
+                _cancelLocalNotificationSafely(
+                  _managerBirthdayNotificationId(uid),
+                ),
+              );
+              continue;
+            }
+
+            _knownManagerBirthdayUids.add(uid);
+            if (data == null) {
+              unawaited(
+                _cancelLocalNotificationSafely(
+                  _managerBirthdayNotificationId(uid),
+                ),
+              );
+              continue;
+            }
+
+            unawaited(
+              _scheduleManagerBirthdayNotification(
+                uid: uid,
+                teikerName:
+                    (data['nameTeiker'] as String?)?.trim().isNotEmpty == true
+                    ? (data['nameTeiker'] as String).trim()
+                    : 'Teiker',
+                birthDate:
+                    _parseBirthDate(data['birthDate']) ??
+                    _parseBirthDate(data['dataNascimento']),
+              ),
+            );
+          }
+        });
+  }
+
+  Future<void> _stopManagerBirthdayNotifications() async {
+    for (final uid in _knownManagerBirthdayUids) {
+      await _cancelLocalNotificationSafely(_managerBirthdayNotificationId(uid));
+    }
+    _knownManagerBirthdayUids.clear();
+    _managerBirthdaysBaselineLoaded = false;
+    await _managerBirthdaysSubscription?.cancel();
+    _managerBirthdaysSubscription = null;
+  }
+
+  Future<void> _scheduleManagerBirthdayNotification({
+    required String uid,
+    required String teikerName,
+    required DateTime? birthDate,
+  }) async {
+    await _cancelLocalNotificationSafely(_managerBirthdayNotificationId(uid));
+    if (birthDate == null) return;
+
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'manager_teiker_birthdays',
+        'Aniversários das teikers',
+        channelDescription:
+            'Notificações de aniversários para admin, RH e developer.',
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      ),
+      iOS: const DarwinNotificationDetails(),
+    );
+
+    final nextBirthday = _nextBirthdayAt(
+      birthDate: birthDate,
+      now: DateTime.now(),
+    );
+
+    await _local.zonedSchedule(
+      _managerBirthdayNotificationId(uid),
+      'Aniversário da teiker',
+      'Hoje é o aniversário de $teikerName.',
+      tz.TZDateTime.from(nextBirthday, tz.local),
+      details,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.dateAndTime,
+      payload: jsonEncode({'tipo': 'manager_birthday', 'uid': uid}),
     );
   }
 
@@ -714,6 +872,65 @@ class NotificationService {
     );
   }
 
+  String _managerMarcacaoNotificationTitle(String? tag) {
+    final normalized = (tag ?? '').trim().toLowerCase();
+    if (normalized == 'acompanhamento') {
+      return 'Novo acompanhamento';
+    }
+    return 'Nova reunião';
+  }
+
+  String _managerMarcacaoNotificationBody({
+    required String creatorName,
+    required String? teikerName,
+    required String? tag,
+  }) {
+    final normalized = (tag ?? '').trim().toLowerCase();
+    final label = normalized == 'acompanhamento'
+        ? 'um acompanhamento'
+        : 'uma reunião';
+    final target = (teikerName ?? '').trim();
+    if (target.isEmpty) {
+      return '$creatorName marcou $label.';
+    }
+    return '$creatorName marcou $label para $target.';
+  }
+
+  Future<void> _showManagerMarcacaoAddedNotification({
+    required String notificationId,
+    required String creatorName,
+    required String? teikerName,
+    required String? tag,
+  }) async {
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        'manager_marcacoes',
+        'Marcações da gestão',
+        channelDescription:
+            'Notificações quando admin, RH ou developer marcam reuniões/acompanhamentos.',
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      ),
+      iOS: const DarwinNotificationDetails(),
+    );
+
+    await _local.show(
+      _managerMarcacaoNotificationId(notificationId),
+      _managerMarcacaoNotificationTitle(tag),
+      _managerMarcacaoNotificationBody(
+        creatorName: creatorName,
+        teikerName: teikerName,
+        tag: tag,
+      ),
+      details,
+      payload: jsonEncode({
+        'tipo': 'manager_event',
+        'reminderId': notificationId,
+      }),
+    );
+  }
+
   Future<void> _showManagerEventAddedNotification({
     required String notificationId,
     required String creatorName,
@@ -723,7 +940,7 @@ class NotificationService {
         'manager_new_events',
         'Novos acontecimentos',
         channelDescription:
-            'Notificações quando admin/RH adicionam acontecimentos.',
+            'Notificações quando admin, RH ou developer adicionam acontecimentos.',
         importance: Importance.max,
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',

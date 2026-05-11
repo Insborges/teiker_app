@@ -25,6 +25,7 @@ import 'package:teiker_app/backend/teiker_document_service.dart';
 import 'package:teiker_app/backend/teiker_marcacao_calendar_sync_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/models/teiker_document.dart';
+import 'package:teiker_app/models/teiker_manual_hours_entry.dart';
 import '../../models/Clientes.dart';
 import '../../models/Teikers.dart';
 import '../../Widgets/AppBar.dart';
@@ -36,12 +37,14 @@ class TeikersDetails extends StatefulWidget {
   final bool canEditPersonalInfo;
   final bool isAdminSelfProfile;
   final AppUserRole? specialProfileRole;
+  final String? initialManualHoursEntryId;
   const TeikersDetails({
     super.key,
     required this.teiker,
     this.canEditPersonalInfo = true,
     this.isAdminSelfProfile = false,
     this.specialProfileRole,
+    this.initialManualHoursEntryId,
   });
 
   @override
@@ -75,6 +78,20 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   bool get _canManageTeikerDocuments => _authService.currentUserRole.isAdmin;
 
   bool get _canAddTeikerHoursByAdmin => _authService.currentUserRole.isAdmin;
+
+  bool get _isOwnTeikerProfile {
+    final currentUid = FirebaseAuth.instance.currentUser?.uid.trim();
+    if (currentUid == null || currentUid.isEmpty) return false;
+    return currentUid == widget.teiker.uid.trim();
+  }
+
+  bool get _canAddTeikerHoursBySelf =>
+      _authService.currentUserRole.isTeiker && _isOwnTeikerProfile;
+
+  bool get _canAddManualHours =>
+      _canAddTeikerHoursByAdmin || _canAddTeikerHoursBySelf;
+
+  bool get _canEditManualHours => _canAddTeikerHoursByAdmin;
 
   bool get _showTeikerDocumentsCard => _authService.currentUserRole.isAdmin;
 
@@ -840,11 +857,29 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     return available;
   }
 
+  Stream<List<TeikerManualHoursEntry>> _watchManualHoursEntries() {
+    final cutoff = DateTime(2026, 4, 1);
+    return FirebaseFirestore.instance
+        .collection('teikers')
+        .doc(widget.teiker.uid)
+        .collection('manual_hours_entries')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+          final entries = snapshot.docs
+              .map((doc) => TeikerManualHoursEntry.fromMap(doc.data(), doc.id))
+              .where((entry) => !entry.workDate.isBefore(cutoff))
+              .toList();
+          entries.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return entries;
+        });
+  }
+
   Future<void> _openAddManualHoursSheet() async {
-    if (!_canAddTeikerHoursByAdmin) {
+    if (!_canAddManualHours) {
       AppSnackBar.show(
         context,
-        message: 'Só a admin pode adicionar horas a uma teiker.',
+        message: 'Não tens permissão para adicionar horas nesta teiker.',
         icon: Icons.lock_outline,
         background: Colors.orange.shade700,
       );
@@ -890,12 +925,21 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     if (result == null) return;
 
     try {
-      await _workSessionService.addManualSessionForTeikerByAdmin(
-        clienteId: result.cliente.uid,
-        teikerId: widget.teiker.uid,
-        start: result.start,
-        end: result.end,
-      );
+      if (_canAddTeikerHoursByAdmin) {
+        await _workSessionService.addManualSessionForTeikerByAdmin(
+          clienteId: result.cliente.uid,
+          teikerId: widget.teiker.uid,
+          start: result.start,
+          end: result.end,
+        );
+      } else {
+        await _workSessionService.addManualSessionForCurrentTeikerProfile(
+          clienteId: result.cliente.uid,
+          clienteName: result.cliente.nameCliente,
+          start: result.start,
+          end: result.end,
+        );
+      }
 
       if (!mounted) return;
       setState(() {
@@ -906,7 +950,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       final dateLabel = DateFormat('dd/MM/yyyy', 'pt_PT').format(result.start);
       AppSnackBar.show(
         context,
-        message: 'Horas de $dateLabel registadas para esta teiker.',
+        message: _canAddTeikerHoursByAdmin
+            ? 'Horas de $dateLabel registadas para esta teiker.'
+            : 'Horas de $dateLabel registadas e enviadas para a admin.',
         icon: Icons.save_rounded,
         background: Colors.green.shade700,
       );
@@ -1325,7 +1371,8 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       telemovelController: _telemovelController,
                       canEditPersonalInfo: widget.canEditPersonalInfo,
                       showHoursSection: true,
-                      canAddManualHours: _canAddTeikerHoursByAdmin,
+                      canAddManualHours: _canAddManualHours,
+                      canEditManualHours: _canEditManualHours,
                       phoneCountryIso: _phoneCountryIso,
                       onPhoneCountryChanged: (iso) {
                         setState(() => _phoneCountryIso = iso);
@@ -1335,6 +1382,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       hoursFuture: _hoursFuture,
                       onAddManualHours: _openAddManualHoursSheet,
                       onEditManualHours: _openEditManualHoursSheet,
+                      manualHoursEntriesStream: _watchManualHoursEntries(),
+                      highlightedManualHoursEntryId:
+                          widget.initialManualHoursEntryId,
                       showDocumentsCard:
                           _showTeikerDocumentsCard &&
                           !widget.isAdminSelfProfile,
@@ -1543,6 +1593,7 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
           options: options,
           selectedId: _selectedCliente.uid,
           primaryColor: widget.primaryColor,
+          onBack: () => Navigator.of(context).pop(),
         ),
       ),
     );
@@ -1845,6 +1896,7 @@ class _ManualHoursSearchablePickerSheet extends StatefulWidget {
     required this.options,
     required this.selectedId,
     required this.primaryColor,
+    this.onBack,
   });
 
   final String title;
@@ -1853,6 +1905,7 @@ class _ManualHoursSearchablePickerSheet extends StatefulWidget {
   final List<_ManualHoursPickerOption> options;
   final String? selectedId;
   final Color primaryColor;
+  final VoidCallback? onBack;
 
   @override
   State<_ManualHoursSearchablePickerSheet> createState() =>
@@ -1881,6 +1934,17 @@ class _ManualHoursSearchablePickerSheetState
     return AppBottomSheetShell(
       title: widget.title,
       subtitle: widget.subtitle,
+      leading: widget.onBack == null
+          ? null
+          : IconButton(
+              onPressed: widget.onBack,
+              icon: Icon(
+                Icons.chevron_left_rounded,
+                color: widget.primaryColor,
+              ),
+              splashRadius: 22,
+              visualDensity: VisualDensity.compact,
+            ),
       child: SizedBox(
         height: 420,
         child: Column(

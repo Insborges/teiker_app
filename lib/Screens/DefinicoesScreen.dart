@@ -330,17 +330,6 @@ class _DefinicoesScreenState extends State<DefinicoesScreen> {
             color: _mainColor,
           ),
           SettingsOptionCard(
-            icon: Icons.timer_outlined,
-            label: 'Ver horas totais',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const TeikerHorasScreen()),
-              );
-            },
-            color: _mainColor,
-          ),
-          SettingsOptionCard(
             icon: Icons.folder_copy_outlined,
             label: 'Ver Documentos',
             onTap: () {

@@ -62,6 +62,110 @@ class TeikerService {
     });
   }
 
+  Future<void> migrateLegacyHoursToApril2026() async {
+    final cutoff = DateTime(2026, 4, 1);
+    await _migrateMonthlyBalanceAdjustmentsToApril2026(cutoff);
+    await _deleteWorkSessionsBefore(cutoff);
+    await _deleteManualHoursEntriesBefore(cutoff);
+  }
+
+  Future<void> _migrateMonthlyBalanceAdjustmentsToApril2026(
+    DateTime cutoff,
+  ) async {
+    final snapshot = await _ref.get();
+
+    final batch = _db.batch();
+    var modified = false;
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final rawAdjustments =
+          (data['monthlyBalanceAdjustments'] as Map<String, dynamic>?) ??
+          (data['monthlyHoursAdjustments'] as Map<String, dynamic>?);
+      if (rawAdjustments == null) continue;
+
+      final normalized = <String, double>{};
+      var foundLegacy = false;
+
+      for (final entry in rawAdjustments.entries) {
+        final month = parseMonthKey(entry.key.toString());
+        final value = parseDouble(entry.value);
+        if (month == null || value == null) continue;
+
+        final isLegacyMonth =
+            month.isBefore(cutoff) || (month.year == 2026 && month.month == 2);
+        if (isLegacyMonth) {
+          foundLegacy = true;
+        }
+
+        final normalizedMonth = (month.year == 2026 && month.month == 2)
+            ? DateTime(2026, 4)
+            : DateTime(month.year, month.month);
+        if (normalizedMonth.isBefore(cutoff)) {
+          continue;
+        }
+
+        final key =
+            '${normalizedMonth.year.toString().padLeft(4, '0')}-'
+            '${normalizedMonth.month.toString().padLeft(2, '0')}';
+        normalized[key] = (normalized[key] ?? 0) + value;
+      }
+
+      if (foundLegacy || data['monthlyBalanceAdjustments'] == null) {
+        batch.update(doc.reference, {'monthlyBalanceAdjustments': normalized});
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      await batch.commit();
+    }
+  }
+
+  Future<void> _deleteWorkSessionsBefore(DateTime cutoff) async {
+    const batchLimit = 450;
+    while (true) {
+      final snapshot = await _db
+          .collection('workSessions')
+          .where('startTime', isLessThan: Timestamp.fromDate(cutoff))
+          .limit(batchLimit)
+          .get();
+      if (snapshot.docs.isEmpty) break;
+
+      final batch = _db.batch();
+      for (final doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+      if (snapshot.docs.length < batchLimit) break;
+    }
+  }
+
+  Future<void> _deleteManualHoursEntriesBefore(DateTime cutoff) async {
+    const batchLimit = 450;
+    final teikersSnapshot = await _ref.get();
+
+    for (final teikerDoc in teikersSnapshot.docs) {
+      final collectionRef = teikerDoc.reference.collection(
+        'manual_hours_entries',
+      );
+      while (true) {
+        final snapshot = await collectionRef
+            .where('workDate', isLessThan: Timestamp.fromDate(cutoff))
+            .limit(batchLimit)
+            .get();
+        if (snapshot.docs.isEmpty) break;
+
+        final batch = _db.batch();
+        for (final doc in snapshot.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+        if (snapshot.docs.length < batchLimit) break;
+      }
+    }
+  }
+
   Future<void> addFeriasPeriodo(
     String teikerId,
     DateTime inicio,

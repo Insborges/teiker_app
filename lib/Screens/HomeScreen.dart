@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -47,6 +48,8 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   int _teikerEventsPage = 0;
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
+  double _mobileCalendarCollapse = 0.0;
+  double _lastMobileScrollOffset = 0.0;
   final Color selectedColor = AppColors.primaryGreen;
   String? _loadedUserId;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _teikerSubscription;
@@ -2322,8 +2325,172 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   String _appBarTitle() {
-    final now = DateTime.now();
-    return 'Hoje é ${DateFormat('EEEE, dd MMMM', 'pt_PT').format(now)}';
+    return 'Agenda';
+  }
+
+  DateTime _startOfWeek(DateTime day) {
+    final weekday = day.weekday % 7;
+    return DateTime(day.year, day.month, day.day - weekday);
+  }
+
+  static const _mobileCollapseDistance = 100.0;
+  static const _mobileExpandThreshold = 12.0;
+  static const _mobileStickyThreshold = 0.25;
+
+  void _updateMobileCalendarCollapse(ScrollMetrics metrics) {
+    final offset = metrics.pixels.clamp(0.0, _mobileCollapseDistance);
+    final progress = (offset / _mobileCollapseDistance).clamp(0.0, 1.0);
+    final isAtTop = offset <= _mobileExpandThreshold;
+    final isScrollingDown = offset > _lastMobileScrollOffset;
+    final shouldStickCollapsed =
+        progress >= _mobileStickyThreshold ||
+        _mobileCalendarCollapse >= _mobileStickyThreshold;
+
+    double nextCollapse;
+    if (isAtTop) {
+      nextCollapse = 0.0;
+    } else if (shouldStickCollapsed) {
+      nextCollapse = 1.0;
+    } else if (isScrollingDown) {
+      nextCollapse = progress;
+    } else {
+      nextCollapse = _mobileCalendarCollapse;
+    }
+
+    _lastMobileScrollOffset = offset;
+
+    if ((nextCollapse - _mobileCalendarCollapse).abs() > 0.01) {
+      setState(() => _mobileCalendarCollapse = nextCollapse);
+    }
+  }
+
+  bool _onMobileScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) {
+      return false;
+    }
+    if (notification is ScrollUpdateNotification) {
+      _updateMobileCalendarCollapse(notification.metrics);
+    }
+    return false;
+  }
+
+  Widget _buildMobileWeekSelector({
+    required DateTime weekStart,
+    required DateTime selectedDay,
+    required Color primaryColor,
+    required VoidCallback onPreviousWeek,
+    required VoidCallback onNextWeek,
+  }) {
+    final weekDays = <DateTime>[
+      for (var i = 0; i < 7; i++) weekStart.add(Duration(days: i)),
+    ];
+    final rangeLabel =
+        '${DateFormat('dd/MM', 'pt_PT').format(weekStart)} - ${DateFormat('dd/MM', 'pt_PT').format(weekStart.add(const Duration(days: 6)))}';
+    final shortWeekdays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: primaryColor.withValues(alpha: 0.14)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                onPressed: onPreviousWeek,
+                icon: Icon(Icons.chevron_left, color: primaryColor),
+                splashRadius: 22,
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Semana',
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      rangeLabel,
+                      style: TextStyle(color: Colors.black87, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onNextWeek,
+                icon: Icon(Icons.chevron_right, color: primaryColor),
+                splashRadius: 22,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: weekDays.map((day) {
+              final isSelected = _dayKey(day) == _dayKey(selectedDay);
+              final dayLabel = shortWeekdays[day.weekday % 7];
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedDay = day;
+                      _focusedDay = DateTime(day.year, day.month, 1);
+                    });
+                  },
+                  child: Column(
+                    children: [
+                      Text(
+                        dayLabel,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isSelected ? primaryColor : Colors.black54,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? primaryColor
+                              : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${day.day}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: isSelected ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
   }
 
   String _getEmptyMessage(DateTime day) {
@@ -2440,15 +2607,20 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   List<Map<String, dynamic>> _holidayEventsForDay(DateTime dayKey) {
-    final holidayName = SwissHolidayCalendar.holidayName(dayKey);
-    if (holidayName == null || holidayName.isEmpty) {
+    final holiday = SwissHolidayCalendar.holidayForDate(
+      dayKey,
+      includeHalfDays: true,
+    );
+    if (holiday == null || holiday.name.isEmpty) {
       return const <Map<String, dynamic>>[];
     }
 
     return <Map<String, dynamic>>[
       {
-        'title': holidayName,
-        'subtitle': 'Feriado suíço',
+        'title': holiday.name,
+        'subtitle': holiday.isHalfDay
+            ? 'Tarde livre do Cantão de Bern'
+            : 'Feriado do Cantão de Bern',
         'done': false,
         'start': '',
         'end': '',
@@ -3082,13 +3254,19 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: buildAppBar(_appBarTitle(), seta: false),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final isDesktopWideLayout = constraints.maxWidth >= 1024;
-          final isCompactPhone =
-              !isDesktopWideLayout && constraints.maxWidth <= 380;
+          final screenHeight = MediaQuery.of(context).size.height;
+          final screenWidth = constraints.maxWidth;
+          final isDesktopWideLayout = screenWidth >= 1024;
+          final isCompactPhone = !isDesktopWideLayout && screenWidth <= 380;
+          final isVeryNarrowPhone = !isDesktopWideLayout && screenWidth <= 340;
           const controlsAndSpacingHeight = 84.0;
           const minEventsPanelHeight = 90.0;
-          final targetCalendarHeight =
-              MediaQuery.of(context).size.height * 0.45;
+          final calendarHeightFactor = isVeryNarrowPhone
+              ? 0.38
+              : isCompactPhone
+              ? 0.42
+              : 0.45;
+          final targetCalendarHeight = screenHeight * calendarHeightFactor;
           final availableCalendarHeight = math.max(
             0.0,
             constraints.maxHeight -
@@ -3114,6 +3292,24 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
             430.0,
             math.min(560.0, constraints.maxWidth * 0.42),
           );
+          final mobileFullCalendarHeight = calendarMaxHeight;
+          final mobileCollapsedHeaderHeight = math.max(
+            132.0,
+            math.min(180.0, screenHeight * 0.20),
+          );
+          final mobileWeekHeight = math.max(
+            110.0,
+            math.min(152.0, screenHeight * 0.18),
+          );
+          final mobileActionButtonsHeight = isCompactPhone ? 56.0 : 64.0;
+          final mobileActionButtonsOverlap = mobileActionButtonsHeight / 2;
+          final mobileCalendarBackgroundHeight = lerpDouble(
+            screenHeight * (isCompactPhone ? 0.48 : 0.52),
+            mobileCollapsedHeaderHeight,
+            _mobileCalendarCollapse,
+          )!;
+          final mobileWeekOpacity = ((_mobileCalendarCollapse - 0.18) / 0.82)
+              .clamp(0.0, 1.0);
 
           return Column(
             children: [
@@ -3124,7 +3320,7 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
                       top: 0,
                       left: 0,
                       right: 0,
-                      height: MediaQuery.of(context).size.height * 0.50,
+                      height: mobileCalendarBackgroundHeight,
                       child: ClipPath(
                         clipper: CurvedCalendarClipper(),
                         child: Container(color: selectedColor),
@@ -3253,80 +3449,168 @@ class HomeScreenState extends ConsumerState<HomeScreen> {
                     else
                       Column(
                         children: [
-                          // Calendário
-                          Container(
-                            margin: EdgeInsets.only(
-                              top: isCompactPhone ? 6 : 8,
-                            ),
-                            padding: EdgeInsets.symmetric(
-                              horizontal: isCompactPhone ? 12 : 16,
-                            ),
-                            child: ModernCalendar(
-                              focusedDay: _focusedDay,
-                              selectedDay: _selectedDay,
-                              primaryColor: selectedColor,
-                              todayColor: Colors.greenAccent,
-                              events: calendarEvents,
-                              maxHeight: calendarMaxHeight,
-                              onDaySelected: (day, month) {
-                                setState(() {
-                                  _selectedDay = day;
-                                  _focusedDay = DateTime(
-                                    month.year,
-                                    month.month,
-                                    1,
-                                  );
-                                });
-                              },
-                              teikersFerias: [
-                                ...teikersFerias,
-                                ...teikersBaixas,
-                              ],
-                            ),
+                          // Calendário e semana móvel com botões sobrepostos
+                          Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeInOut,
+                                height: mobileCalendarBackgroundHeight,
+                                width: double.infinity,
+                                child: Padding(
+                                  padding: EdgeInsets.only(
+                                    top: isCompactPhone ? 6 : 8,
+                                    left: isCompactPhone ? 12 : 16,
+                                    right: isCompactPhone ? 12 : 16,
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      ClipRect(
+                                        child: Align(
+                                          alignment: Alignment.topCenter,
+                                          heightFactor:
+                                              (1.0 - _mobileCalendarCollapse)
+                                                  .clamp(0.0, 1.0),
+                                          child: Opacity(
+                                            opacity:
+                                                (1.0 -
+                                                        _mobileCalendarCollapse *
+                                                            1.2)
+                                                    .clamp(0.0, 1.0),
+                                            child: SizedBox(
+                                              height: mobileFullCalendarHeight,
+                                              child: ModernCalendar(
+                                                focusedDay: _focusedDay,
+                                                selectedDay: _selectedDay,
+                                                primaryColor: selectedColor,
+                                                todayColor: Colors.greenAccent,
+                                                events: calendarEvents,
+                                                maxHeight:
+                                                    mobileFullCalendarHeight,
+                                                onDaySelected: (day, month) {
+                                                  setState(() {
+                                                    _selectedDay = day;
+                                                    _focusedDay = DateTime(
+                                                      month.year,
+                                                      month.month,
+                                                      1,
+                                                    );
+                                                  });
+                                                },
+                                                teikersFerias: [
+                                                  ...teikersFerias,
+                                                  ...teikersBaixas,
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      ClipRect(
+                                        child: Align(
+                                          alignment: Alignment.topCenter,
+                                          heightFactor: mobileWeekOpacity,
+                                          child: Opacity(
+                                            opacity: mobileWeekOpacity,
+                                            child: SizedBox(
+                                              height: mobileWeekHeight,
+                                              child: _buildMobileWeekSelector(
+                                                weekStart: _startOfWeek(
+                                                  _selectedDay,
+                                                ),
+                                                selectedDay: _selectedDay,
+                                                primaryColor: selectedColor,
+                                                onPreviousWeek: () {
+                                                  final previous = _selectedDay
+                                                      .subtract(
+                                                        const Duration(days: 7),
+                                                      );
+                                                  setState(() {
+                                                    _selectedDay = previous;
+                                                    _focusedDay = DateTime(
+                                                      previous.year,
+                                                      previous.month,
+                                                      1,
+                                                    );
+                                                  });
+                                                },
+                                                onNextWeek: () {
+                                                  final next = _selectedDay.add(
+                                                    const Duration(days: 7),
+                                                  );
+                                                  setState(() {
+                                                    _selectedDay = next;
+                                                    _focusedDay = DateTime(
+                                                      next.year,
+                                                      next.month,
+                                                      1,
+                                                    );
+                                                  });
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                left: isCompactPhone ? 12 : 16,
+                                right: isCompactPhone ? 12 : 16,
+                                top:
+                                    mobileCalendarBackgroundHeight -
+                                    mobileActionButtonsOverlap,
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: isCompactPhone ? 2 : 4,
+                                  ),
+                                  child: _buildAgendaActionButtons(
+                                    isAdmin: isAdmin,
+                                    isHr: isHr,
+                                    compact: isCompactPhone,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          // Botão para adicionar lembrete
-                          Container(
-                            width: double.infinity,
-                            padding: EdgeInsets.symmetric(
-                              horizontal: isCompactPhone ? 12 : 16,
-                              vertical: isCompactPhone ? 2 : 4,
-                            ),
-                            margin: EdgeInsets.only(
-                              top: isCompactPhone ? 8 : 10,
-                            ),
-                            child: _buildAgendaActionButtons(
-                              isAdmin: isAdmin,
-                              isHr: isHr,
-                              compact: isCompactPhone,
-                            ),
+                          SizedBox(
+                            height:
+                                mobileActionButtonsOverlap +
+                                (isCompactPhone ? 8 : 10),
                           ),
-                          SizedBox(height: isCompactPhone ? 8 : 10),
                           // Lista de eventos
                           Expanded(
-                            child: Container(
-                              width: double.infinity,
-                              padding: EdgeInsets.symmetric(
-                                horizontal: isCompactPhone ? 12 : 16,
+                            child: NotificationListener<ScrollNotification>(
+                              onNotification: _onMobileScrollNotification,
+                              child: Container(
+                                width: double.infinity,
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isCompactPhone ? 12 : 16,
+                                ),
+                                child: isAdmin
+                                    ? _buildAdminSwipableLists(
+                                        dayKey: dayKey,
+                                        reminderEvents: reminderEvents,
+                                        infoEvents: adminAgendaEvents,
+                                      )
+                                    : isHr
+                                    ? _buildEventListBody(
+                                        events: adminAgendaEvents,
+                                        dayKey: dayKey,
+                                        color: selectedColor,
+                                        emptyMessage:
+                                            'Sem itens da agenda neste dia.',
+                                      )
+                                    : _buildTeikerSwipableLists(
+                                        dayKey: dayKey,
+                                        reminderEvents: reminderEvents,
+                                        infoEvents: teikerAgendaEvents,
+                                      ),
                               ),
-                              child: isAdmin
-                                  ? _buildAdminSwipableLists(
-                                      dayKey: dayKey,
-                                      reminderEvents: reminderEvents,
-                                      infoEvents: adminAgendaEvents,
-                                    )
-                                  : isHr
-                                  ? _buildEventListBody(
-                                      events: adminAgendaEvents,
-                                      dayKey: dayKey,
-                                      color: selectedColor,
-                                      emptyMessage:
-                                          'Sem itens da agenda neste dia.',
-                                    )
-                                  : _buildTeikerSwipableLists(
-                                      dayKey: dayKey,
-                                      reminderEvents: reminderEvents,
-                                      infoEvents: teikerAgendaEvents,
-                                    ),
                             ),
                           ),
                         ],

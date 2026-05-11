@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:teiker_app/auth/app_user_role.dart';
+import 'package:teiker_app/models/teiker_manual_hours_entry.dart';
 import 'package:teiker_app/work_sessions/application/finish_work_session_use_case.dart';
 import 'package:teiker_app/work_sessions/domain/work_session.dart';
 import 'package:teiker_app/work_sessions/domain/work_session_repository.dart';
@@ -32,6 +33,87 @@ class WorkSessionService {
     if (value.isAfter(DateTime.now())) {
       throw Exception('Não podes adicionar antes da hora');
     }
+  }
+
+  Future<String> _teikerName(String teikerId) async {
+    final snapshot = await _firestore.collection('teikers').doc(teikerId).get();
+    final data = snapshot.data();
+    final name = (data?['name'] as String? ?? '').trim();
+    if (name.isNotEmpty) return name;
+
+    final user = _auth.currentUser;
+    final displayName = (user?.displayName ?? '').trim();
+    if (displayName.isNotEmpty) return displayName;
+
+    final email = (user?.email ?? '').trim();
+    if (email.contains('@')) {
+      final localPart = email.split('@').first.trim();
+      if (localPart.isNotEmpty) return localPart;
+    }
+
+    return 'Teiker';
+  }
+
+  Future<void> _storeManualHoursEntry({
+    required String teikerId,
+    required String teikerName,
+    required String clienteId,
+    required String clienteName,
+    required WorkSession session,
+    required AppUserRole actorRole,
+  }) async {
+    final entryRef = _firestore
+        .collection('teikers')
+        .doc(teikerId)
+        .collection('manual_hours_entries')
+        .doc();
+
+    final adminReminderRef = _firestore.collection('admin_reminders').doc();
+    final createdAt = DateTime.now();
+    final workDate = DateTime(
+      session.startTime.year,
+      session.startTime.month,
+      session.startTime.day,
+    );
+    final entry = TeikerManualHoursEntry(
+      id: entryRef.id,
+      teikerId: teikerId,
+      clienteId: clienteId,
+      clienteName: clienteName.trim(),
+      workDate: workDate,
+      startTime: session.startTime,
+      endTime: session.endTime ?? session.startTime,
+      durationHours: session.durationHours ?? 0,
+      createdAt: createdAt,
+      createdById: teikerId,
+      createdByName: teikerName,
+      createdByRole: actorRole.name,
+      linkedWorkSessionId: session.id,
+    );
+
+    final batch = _firestore.batch();
+    batch.set(entryRef, entry.toMap());
+    batch.set(adminReminderRef, {
+      'title': 'Horas adicionadas',
+      'description': 'A teiker adicionou horas manualmente.',
+      'tag': 'Horas adicionadas',
+      'done': false,
+      'resolved': false,
+      'date': Timestamp.fromDate(session.startTime),
+      'clienteId': clienteId,
+      'clienteName': clienteName.trim(),
+      'teikerId': teikerId,
+      'teikerName': teikerName,
+      'seenByUserIds': const <String>[],
+      'responses': const <Map<String, dynamic>>[],
+      'manualHoursEntryId': entryRef.id,
+      'linkedWorkSessionId': session.id,
+      'createdById': teikerId,
+      'createdByName': teikerName,
+      'createdByRole': actorRole.name,
+      'createdAt': Timestamp.fromDate(createdAt),
+    });
+    await batch.commit();
   }
 
   Future<void> _ensureNoOverlap({
@@ -149,6 +231,54 @@ class WorkSessionService {
 
     return _repository.calculateMonthlyTotal(
       clienteId: clienteId,
+      referenceDate: start,
+    );
+  }
+
+  Future<double> addManualSessionForCurrentTeikerProfile({
+    required String clienteId,
+    required String clienteName,
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    if (clienteId.trim().isEmpty) {
+      throw Exception('Cliente inválido.');
+    }
+    if (clienteName.trim().isEmpty) {
+      throw Exception('Nome do cliente inválido.');
+    }
+    if (!end.isAfter(start)) {
+      throw Exception('A hora de fim deve ser posterior ao início.');
+    }
+    _ensureNotFuture(start);
+    _ensureNotFuture(end);
+
+    final teikerId = _requireUser();
+    final actorRole = AppUserRoleResolver.fromEmail(_auth.currentUser?.email);
+    await _ensureNoOverlap(teikerId: teikerId, start: start, end: end);
+
+    final session = await _repository.addManualSession(
+      clienteId: clienteId,
+      teikerId: teikerId,
+      start: start,
+      end: end,
+      createdById: teikerId,
+      createdByRole: actorRole.name,
+    );
+
+    final teikerName = await _teikerName(teikerId);
+    await _storeManualHoursEntry(
+      teikerId: teikerId,
+      teikerName: teikerName,
+      clienteId: clienteId,
+      clienteName: clienteName,
+      session: session,
+      actorRole: actorRole,
+    );
+
+    return _repository.calculateMonthlyTotalForTeiker(
+      clienteId: clienteId,
+      teikerId: teikerId,
       referenceDate: start,
     );
   }
@@ -276,6 +406,71 @@ class WorkSessionService {
       clienteId: clienteId,
       teikerId: teikerId,
       referenceDate: referenceDate,
+    );
+  }
+
+  Future<double> updateManualSessionForCurrentTeikerProfile({
+    required String sessionId,
+    required String clienteId,
+    required String clienteName,
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    if (sessionId.trim().isEmpty) {
+      throw Exception('Sessão inválida.');
+    }
+    if (clienteId.trim().isEmpty) {
+      throw Exception('Cliente inválido.');
+    }
+    if (clienteName.trim().isEmpty) {
+      throw Exception('Nome do cliente inválido.');
+    }
+    if (!end.isAfter(start)) {
+      throw Exception('A hora de fim deve ser posterior ao início.');
+    }
+    _ensureNotFuture(start);
+    _ensureNotFuture(end);
+
+    final teikerId = _requireUser();
+    final actorRole = AppUserRoleResolver.fromEmail(_auth.currentUser?.email);
+    final existing = await _repository.findSessionById(sessionId: sessionId);
+    if (existing == null) {
+      throw Exception('Sessão não encontrada.');
+    }
+    if (existing.teikerId != teikerId) {
+      throw Exception('Esta sessão pertence a outra teiker.');
+    }
+
+    await _ensureNoOverlap(
+      teikerId: teikerId,
+      start: start,
+      end: end,
+      excludingSessionId: sessionId,
+    );
+
+    await _repository.updateManualSession(
+      sessionId: sessionId,
+      clienteId: clienteId,
+      teikerId: teikerId,
+      start: start,
+      end: end,
+      updatedById: teikerId,
+      updatedByRole: actorRole.name,
+    );
+
+    await _repository.calculateMonthlyTotal(
+      clienteId: existing.clienteId,
+      referenceDate: existing.startTime,
+    );
+    await _repository.calculateMonthlyTotal(
+      clienteId: clienteId,
+      referenceDate: start,
+    );
+
+    return _repository.calculateMonthlyTotalForTeiker(
+      clienteId: clienteId,
+      teikerId: teikerId,
+      referenceDate: start,
     );
   }
 

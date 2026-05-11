@@ -260,6 +260,8 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
       legacyEnd: teiker.feriasFim,
     );
     final currentMonthHours = _monthHoursForTeiker(teiker.uid);
+    final showTrailingHours =
+        !isHrEntry && !(profileRole?.isDeveloper ?? false);
 
     return InkWell(
       onTap: () {
@@ -377,7 +379,7 @@ class _TeikersInfoScreenState extends State<TeikersInfoScreen> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (!isHrEntry) ...[
+                  if (showTrailingHours) ...[
                     Text(
                       currentMonthHours == null
                           ? '...h'

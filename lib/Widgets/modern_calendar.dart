@@ -65,7 +65,7 @@ class _ModernCalendarState extends State<ModernCalendar> {
 
   bool _isHoliday(DateTime d) {
     if (!widget.showHolidays) return false;
-    return SwissHolidayCalendar.isHoliday(d);
+    return SwissHolidayCalendar.isBernDayOff(d);
   }
 
   void _goMonth(int delta) {
@@ -126,6 +126,7 @@ class _ModernCalendarState extends State<ModernCalendar> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Container(
+          height: maxHeight,
           padding: const EdgeInsets.all(14),
           constraints: BoxConstraints(maxHeight: maxHeight),
           decoration: BoxDecoration(
@@ -398,12 +399,18 @@ class _Tile extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      text,
-                      style: TextStyle(
-                        fontSize: dayFontSize,
-                        fontWeight: FontWeight.w600,
-                        color: selected ? Colors.white : baseColor,
+                    Flexible(
+                      fit: FlexFit.loose,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          text,
+                          style: TextStyle(
+                            fontSize: dayFontSize,
+                            fontWeight: FontWeight.w600,
+                            color: selected ? Colors.white : baseColor,
+                          ),
+                        ),
                       ),
                     ),
                     if (showMarkers)

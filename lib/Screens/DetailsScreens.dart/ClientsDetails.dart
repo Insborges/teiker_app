@@ -29,11 +29,13 @@ enum _InvoiceContentOption { both, hoursOnly, servicesOnly }
 class Clientsdetails extends StatefulWidget {
   final Clientes cliente;
   final VoidCallback? onSessionClosed;
+  final String? initialPendingSessionId;
 
   const Clientsdetails({
     super.key,
     required this.cliente,
     this.onSessionClosed,
+    this.initialPendingSessionId,
   });
 
   @override
@@ -559,6 +561,12 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
 
     if (pending == null) return;
+    final expectedSessionId = widget.initialPendingSessionId?.trim();
+    if (expectedSessionId != null &&
+        expectedSessionId.isNotEmpty &&
+        pending.id != expectedSessionId) {
+      return;
+    }
 
     final start = pending.startTime;
 
@@ -591,8 +599,17 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       );
     }
 
-    return _workSessionService.addManualSession(
+    if (_isPrivileged) {
+      return _workSessionService.addManualSession(
+        clienteId: widget.cliente.uid,
+        start: inicio,
+        end: fim,
+      );
+    }
+
+    return _workSessionService.addManualSessionForCurrentTeikerProfile(
       clienteId: widget.cliente.uid,
+      clienteName: widget.cliente.nameCliente,
       start: inicio,
       end: fim,
     );
@@ -607,6 +624,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   }) {
     TimeOfDay? startTime = presentStart;
     TimeOfDay? endTime = presentEnd;
+    DateTime selectedDate = defaultDate ?? DateTime.now();
 
     showModalBottomSheet(
       context: context,
@@ -647,6 +665,36 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                           ],
                         ),
                         const SizedBox(height: 16),
+                        InkWell(
+                          onTap: () async {
+                            final picked =
+                                await SingleDatePickerBottomSheet.show(
+                                  context,
+                                  initialDate: selectedDate,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now(),
+                                  title: 'Dia das horas',
+                                  subtitle: 'Escolhe o dia trabalhado',
+                                  confirmLabel: 'Confirmar',
+                                );
+                            if (picked == null) return;
+                            setModalState(() {
+                              selectedDate = DateTime(
+                                picked.year,
+                                picked.month,
+                                picked.day,
+                              );
+                            });
+                          },
+                          child: _buildDateInput(
+                            "Dia",
+                            DateFormat(
+                              'dd/MM/yyyy',
+                              'pt_PT',
+                            ).format(selectedDate),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         InkWell(
                           onTap: () async {
                             final picked =
@@ -713,8 +761,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                     return;
                                   }
 
-                                  final baseDate =
-                                      defaultDate ?? DateTime.now();
+                                  final baseDate = selectedDate;
                                   final startDate = DateTime(
                                     baseDate.year,
                                     baseDate.month,
@@ -1457,6 +1504,38 @@ class _ClientsdetailsState extends State<Clientsdetails> {
             style: const TextStyle(
               fontWeight: FontWeight.w600,
               color: Colors.black87,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateInput(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color.fromARGB(255, 4, 76, 32),
+          width: 1.3,
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.calendar_month,
+            color: Color.fromARGB(255, 4, 76, 32),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              "$label: $value",
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.black87,
+              ),
             ),
           ),
         ],

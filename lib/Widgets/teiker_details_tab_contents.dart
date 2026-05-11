@@ -9,6 +9,7 @@ import 'package:teiker_app/Widgets/teiker_ferias_content.dart';
 import 'package:teiker_app/Widgets/teiker_personal_info_content.dart';
 import 'package:teiker_app/models/Teikers.dart';
 import 'package:teiker_app/models/teiker_document.dart';
+import 'package:teiker_app/models/teiker_manual_hours_entry.dart';
 
 class TeikerDetailsInfoTab extends StatelessWidget {
   const TeikerDetailsInfoTab({
@@ -22,6 +23,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
     required this.canEditPersonalInfo,
     required this.showHoursSection,
     required this.canAddManualHours,
+    required this.canEditManualHours,
     required this.phoneCountryIso,
     required this.onPhoneCountryChanged,
     required this.onEditBirthDate,
@@ -29,6 +31,8 @@ class TeikerDetailsInfoTab extends StatelessWidget {
     required this.hoursFuture,
     required this.onAddManualHours,
     required this.onEditManualHours,
+    required this.manualHoursEntriesStream,
+    this.highlightedManualHoursEntryId,
     required this.showDocumentsCard,
     required this.canManageDocuments,
     required this.uploadingDocument,
@@ -48,6 +52,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
   final bool canEditPersonalInfo;
   final bool showHoursSection;
   final bool canAddManualHours;
+  final bool canEditManualHours;
   final String phoneCountryIso;
   final ValueChanged<String> onPhoneCountryChanged;
   final Future<void> Function() onEditBirthDate;
@@ -55,6 +60,8 @@ class TeikerDetailsInfoTab extends StatelessWidget {
   final Future<Map<DateTime, double>> hoursFuture;
   final Future<void> Function() onAddManualHours;
   final Future<void> Function() onEditManualHours;
+  final Stream<List<TeikerManualHoursEntry>> manualHoursEntriesStream;
+  final String? highlightedManualHoursEntryId;
   final bool showDocumentsCard;
   final bool canManageDocuments;
   final bool uploadingDocument;
@@ -151,7 +158,9 @@ class TeikerDetailsInfoTab extends StatelessWidget {
                     }
 
                     return MonthlyHoursOverviewCard(
-                      monthlyTotals: snapshot.data ?? const {},
+                      monthlyTotals: teiker.monthlyTotalsWithAdjustments(
+                        snapshot.data ?? const {},
+                      ),
                       primaryColor: primaryColor,
                       workPercentage: teiker.workPercentage,
                       balanceAdjustmentHours: teiker.hoursBalanceAdjustment,
@@ -161,33 +170,88 @@ class TeikerDetailsInfoTab extends StatelessWidget {
                     );
                   },
                 ),
-                if (canAddManualHours) ...[
+                if (canAddManualHours || canEditManualHours) ...[
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Expanded(
-                        child: AppButton(
-                          text: 'Adicionar Horas',
-                          icon: Icons.add_alarm_rounded,
-                          color: primaryColor,
-                          onPressed: () => onAddManualHours(),
+                      if (canAddManualHours)
+                        Expanded(
+                          child: AppButton(
+                            text: 'Adicionar Horas',
+                            icon: Icons.add_alarm_rounded,
+                            color: primaryColor,
+                            onPressed: () => onAddManualHours(),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: AppButton(
-                          text: 'Alterar Horas',
-                          icon: Icons.edit_calendar_rounded,
-                          color: primaryColor,
-                          outline: true,
-                          onPressed: () => onEditManualHours(),
+                      if (canAddManualHours && canEditManualHours)
+                        const SizedBox(width: 10),
+                      if (canEditManualHours)
+                        Expanded(
+                          child: AppButton(
+                            text: 'Alterar Horas',
+                            icon: Icons.edit_calendar_rounded,
+                            color: primaryColor,
+                            outline: true,
+                            onPressed: () => onEditManualHours(),
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ],
               ],
             ),
+          if (showHoursSection) const SizedBox(height: 12),
+          AppSectionCard(
+            title: 'Horas Acrescentadas',
+            titleColor: primaryColor,
+            titleIcon: Icons.history_toggle_off_rounded,
+            children: [
+              StreamBuilder<List<TeikerManualHoursEntry>>(
+                stream: manualHoursEntriesStream,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    );
+                  }
+
+                  final entries =
+                      snapshot.data ?? const <TeikerManualHoursEntry>[];
+                  if (entries.isEmpty) {
+                    return Text(
+                      'Ainda não há horas acrescentadas por esta via.',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    );
+                  }
+
+                  return Column(
+                    children: [
+                      for (final entry in entries) ...[
+                        _ManualHoursEntryCard(
+                          entry: entry,
+                          primaryColor: primaryColor,
+                          highlighted:
+                              highlightedManualHoursEntryId != null &&
+                              highlightedManualHoursEntryId == entry.id,
+                        ),
+                        if (entry != entries.last) const SizedBox(height: 10),
+                      ],
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
           if (showHoursSection) const SizedBox(height: 12),
           if (showDocumentsCard) ...[
             _TeikerDocumentsCard(
@@ -202,6 +266,130 @@ class TeikerDetailsInfoTab extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManualHoursEntryCard extends StatefulWidget {
+  const _ManualHoursEntryCard({
+    required this.entry,
+    required this.primaryColor,
+    required this.highlighted,
+  });
+
+  final TeikerManualHoursEntry entry;
+  final Color primaryColor;
+  final bool highlighted;
+
+  @override
+  State<_ManualHoursEntryCard> createState() => _ManualHoursEntryCardState();
+}
+
+class _ManualHoursEntryCardState extends State<_ManualHoursEntryCard> {
+  @override
+  void initState() {
+    super.initState();
+    _ensureVisibleIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ManualHoursEntryCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.highlighted && widget.highlighted) {
+      _ensureVisibleIfNeeded();
+    }
+  }
+
+  void _ensureVisibleIfNeeded() {
+    if (!widget.highlighted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        alignment: 0.2,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entry = widget.entry;
+    final primaryColor = widget.primaryColor;
+    final highlighted = widget.highlighted;
+    final workDate = DateFormat('dd/MM/yyyy', 'pt_PT').format(entry.workDate);
+    final start = DateFormat('HH:mm', 'pt_PT').format(entry.startTime);
+    final end = DateFormat('HH:mm', 'pt_PT').format(entry.endTime);
+    final createdAt = DateFormat(
+      'dd/MM/yyyy HH:mm',
+      'pt_PT',
+    ).format(entry.createdAt);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: highlighted
+            ? primaryColor.withValues(alpha: 0.08)
+            : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: highlighted
+              ? primaryColor.withValues(alpha: 0.40)
+              : Colors.grey.shade200,
+          width: highlighted ? 1.4 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  entry.clienteName.isEmpty ? 'Cliente' : entry.clienteName,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              Text(
+                '${entry.durationHours.toStringAsFixed(1)} h',
+                style: TextStyle(
+                  color: primaryColor,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Dia trabalhado: $workDate',
+            style: TextStyle(
+              color: Colors.grey.shade800,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Horas lançadas: $start - $end',
+            style: TextStyle(
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Acrescentado em: $createdAt',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );

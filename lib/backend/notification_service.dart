@@ -6,9 +6,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:intl/intl.dart';
 import 'package:teiker_app/Screens/DetailsScreens.dart/ClientsDetails.dart';
+import 'package:teiker_app/Screens/DetailsScreens.dart/TeikersDetais.dart';
 import 'package:teiker_app/auth/app_user_role.dart';
+import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
+import 'package:teiker_app/models/Teikers.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -22,8 +26,23 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
 
+  static const AndroidNotificationChannel _remoteMessagesChannel =
+      AndroidNotificationChannel(
+        'teiker_remote_messages',
+        'Notificações Teiker',
+        description: 'Canal padrão para notificações remotas da aplicação.',
+        importance: Importance.max,
+      );
+  static const DarwinNotificationDetails _darwinNotificationDetails =
+      DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   bool _initialized = false;
+  bool _localNotificationsInitialized = false;
   String? _pendingPayload;
   StreamSubscription<User?>? _authSubscription;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
@@ -73,28 +92,17 @@ class NotificationService {
     if (_initialized) return;
     _initialized = true;
 
-    tz.initializeTimeZones();
-
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const darwinInit = DarwinInitializationSettings();
-    const initSettings = InitializationSettings(
-      android: androidInit,
-      iOS: darwinInit,
-      macOS: darwinInit,
-    );
-
     final launchDetails = await _local.getNotificationAppLaunchDetails();
-
-    await _local.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: (response) {
-        _handleNotificationTap(response.payload);
-      },
-      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
-    );
+    await _initializeLocalNotifications();
     await _requestLocalNotificationPermissions();
+    await _requestExactAlarmPermissionIfNeeded();
 
-    await _fcm.requestPermission();
+    await _fcm.requestPermission(alert: true, badge: true, sound: true);
+    await _fcm.setForegroundNotificationPresentationOptions(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
     await _saveFcmToken();
     _fcm.onTokenRefresh.listen((_) => _saveFcmToken());
     _authSubscription ??= _auth.authStateChanges().listen((_) async {
@@ -106,10 +114,15 @@ class NotificationService {
     await _syncAdminReminderNotifications();
     await _syncUserMarcacaoNotifications();
     await _syncTeikerBirthdayNotification();
-    FirebaseMessaging.onMessage.listen((message) {
-      // Receber notificações em foreground
-      debugPrint("Notificação recebida: ${message.notification?.title}");
+    FirebaseMessaging.onMessage.listen((message) async {
+      await _handleForegroundRemoteMessage(message);
     });
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleRemoteMessageTap);
+
+    final initialMessage = await _fcm.getInitialMessage();
+    if (initialMessage != null) {
+      await _handleRemoteMessageTap(initialMessage);
+    }
 
     if (launchDetails?.didNotificationLaunchApp ?? false) {
       final payload = launchDetails?.notificationResponse?.payload;
@@ -144,16 +157,10 @@ class NotificationService {
       ),
     ];
 
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'session_reminders',
-        'Lembretes de serviço',
-        channelDescription: 'Alertas para terminar sessões em aberto.',
-        importance: Importance.max,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: const DarwinNotificationDetails(),
+    final details = _buildNotificationDetails(
+      channelId: 'session_reminders',
+      channelName: 'Lembretes de serviço',
+      channelDescription: 'Alertas para terminar sessões em aberto.',
     );
 
     for (final reminder in reminders) {
@@ -234,6 +241,16 @@ class NotificationService {
           MacOSFlutterLocalNotificationsPlugin
         >();
     await macOs?.requestPermissions(alert: true, badge: true, sound: true);
+  }
+
+  Future<void> _requestExactAlarmPermissionIfNeeded() async {
+    if (!Platform.isAndroid) return;
+
+    final android = _local
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    await android?.requestExactAlarmsPermission();
   }
 
   Future<void> _syncAdminReminderNotifications() async {
@@ -334,6 +351,20 @@ class NotificationService {
               continue;
             }
 
+            if (_isManualHoursReminderTag(tag)) {
+              if (createdById == managerUid) continue;
+              _showManualHoursAddedNotification(
+                reminderId: id,
+                teikerId: (data['teikerId'] as String?)?.trim(),
+                teikerName: (data['teikerName'] as String?)?.trim(),
+                clienteName: (data['clienteName'] as String?)?.trim(),
+                startTime: _parseReminderDate(data['date']),
+                manualHoursEntryId: (data['manualHoursEntryId'] as String?)
+                    ?.trim(),
+              );
+              continue;
+            }
+
             final creatorRole = (data['createdByRole'] as String?)?.trim();
             final isPrivilegedCreator = _isPrivilegedRoleName(creatorRole);
             if (_isTeikerMarcacaoReminderTag(tag) && isPrivilegedCreator) {
@@ -373,6 +404,11 @@ class NotificationService {
     return normalized == 'reunião de trabalho' ||
         normalized == 'reuniao de trabalho' ||
         normalized == 'acompanhamento';
+  }
+
+  bool _isManualHoursReminderTag(String? rawTag) {
+    final normalized = (rawTag ?? '').trim().toLowerCase();
+    return normalized == 'horas adicionadas';
   }
 
   bool _isPrivilegedRoleName(String? rawRole) {
@@ -424,17 +460,11 @@ class NotificationService {
     final notifyAt = scheduledFor.subtract(const Duration(minutes: 30));
     if (!notifyAt.isAfter(DateTime.now())) return;
 
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'marcacao_starts_soon',
-        'Marcações em breve',
-        channelDescription:
-            'Avisos 30 minutos antes de reuniões/acompanhamentos.',
-        importance: Importance.max,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: const DarwinNotificationDetails(),
+    final details = _buildNotificationDetails(
+      channelId: 'marcacao_starts_soon',
+      channelName: 'Marcações em breve',
+      channelDescription:
+          'Avisos 30 minutos antes de reuniões/acompanhamentos.',
     );
 
     await _local.zonedSchedule(
@@ -665,16 +695,10 @@ class NotificationService {
       return;
     }
 
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'teiker_birthday',
-        'Aniversário da teiker',
-        channelDescription: 'Parabéns no aniversário da teiker.',
-        importance: Importance.max,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: const DarwinNotificationDetails(),
+    final details = _buildNotificationDetails(
+      channelId: 'teiker_birthday',
+      channelName: 'Aniversário da teiker',
+      channelDescription: 'Parabéns no aniversário da teiker.',
     );
 
     final now = DateTime.now();
@@ -781,17 +805,11 @@ class NotificationService {
     await _cancelLocalNotificationSafely(_managerBirthdayNotificationId(uid));
     if (birthDate == null) return;
 
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'manager_teiker_birthdays',
-        'Aniversários das teikers',
-        channelDescription:
-            'Notificações de aniversários para admin, RH e developer.',
-        importance: Importance.max,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: const DarwinNotificationDetails(),
+    final details = _buildNotificationDetails(
+      channelId: 'manager_teiker_birthdays',
+      channelName: 'Aniversários das teikers',
+      channelDescription:
+          'Notificações de aniversários para admin, RH e developer.',
     );
 
     final nextBirthday = _nextBirthdayAt(
@@ -819,17 +837,11 @@ class NotificationService {
     String? clienteName,
     String? reminderTitle,
   }) async {
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'admin_new_reminders',
-        'Lembretes das teikers',
-        channelDescription:
-            'Notificações quando uma teiker adiciona um lembrete.',
-        importance: Importance.max,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: const DarwinNotificationDetails(),
+    final details = _buildNotificationDetails(
+      channelId: 'admin_new_reminders',
+      channelName: 'Lembretes das teikers',
+      channelDescription:
+          'Notificações quando uma teiker adiciona um lembrete.',
     );
 
     final bodyParts = <String>[
@@ -847,21 +859,61 @@ class NotificationService {
     );
   }
 
+  Future<void> _showManualHoursAddedNotification({
+    required String reminderId,
+    required String? teikerId,
+    required String? teikerName,
+    required String? clienteName,
+    required DateTime? startTime,
+    required String? manualHoursEntryId,
+  }) async {
+    final normalizedTeikerId = (teikerId ?? '').trim();
+    final normalizedEntryId = (manualHoursEntryId ?? '').trim();
+    if (normalizedTeikerId.isEmpty || normalizedEntryId.isEmpty) return;
+
+    final details = _buildNotificationDetails(
+      channelId: 'manual_hours_added',
+      channelName: 'Horas adicionadas pelas teikers',
+      channelDescription:
+          'Notificações quando uma teiker acrescenta horas manualmente.',
+    );
+
+    final dateLabel = startTime == null
+        ? ''
+        : DateFormat('dd/MM/yyyy', 'pt_PT').format(startTime);
+    final clientLabel = (clienteName ?? '').trim();
+    final actorName = (teikerName ?? '').trim().isEmpty
+        ? 'A teiker'
+        : teikerName!.trim();
+    final bodyParts = <String>[
+      if (clientLabel.isNotEmpty) clientLabel,
+      if (dateLabel.isNotEmpty) dateLabel,
+    ];
+
+    await _local.show(
+      _adminReminderNotificationId('manual_$reminderId'),
+      '$actorName adicionou horas',
+      bodyParts.isEmpty
+          ? 'Foi registada uma nova entrada manual.'
+          : bodyParts.join(' • '),
+      details,
+      payload: jsonEncode({
+        'tipo': 'manual_hours_entry',
+        'teikerId': normalizedTeikerId,
+        'entryId': normalizedEntryId,
+      }),
+    );
+  }
+
   Future<void> _showUserMarcacaoAddedNotification({
     required String reminderId,
     required String? tag,
   }) async {
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'teiker_marcacoes',
-        'Marcações da teiker',
-        channelDescription:
-            'Notificações quando é marcada uma reunião/acompanhamento.',
-        importance: Importance.max,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: const DarwinNotificationDetails(),
+    final details = _buildNotificationDetails(
+      channelId: 'teiker_marcacoes',
+      channelName: 'Marcações da teiker',
+      channelDescription:
+          'Notificações quando é marcada uma reunião/acompanhamento.',
     );
 
     await _local.show(
@@ -902,17 +954,11 @@ class NotificationService {
     required String? teikerName,
     required String? tag,
   }) async {
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'manager_marcacoes',
-        'Marcações da gestão',
-        channelDescription:
-            'Notificações quando admin, RH ou developer marcam reuniões/acompanhamentos.',
-        importance: Importance.max,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: const DarwinNotificationDetails(),
+    final details = _buildNotificationDetails(
+      channelId: 'manager_marcacoes',
+      channelName: 'Marcações da gestão',
+      channelDescription:
+          'Notificações quando admin, RH ou developer marcam reuniões/acompanhamentos.',
     );
 
     await _local.show(
@@ -935,17 +981,11 @@ class NotificationService {
     required String notificationId,
     required String creatorName,
   }) async {
-    final details = NotificationDetails(
-      android: AndroidNotificationDetails(
-        'manager_new_events',
-        'Novos acontecimentos',
-        channelDescription:
-            'Notificações quando admin, RH ou developer adicionam acontecimentos.',
-        importance: Importance.max,
-        priority: Priority.high,
-        icon: '@mipmap/ic_launcher',
-      ),
-      iOS: const DarwinNotificationDetails(),
+    final details = _buildNotificationDetails(
+      channelId: 'manager_new_events',
+      channelName: 'Novos acontecimentos',
+      channelDescription:
+          'Notificações quando admin, RH ou developer adicionam acontecimentos.',
     );
 
     await _local.show(
@@ -979,6 +1019,42 @@ class NotificationService {
         return;
       }
 
+      if (type == 'manual_hours_entry') {
+        final teikerId = (data['teikerId'] as String?)?.trim();
+        final entryId = (data['entryId'] as String?)?.trim();
+        if (teikerId == null ||
+            teikerId.isEmpty ||
+            entryId == null ||
+            entryId.isEmpty) {
+          return;
+        }
+
+        final teikerDoc = await FirebaseFirestore.instance
+            .collection('teikers')
+            .doc(teikerId)
+            .get();
+        if (!teikerDoc.exists) return;
+
+        final teikerData = teikerDoc.data();
+        if (teikerData == null) return;
+
+        final teiker = Teiker.fromMap(teikerData, teikerDoc.id);
+        final currentRole = AppUserRoleResolver.fromEmail(
+          _auth.currentUser?.email,
+        );
+        nav.push(
+          MaterialPageRoute(
+            builder: (_) => TeikersDetails(
+              teiker: teiker,
+              canEditPersonalInfo: currentRole.isAdmin,
+              specialProfileRole: null,
+              initialManualHoursEntryId: entryId,
+            ),
+          ),
+        );
+        return;
+      }
+
       if (type != 'session_reminder') return;
 
       final clienteId = data['clienteId'] as String?;
@@ -1002,6 +1078,7 @@ class NotificationService {
         MaterialPageRoute(
           builder: (_) => Clientsdetails(
             cliente: cliente,
+            initialPendingSessionId: sessionId,
             onSessionClosed: () {
               cancelPendingSessionReminder(sessionId ?? '');
             },
@@ -1076,9 +1153,160 @@ class NotificationService {
           'email': email,
         }, SetOptions(merge: true));
   }
+
+  Future<void> _initializeLocalNotifications() async {
+    if (_localNotificationsInitialized) return;
+
+    tz.initializeTimeZones();
+
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const darwinInit = DarwinInitializationSettings();
+    const initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: darwinInit,
+      macOS: darwinInit,
+    );
+
+    await _local.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (response) {
+        _handleNotificationTap(response.payload);
+      },
+      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+    );
+    await _createRemoteMessagesChannel();
+    _localNotificationsInitialized = true;
+  }
+
+  Future<void> _createRemoteMessagesChannel() async {
+    if (!Platform.isAndroid) return;
+
+    final android = _local
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    await android?.createNotificationChannel(_remoteMessagesChannel);
+  }
+
+  NotificationDetails _buildNotificationDetails({
+    required String channelId,
+    required String channelName,
+    required String channelDescription,
+  }) {
+    return NotificationDetails(
+      android: AndroidNotificationDetails(
+        channelId,
+        channelName,
+        channelDescription: channelDescription,
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+      ),
+      iOS: _darwinNotificationDetails,
+      macOS: _darwinNotificationDetails,
+    );
+  }
+
+  Future<void> _handleForegroundRemoteMessage(RemoteMessage message) async {
+    debugPrint(
+      'Notificação remota recebida: ${message.notification?.title ?? message.data['title']}',
+    );
+
+    if ((Platform.isIOS || Platform.isMacOS) && message.notification != null) {
+      return;
+    }
+
+    await _showRemoteMessageNotification(message);
+  }
+
+  Future<void> _handleRemoteMessageTap(RemoteMessage message) async {
+    if (message.data.isEmpty) return;
+    await _handleNotificationTap(jsonEncode(message.data));
+  }
+
+  Future<void> showRemoteMessageNotification(RemoteMessage message) async {
+    await _initializeLocalNotifications();
+    await _showRemoteMessageNotification(message);
+  }
+
+  Future<void> _showRemoteMessageNotification(RemoteMessage message) async {
+    final title =
+        message.notification?.title ??
+        _trimmedDataValue(message.data, [
+          'title',
+          'titulo',
+          'notification_title',
+        ]);
+    final body =
+        message.notification?.body ??
+        _trimmedDataValue(message.data, [
+          'body',
+          'message',
+          'mensagem',
+          'notification_body',
+        ]);
+
+    if ((title == null || title.isEmpty) && (body == null || body.isEmpty)) {
+      return;
+    }
+
+    final payload = message.data.isEmpty ? null : jsonEncode(message.data);
+
+    await _local.show(
+      _remoteMessageNotificationId(message),
+      title,
+      body,
+      _buildNotificationDetails(
+        channelId: _remoteMessagesChannel.id,
+        channelName: _remoteMessagesChannel.name,
+        channelDescription:
+            _remoteMessagesChannel.description ??
+            'Canal padrão para notificações remotas da aplicação.',
+      ),
+      payload: payload,
+    );
+  }
+
+  int _remoteMessageNotificationId(RemoteMessage message) {
+    final key = message.messageId ?? message.sentTime?.toIso8601String();
+    if (key != null && key.trim().isNotEmpty) {
+      return ('remote_$key').hashCode & 0x7fffffff;
+    }
+    return DateTime.now().microsecondsSinceEpoch & 0x7fffffff;
+  }
+
+  String? _trimmedDataValue(
+    Map<String, dynamic> data,
+    List<String> candidateKeys,
+  ) {
+    for (final key in candidateKeys) {
+      final value = data[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return null;
+  }
+}
+
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await FirebaseService().init();
+
+  final shouldShowLocalNotification = message.notification == null;
+  if (!shouldShowLocalNotification) return;
+
+  await NotificationService().showRemoteMessageNotification(message);
+}
+
+Future<void> _handleBackgroundNotificationTap(String? payload) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await FirebaseService().init();
+  await NotificationService()._handleNotificationTap(payload);
 }
 
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) {
-  NotificationService()._handleNotificationTap(response.payload);
+  unawaited(_handleBackgroundNotificationTap(response.payload));
 }

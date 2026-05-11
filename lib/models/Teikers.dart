@@ -15,21 +15,62 @@ double? _parseDouble(dynamic value) {
   return null;
 }
 
-double _legacyHoursBalanceAdjustment({
-  required String name,
-  required String email,
-}) {
-  final normalizedName = name.trim().toLowerCase();
-  final normalizedEmail = email.trim().toLowerCase();
+DateTime? _parseMonthKey(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) return null;
 
-  // Saldo pré-app da Márcia até ficar persistido diretamente no Firestore.
-  if (normalizedName.contains('márcia') ||
-      normalizedName.contains('marcia') ||
-      normalizedEmail.contains('marcia')) {
-    return 48.0;
+  final direct = DateTime.tryParse(trimmed);
+  if (direct != null) return DateTime(direct.year, direct.month);
+
+  final normalized = trimmed.replaceAll('/', '-');
+  final compact = RegExp(r'^(\d{4})-(\d{1,2})$').firstMatch(normalized);
+  if (compact == null) return null;
+
+  final year = int.tryParse(compact.group(1)!);
+  final month = int.tryParse(compact.group(2)!);
+  if (year == null || month == null || month < 1 || month > 12) return null;
+  return DateTime(year, month);
+}
+
+DateTime? parseMonthKey(String value) => _parseMonthKey(value);
+
+double? parseDouble(dynamic value) => _parseDouble(value);
+
+Map<DateTime, double> _parseMonthlyBalanceAdjustments(dynamic raw) {
+  if (raw is! Map) return const {};
+
+  final cutoff = DateTime(2026, 4);
+  final adjustments = <DateTime, double>{};
+  for (final entry in raw.entries) {
+    final key = entry.key?.toString() ?? '';
+    final parsedMonth = _parseMonthKey(key);
+    final parsedHours = _parseDouble(entry.value);
+    if (parsedMonth == null || parsedHours == null) continue;
+
+    final normalizedMonth = (parsedMonth.year == 2026 && parsedMonth.month == 2)
+        ? DateTime(2026, 4)
+        : DateTime(parsedMonth.year, parsedMonth.month);
+    if (normalizedMonth.isBefore(cutoff)) continue;
+
+    adjustments[normalizedMonth] =
+        (adjustments[normalizedMonth] ?? 0) + parsedHours;
   }
+  return adjustments;
+}
 
-  return 0.0;
+Map<String, double> _serializeMonthlyBalanceAdjustments(
+  Map<DateTime, double> adjustments,
+) {
+  final serialized = <String, double>{};
+  final sortedEntries = adjustments.entries.toList()
+    ..sort((a, b) => a.key.compareTo(b.key));
+  for (final entry in sortedEntries) {
+    final monthKey =
+        '${entry.key.year.toString().padLeft(4, '0')}-'
+        '${entry.key.month.toString().padLeft(2, '0')}';
+    serialized[monthKey] = entry.value;
+  }
+  return serialized;
 }
 
 Color _parseColor(dynamic value) {
@@ -226,6 +267,7 @@ class Teiker {
   final double horas;
   final int workPercentage;
   final double hoursBalanceAdjustment;
+  final Map<DateTime, double> monthlyBalanceAdjustments;
   final List<String> clientesIds;
   final List<Consulta> consultas;
   final List<TeikerMarcacao> marcacoes;
@@ -247,6 +289,7 @@ class Teiker {
     required this.horas,
     this.workPercentage = TeikerWorkload.fullTime,
     this.hoursBalanceAdjustment = 0,
+    this.monthlyBalanceAdjustments = const {},
     required this.clientesIds,
     required this.consultas,
     this.marcacoes = const [],
@@ -297,13 +340,16 @@ class Teiker {
     final weeklyHours =
         storedWeeklyHours ??
         TeikerWorkload.weeklyHoursForPercentage(workPercentage);
-    final name = (data['name'] as String? ?? '').trim();
-    final email = (data['email'] as String? ?? '').trim();
     final hoursBalanceAdjustment =
         _parseDouble(data['hoursBalanceAdjustment']) ??
         _parseDouble(data['balanceAdjustmentHours']) ??
         _parseDouble(data['saldoHorasInicial']) ??
-        _legacyHoursBalanceAdjustment(name: name, email: email);
+        0.0;
+    final monthlyBalanceAdjustments = _parseMonthlyBalanceAdjustments(
+      data['monthlyBalanceAdjustments'] ?? data['monthlyHoursAdjustments'],
+    );
+    final name = (data['name'] as String? ?? '').trim();
+    final email = (data['email'] as String? ?? '').trim();
 
     return Teiker(
       uid: documentId,
@@ -318,6 +364,7 @@ class Teiker {
           .toUpperCase(),
       horas: weeklyHours,
       hoursBalanceAdjustment: hoursBalanceAdjustment,
+      monthlyBalanceAdjustments: monthlyBalanceAdjustments,
       corIdentificadora: _parseColor(data['cor']),
       clientesIds: List<String>.from(data['clientesIds'] ?? []),
       consultas: (data['consultas'] as List<dynamic>? ?? [])
@@ -350,6 +397,9 @@ class Teiker {
       'horas': horas,
       'workPercentage': workPercentage,
       'hoursBalanceAdjustment': hoursBalanceAdjustment,
+      'monthlyBalanceAdjustments': _serializeMonthlyBalanceAdjustments(
+        monthlyBalanceAdjustments,
+      ),
       'cor': corIdentificadora.toARGB32(),
       'clientesIds': clientesIds,
       'consultas': consultas.map((c) => c.toMap()).toList(),
@@ -373,6 +423,7 @@ class Teiker {
     double? horas,
     int? workPercentage,
     double? hoursBalanceAdjustment,
+    Map<DateTime, double>? monthlyBalanceAdjustments,
     List<String>? clientesIds,
     List<Consulta>? consultas,
     List<TeikerMarcacao>? marcacoes,
@@ -395,6 +446,8 @@ class Teiker {
       workPercentage: workPercentage ?? this.workPercentage,
       hoursBalanceAdjustment:
           hoursBalanceAdjustment ?? this.hoursBalanceAdjustment,
+      monthlyBalanceAdjustments:
+          monthlyBalanceAdjustments ?? this.monthlyBalanceAdjustments,
       clientesIds: clientesIds ?? this.clientesIds,
       consultas: consultas ?? this.consultas,
       marcacoes: marcacoes ?? this.marcacoes,
@@ -413,6 +466,28 @@ class Teiker {
 
   String get workPercentageLabel =>
       TeikerWorkload.labelForPercentage(workPercentage);
+
+  double monthlyBalanceAdjustmentFor(DateTime month) {
+    return monthlyBalanceAdjustments[DateTime(month.year, month.month)] ?? 0;
+  }
+
+  Map<DateTime, double> monthlyTotalsWithAdjustments(
+    Map<DateTime, double> monthlyTotals,
+  ) {
+    final adjusted = <DateTime, double>{};
+    for (final entry in monthlyTotals.entries) {
+      final monthKey = DateTime(entry.key.year, entry.key.month);
+      adjusted[monthKey] = entry.value;
+    }
+
+    for (final entry in monthlyBalanceAdjustments.entries) {
+      adjusted[entry.key] =
+          TeikerWorkload.monthlyHoursForPercentage(workPercentage, entry.key) +
+          entry.value;
+    }
+
+    return adjusted;
+  }
 }
 
 class Consulta {

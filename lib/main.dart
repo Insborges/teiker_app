@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/backend/auth_gate.dart';
@@ -10,12 +11,15 @@ import 'package:teiker_app/theme/app_colors.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Formatos de data portuguesa
+  // Formatos de data portuguesa (Rápido, pode manter o await)
   await initializeDateFormatting('pt_PT', null);
   Intl.defaultLocale = 'pt_PT';
 
   try {
     await FirebaseService().init();
+
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
     NotificationService().init();
   } catch (e) {
     debugPrint("Erro ao inicializar serviços: $e");
@@ -43,7 +47,7 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Teiker App',
+      title: 'Teikeir App',
       navigatorKey: NotificationService().navigatorKey,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(

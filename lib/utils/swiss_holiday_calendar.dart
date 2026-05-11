@@ -1,44 +1,46 @@
-enum SwissHolidayProfile { companyDefault, zurich, geneva }
-
 class SwissHoliday {
   const SwissHoliday({
     required this.id,
     required this.name,
     required this.date,
+    this.isHalfDay = false,
   });
 
   final String id;
   final String name;
   final DateTime date;
+  final bool isHalfDay;
 }
 
 class SwissHolidayCalendar {
   const SwissHolidayCalendar._();
 
-  static const SwissHolidayProfile defaultProfile =
-      SwissHolidayProfile.companyDefault;
+  static final Map<int, List<SwissHoliday>> _holidayCache = {};
 
-  static final Map<String, List<SwissHoliday>> _holidayCache = {};
-
-  static bool isHoliday(
-    DateTime date, {
-    SwissHolidayProfile profile = defaultProfile,
-  }) {
-    final normalized = _normalize(date);
-    return holidaysForYear(
-      normalized.year,
-      profile: profile,
-    ).any((holiday) => holiday.date == normalized);
+  // Base oficial: cantão de Bern. Os feriados móveis são calculados por ano.
+  static bool isHoliday(DateTime date) {
+    return holidayForDate(date) != null;
   }
 
-  static String? holidayName(
+  static bool isBernDayOff(DateTime date) {
+    return holidayForDate(date, includeHalfDays: true) != null;
+  }
+
+  static String? holidayName(DateTime date, {bool includeHalfDays = false}) {
+    return holidayForDate(date, includeHalfDays: includeHalfDays)?.name;
+  }
+
+  static SwissHoliday? holidayForDate(
     DateTime date, {
-    SwissHolidayProfile profile = defaultProfile,
+    bool includeHalfDays = false,
   }) {
     final normalized = _normalize(date);
-    for (final holiday in holidaysForYear(normalized.year, profile: profile)) {
+    for (final holiday in holidaysForYear(
+      normalized.year,
+      includeHalfDays: includeHalfDays,
+    )) {
       if (holiday.date == normalized) {
-        return holiday.name;
+        return holiday;
       }
     }
     return null;
@@ -46,91 +48,43 @@ class SwissHolidayCalendar {
 
   static List<SwissHoliday> holidaysForYear(
     int year, {
-    SwissHolidayProfile profile = defaultProfile,
+    bool includeHalfDays = false,
   }) {
-    final cacheKey = '${profile.name}-$year';
-    return _holidayCache.putIfAbsent(
-      cacheKey,
-      () => List<SwissHoliday>.unmodifiable(_buildHolidays(year, profile)),
+    final allDaysOff = _holidayCache.putIfAbsent(
+      year,
+      () => List<SwissHoliday>.unmodifiable(_buildBernDaysOff(year)),
     );
+
+    if (includeHalfDays) return allDaysOff;
+    return allDaysOff.where((holiday) => !holiday.isHalfDay).toList();
   }
 
-  static List<SwissHoliday> _buildHolidays(
-    int year,
-    SwissHolidayProfile profile,
-  ) {
-    switch (profile) {
-      case SwissHolidayProfile.zurich:
-        return _sorted(<SwissHoliday>[
-          _fixed('new_year', 'Ano Novo', year, 1, 1),
-          _relative('good_friday', 'Sexta-feira Santa', year, -2),
-          _relative('easter_monday', 'Segunda-feira de Páscoa', year, 1),
-          _fixed('labour_day', 'Dia do Trabalhador', year, 5, 1),
-          _relative('ascension', 'Ascensão', year, 39),
-          _relative('whit_monday', 'Segunda-feira de Pentecostes', year, 50),
-          _fixed('national_day', 'Feriado Nacional Suíço', year, 8, 1),
-          _fixed('christmas', 'Natal', year, 12, 25),
-          _fixed('st_stephen', 'Santo Estêvão', year, 12, 26),
-        ]);
-      case SwissHolidayProfile.geneva:
-        final newYear = DateTime(year, 1, 1);
-        final nationalDay = DateTime(year, 8, 1);
-        final christmas = DateTime(year, 12, 25);
-        return _sorted(<SwissHoliday>[
-          SwissHoliday(
-            id: 'geneva_new_year',
-            name: newYear.weekday == DateTime.sunday
-                ? 'Ano Novo (observado)'
-                : 'Ano Novo',
-            date: _mondaySubstitute(newYear),
-          ),
-          _relative('good_friday', 'Sexta-feira Santa', year, -2),
-          _relative('easter_monday', 'Segunda-feira de Páscoa', year, 1),
-          _relative('ascension', 'Ascensão', year, 39),
-          _relative('whit_monday', 'Segunda-feira de Pentecostes', year, 50),
-          SwissHoliday(
-            id: 'geneva_national_day',
-            name: nationalDay.weekday == DateTime.sunday
-                ? 'Feriado Nacional Suíço (observado)'
-                : 'Feriado Nacional Suíço',
-            date: _mondaySubstitute(nationalDay),
-          ),
-          SwissHoliday(
-            id: 'geneva_fast',
-            name: 'Jeûne genevois',
-            date: _genevaFastDay(year),
-          ),
-          SwissHoliday(
-            id: 'geneva_christmas',
-            name: christmas.weekday == DateTime.sunday
-                ? 'Natal (observado)'
-                : 'Natal',
-            date: _mondaySubstitute(christmas),
-          ),
-          _fixed(
-            'republic_restoration',
-            'Restauração da República',
-            year,
-            12,
-            31,
-          ),
-        ]);
-      case SwissHolidayProfile.companyDefault:
-        // A app não guarda o cantão. Por isso usamos um calendário suíço
-        // alargado com datas móveis para manter coerência na operação diária.
-        return _sorted(<SwissHoliday>[
-          _fixed('new_year', 'Ano Novo', year, 1, 1),
-          _fixed('berchtold', 'Berchtoldstag', year, 1, 2),
-          _relative('good_friday', 'Sexta-feira Santa', year, -2),
-          _relative('easter_monday', 'Segunda-feira de Páscoa', year, 1),
-          _fixed('labour_day', 'Dia do Trabalhador', year, 5, 1),
-          _relative('ascension', 'Ascensão', year, 39),
-          _relative('whit_monday', 'Segunda-feira de Pentecostes', year, 50),
-          _fixed('national_day', 'Feriado Nacional Suíço', year, 8, 1),
-          _fixed('christmas', 'Natal', year, 12, 25),
-          _fixed('st_stephen', 'Santo Estêvão', year, 12, 26),
-        ]);
-    }
+  static List<SwissHoliday> _buildBernDaysOff(int year) {
+    return _sorted(<SwissHoliday>[
+      _fixed('new_year', 'Ano Novo', year, 1, 1),
+      _fixed('berchtold', 'Berchtoldstag', year, 1, 2),
+      _relative('good_friday', 'Sexta-feira Santa', year, -2),
+      _relative('easter_monday', 'Segunda-feira de Páscoa', year, 1),
+      _relative('ascension', 'Ascensão', year, 39),
+      _relative('whit_monday', 'Segunda-feira de Pentecostes', year, 50),
+      _fixed('national_day', 'Feriado Nacional Suíço', year, 8, 1),
+      _fixed('christmas', 'Natal', year, 12, 25),
+      _fixed('st_stephen', 'Santo Estêvão', year, 12, 26),
+      _fixedHalfDay(
+        'christmas_eve_afternoon',
+        'Tarde livre de Véspera de Natal',
+        year,
+        12,
+        24,
+      ),
+      _fixedHalfDay(
+        'new_year_eve_afternoon',
+        'Tarde livre de Véspera de Ano Novo',
+        year,
+        12,
+        31,
+      ),
+    ]);
   }
 
   static List<SwissHoliday> _sorted(List<SwissHoliday> holidays) {
@@ -148,6 +102,21 @@ class SwissHolidayCalendar {
     return SwissHoliday(id: id, name: name, date: DateTime(year, month, day));
   }
 
+  static SwissHoliday _fixedHalfDay(
+    String id,
+    String name,
+    int year,
+    int month,
+    int day,
+  ) {
+    return SwissHoliday(
+      id: id,
+      name: name,
+      date: DateTime(year, month, day),
+      isHalfDay: true,
+    );
+  }
+
   static SwissHoliday _relative(
     String id,
     String name,
@@ -160,20 +129,6 @@ class SwissHolidayCalendar {
       name: name,
       date: _normalize(easterSunday.add(Duration(days: offsetDays))),
     );
-  }
-
-  static DateTime _genevaFastDay(int year) {
-    final septemberFirst = DateTime(year, 9, 1);
-    final offsetToSunday =
-        (DateTime.sunday - septemberFirst.weekday + DateTime.daysPerWeek) %
-        DateTime.daysPerWeek;
-    final firstSunday = septemberFirst.add(Duration(days: offsetToSunday));
-    return _normalize(firstSunday.add(const Duration(days: 4)));
-  }
-
-  static DateTime _mondaySubstitute(DateTime date) {
-    if (date.weekday != DateTime.sunday) return _normalize(date);
-    return _normalize(date.add(const Duration(days: 1)));
   }
 
   static DateTime _normalize(DateTime date) {

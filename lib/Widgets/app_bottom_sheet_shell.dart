@@ -6,11 +6,13 @@ class AppBottomSheetShell extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.child,
+    this.leading,
   });
 
   final String title;
   final String subtitle;
   final Widget child;
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -48,17 +50,36 @@ class AppBottomSheetShell extends StatelessWidget {
                       ),
                     ),
                   ),
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(fontSize: 14, color: Colors.black54),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (leading != null) ...[
+                        leading!,
+                        const SizedBox(width: 12),
+                      ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              subtitle,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 20),
                   child,

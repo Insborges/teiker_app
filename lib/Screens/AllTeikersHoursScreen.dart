@@ -82,7 +82,10 @@ class _AllTeikersHoursScreenState extends State<AllTeikersHoursScreen> {
       for (var i = 0; i < teikers.length; i++) {
         final teiker = teikers[i];
         final monthTotals = <DateTime, double>{};
-        monthlyMaps[i].forEach((month, total) {
+        final adjustedMonthlyTotals = teiker.monthlyTotalsWithAdjustments(
+          monthlyMaps[i],
+        );
+        adjustedMonthlyTotals.forEach((month, total) {
           final normalized = DateTime(month.year, month.month);
           monthTotals[normalized] = total;
           allMonths.add(normalized);

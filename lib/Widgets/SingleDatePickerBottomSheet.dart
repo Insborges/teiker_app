@@ -267,28 +267,33 @@ class _SingleDatePickerSheetState extends State<_SingleDatePickerSheet> {
           ),
           const SizedBox(height: 20),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _dateChip('Data', selectedDate),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.primaryGreenHex,
-                ),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: selectedDate == null
-                    ? null
-                    : () => Navigator.pop(context, selectedDate),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primaryGreenHex,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+              Expanded(child: _dateChip('Data', selectedDate)),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.primaryGreenHex,
+                    ),
+                    child: const Text('Cancelar'),
                   ),
-                ),
-                child: Text(widget.confirmLabel),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: selectedDate == null
+                        ? null
+                        : () => Navigator.pop(context, selectedDate),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primaryGreenHex,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(widget.confirmLabel),
+                  ),
+                ],
               ),
             ],
           ),

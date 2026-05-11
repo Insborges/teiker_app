@@ -2,8 +2,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
+import 'package:teiker_app/Widgets/app_bottom_sheet_shell.dart';
+import 'package:teiker_app/Widgets/AppButton.dart';
+import 'package:teiker_app/Widgets/AppSnackBar.dart';
+import 'package:teiker_app/Widgets/SingleDatePickerBottomSheet.dart';
+import 'package:teiker_app/Widgets/SingleTimePickerBottomSheet.dart';
 import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
+import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/Teikers.dart';
 import 'package:teiker_app/models/teiker_workload.dart';
@@ -28,6 +34,8 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
   double _targetHoras = 0;
   int _workPercentage = TeikerWorkload.fullTime;
   double _hoursBalanceAdjustment = 0;
+  Teiker? _currentTeiker;
+  final WorkSessionService _workSessionService = WorkSessionService();
   late final PageController _pageController;
 
   @override
@@ -66,6 +74,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
       final data = teikerDoc.data();
       if (data != null) {
         final teiker = Teiker.fromMap(data, teikerDoc.id);
+        _currentTeiker = teiker;
         workPercentage = teiker.workPercentage;
         targetHoras = teiker.weeklyTargetHours;
         _hoursBalanceAdjustment = teiker.hoursBalanceAdjustment;
@@ -82,6 +91,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
         clientesMap,
         targetHoras,
         workPercentage,
+        _currentTeiker,
       );
     } on FirebaseException catch (e) {
       if (e.code != 'failed-precondition') rethrow;
@@ -95,8 +105,162 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
         clientesMap,
         targetHoras,
         workPercentage,
+        _currentTeiker,
       );
     }
+  }
+
+  Future<void> _openEditHoursSheet() async {
+    final user = FirebaseService().currentUser;
+    if (user == null) return;
+
+    List<Clientes> clientes;
+    List<_EditableWorkSession> sessions;
+    try {
+      clientes = await AuthService().getClientes();
+      sessions = await _loadEditableHourSessions(user.uid, clientes);
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Não foi possível carregar horas para editar: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    if (sessions.isEmpty) {
+      AppSnackBar.show(
+        context,
+        message: 'Ainda não há horas para editar.',
+        icon: Icons.info_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    final selectedSession = await showModalBottomSheet<_EditableWorkSession>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) =>
+          _EditableHoursPickerSheet(primaryColor: _primary, sessions: sessions),
+    );
+    if (selectedSession == null || !mounted) return;
+
+    final result = await showModalBottomSheet<_EditHoursResult>(
+      context: context,
+      isScrollControlled: true,
+      useRootNavigator: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _EditHoursSheet(
+        primaryColor: _primary,
+        initialSession: selectedSession,
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    setState(() => _loading = true);
+    try {
+      await _workSessionService.updateManualSessionForCurrentTeikerProfile(
+        sessionId: selectedSession.id,
+        clienteId: result.cliente.uid,
+        clienteName: result.cliente.nameCliente,
+        start: result.start,
+        end: result.end,
+      );
+      await _loadHoras();
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Horas atualizadas.',
+        icon: Icons.edit_calendar_rounded,
+        background: Colors.green.shade700,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        message: 'Erro a atualizar horas: $e',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+    }
+  }
+
+  Future<List<_EditableWorkSession>> _loadEditableHourSessions(
+    String teikerId,
+    List<Clientes> clientes,
+  ) async {
+    final clientsById = {for (final cliente in clientes) cliente.uid: cliente};
+    final snapshot = await FirebaseFirestore.instance
+        .collection('workSessions')
+        .where('teikerId', isEqualTo: teikerId)
+        .get();
+
+    final sessions = <_EditableWorkSession>[];
+    final cutoff = DateTime(2026, 4, 1);
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final clienteId = (data['clienteId'] as String?)?.trim() ?? '';
+      final start = (data['startTime'] as Timestamp?)?.toDate();
+      final end = (data['endTime'] as Timestamp?)?.toDate();
+      if (clienteId.isEmpty || start == null || end == null) continue;
+      if (start.isBefore(cutoff)) continue;
+
+      final duration = _durationForSessionData(data, start, end);
+      final cliente = clientsById[clienteId] ?? _placeholderCliente(clienteId);
+      sessions.add(
+        _EditableWorkSession(
+          id: doc.id,
+          cliente: cliente,
+          start: start,
+          end: end,
+          durationHours: duration,
+        ),
+      );
+    }
+
+    sessions.sort((a, b) => b.start.compareTo(a.start));
+    return sessions;
+  }
+
+  double _durationForSessionData(
+    Map<String, dynamic> data,
+    DateTime start,
+    DateTime end,
+  ) {
+    final stored = (data['durationHours'] as num?)?.toDouble();
+    if (stored != null) return stored;
+
+    final raw = (data['rawDurationHours'] as num?)?.toDouble();
+    if (raw != null) {
+      final multiplier = (data['durationMultiplier'] as num?)?.toDouble();
+      return multiplier != null && multiplier > 0 ? raw * multiplier : raw;
+    }
+
+    return FixedHolidayHoursPolicy.applyToHours(
+      workDate: start,
+      rawHours: end.difference(start).inMinutes / 60.0,
+    );
+  }
+
+  Clientes _placeholderCliente(String clienteId) {
+    return Clientes(
+      uid: clienteId,
+      nameCliente: clienteId.isEmpty ? 'Cliente' : clienteId,
+      moradaCliente: '',
+      cidadeCliente: '',
+      codigoPostal: '',
+      hourasCasa: 0,
+      telemovel: 0,
+      email: '',
+      orcamento: 0,
+      teikersIds: const [],
+    );
   }
 
   void _buildMonthlyData(
@@ -104,10 +268,10 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     Map<String, Clientes> clientesMap,
     double targetHoras,
     int workPercentage,
+    Teiker? teiker,
   ) {
     final Map<DateTime, Map<DateTime, Map<String, double>>> grouped = {};
     final Map<DateTime, double> totals = {};
-    DateTime? earliestMonth;
 
     for (final doc in docs) {
       final data = doc.data();
@@ -150,15 +314,55 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
       );
 
       totals.update(monthKey, (v) => v + dur, ifAbsent: () => dur);
-      earliestMonth ??= monthKey;
-      if (monthKey.isBefore(earliestMonth)) {
-        earliestMonth = monthKey;
+    }
+
+    if (teiker != null) {
+      final adjustedTotals = teiker.monthlyTotalsWithAdjustments(totals);
+      for (final month in teiker.monthlyBalanceAdjustments.keys) {
+        final adjustedMonthTotal = adjustedTotals[month] ?? 0;
+        final rawMonthTotal = totals[month] ?? 0;
+        final targetMonthTotal = _monthlyTargetForMonth(month);
+        final balanceHours = teiker.monthlyBalanceAdjustmentFor(month);
+        final normalizedHours = targetMonthTotal - rawMonthTotal;
+
+        grouped.putIfAbsent(month, () => {});
+        final adjustmentDay = DateTime(month.year, month.month, 1);
+        grouped[month]!.putIfAbsent(adjustmentDay, () => {});
+
+        if (normalizedHours.abs() >= 0.05) {
+          grouped[month]![adjustmentDay]!.update(
+            'Regularização da meta mensal',
+            (value) => value + normalizedHours,
+            ifAbsent: () => normalizedHours,
+          );
+        }
+
+        final extraDisplayHours = adjustedMonthTotal - targetMonthTotal;
+        if (extraDisplayHours.abs() >= 0.05) {
+          grouped[month]![adjustmentDay]!.update(
+            'Horas extra do mês',
+            (value) => value + extraDisplayHours,
+            ifAbsent: () => extraDisplayHours,
+          );
+        } else if (balanceHours.abs() >= 0.05) {
+          grouped[month]![adjustmentDay]!.update(
+            'Acerto do saldo do mês',
+            (value) => value + balanceHours,
+            ifAbsent: () => balanceHours,
+          );
+        }
       }
+      totals
+        ..clear()
+        ..addAll(adjustedTotals);
     }
 
     final now = DateTime.now();
     final currentMonth = DateTime(now.year, now.month);
-    final DateTime firstMonth = earliestMonth ?? currentMonth;
+    final sortedMonths = totals.keys.toList()..sort((a, b) => a.compareTo(b));
+    final DateTime firstMonth = sortedMonths.isNotEmpty
+        ? sortedMonths.first
+        : currentMonth;
     final List<DateTime> months = [];
     DateTime cursor = DateTime(firstMonth.year, firstMonth.month);
     while (!cursor.isAfter(currentMonth)) {
@@ -201,7 +405,17 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     final wide = width >= 900;
 
     return Scaffold(
-      appBar: buildAppBar("Horas do mês", seta: true),
+      appBar: buildAppBar(
+        "Horas do mês",
+        seta: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_calendar_rounded),
+            tooltip: 'Editar horas',
+            onPressed: _openEditHoursSheet,
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Center(
@@ -797,6 +1011,445 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
             }).toList(),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _EditableWorkSession {
+  const _EditableWorkSession({
+    required this.id,
+    required this.cliente,
+    required this.start,
+    required this.end,
+    required this.durationHours,
+  });
+
+  final String id;
+  final Clientes cliente;
+  final DateTime start;
+  final DateTime end;
+  final double durationHours;
+}
+
+class _EditHoursResult {
+  const _EditHoursResult({
+    required this.cliente,
+    required this.start,
+    required this.end,
+  });
+
+  final Clientes cliente;
+  final DateTime start;
+  final DateTime end;
+}
+
+class _EditHoursSheet extends StatefulWidget {
+  const _EditHoursSheet({
+    required this.primaryColor,
+    required this.initialSession,
+  });
+
+  final Color primaryColor;
+  final _EditableWorkSession initialSession;
+
+  @override
+  State<_EditHoursSheet> createState() => _EditHoursSheetState();
+}
+
+class _EditHoursSheetState extends State<_EditHoursSheet> {
+  late Clientes _selectedCliente;
+  late DateTime _selectedDate;
+  TimeOfDay? _startTime;
+  TimeOfDay? _endTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCliente = widget.initialSession.cliente;
+    _selectedDate = DateTime(
+      widget.initialSession.start.year,
+      widget.initialSession.start.month,
+      widget.initialSession.start.day,
+    );
+    _startTime = TimeOfDay.fromDateTime(widget.initialSession.start);
+    _endTime = TimeOfDay.fromDateTime(widget.initialSession.end);
+  }
+
+  String _formatDate(DateTime date) {
+    return DateFormat('dd/MM/yyyy', 'pt_PT').format(date);
+  }
+
+  String _formatTime(TimeOfDay? time) {
+    if (time == null) return 'Selecionar';
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  DateTime _combine(DateTime date, TimeOfDay time) {
+    return DateTime(date.year, date.month, date.day, time.hour, time.minute);
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await SingleDatePickerBottomSheet.show(
+      context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      title: 'Dia das horas',
+      subtitle: 'Escolhe o dia trabalhado',
+      confirmLabel: 'Confirmar',
+    );
+    if (picked == null) return;
+    setState(() {
+      _selectedDate = DateTime(picked.year, picked.month, picked.day);
+    });
+  }
+
+  Future<void> _pickStartTime() async {
+    final picked = await SingleTimePickerBottomSheet.show(
+      context,
+      initialTime: _startTime ?? TimeOfDay.now(),
+      title: 'Hora de início',
+      subtitle: 'Escolhe a hora inicial',
+      confirmLabel: 'Confirmar',
+    );
+    if (picked == null) return;
+    setState(() => _startTime = picked);
+  }
+
+  Future<void> _pickEndTime() async {
+    final picked = await SingleTimePickerBottomSheet.show(
+      context,
+      initialTime: _endTime ?? TimeOfDay.now(),
+      title: 'Hora de fim',
+      subtitle: 'Escolhe a hora final',
+      confirmLabel: 'Confirmar',
+    );
+    if (picked == null) return;
+    setState(() => _endTime = picked);
+  }
+
+  void _submit() {
+    final startTime = _startTime;
+    final endTime = _endTime;
+    if (startTime == null || endTime == null) {
+      AppSnackBar.show(
+        context,
+        message: 'Escolhe a hora de início e a hora de fim.',
+        icon: Icons.info_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    final start = _combine(_selectedDate, startTime);
+    final end = _combine(_selectedDate, endTime);
+    final now = DateTime.now();
+    if (start.isAfter(now) || end.isAfter(now)) {
+      AppSnackBar.show(
+        context,
+        message: 'Não podes adicionar horas no futuro.',
+        icon: Icons.error_outline,
+        background: Colors.red.shade700,
+      );
+      return;
+    }
+    if (!end.isAfter(start)) {
+      AppSnackBar.show(
+        context,
+        message: 'A hora de fim deve ser posterior à hora de início.',
+        icon: Icons.info_outline,
+        background: Colors.orange.shade700,
+      );
+      return;
+    }
+
+    Navigator.of(
+      context,
+    ).pop(_EditHoursResult(cliente: _selectedCliente, start: start, end: end));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBottomSheetShell(
+      title: 'Alterar horas',
+      subtitle: 'Corrige o registo de horas selecionado',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _ManualHoursInfoTile(
+            label: 'Cliente',
+            value: _selectedCliente.nameCliente,
+            icon: Icons.people_outline,
+            primaryColor: widget.primaryColor,
+          ),
+          const SizedBox(height: 12),
+          _ManualHoursSelectorTile(
+            label: 'Dia',
+            value: _formatDate(_selectedDate),
+            icon: Icons.calendar_month_outlined,
+            primaryColor: widget.primaryColor,
+            onTap: _pickDate,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _ManualHoursSelectorTile(
+                  label: 'Início',
+                  value: _formatTime(_startTime),
+                  icon: Icons.play_circle_outline,
+                  primaryColor: widget.primaryColor,
+                  onTap: _pickStartTime,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ManualHoursSelectorTile(
+                  label: 'Fim',
+                  value: _formatTime(_endTime),
+                  icon: Icons.stop_circle_outlined,
+                  primaryColor: widget.primaryColor,
+                  onTap: _pickEndTime,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: AppButton(
+                  text: 'Cancelar',
+                  outline: true,
+                  color: widget.primaryColor,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: AppButton(
+                  text: 'Atualizar',
+                  icon: Icons.save_rounded,
+                  color: widget.primaryColor,
+                  onPressed: _submit,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManualHoursSelectorTile extends StatelessWidget {
+  const _ManualHoursSelectorTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.primaryColor,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color primaryColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: primaryColor.withAlpha(32)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: primaryColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    value,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ManualHoursInfoTile extends StatelessWidget {
+  const _ManualHoursInfoTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.primaryColor,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color primaryColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: primaryColor.withAlpha(32)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: primaryColor),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EditableHoursPickerSheet extends StatelessWidget {
+  const _EditableHoursPickerSheet({
+    required this.primaryColor,
+    required this.sessions,
+  });
+
+  final Color primaryColor;
+  final List<_EditableWorkSession> sessions;
+
+  String _formatSessionDate(DateTime date) {
+    return DateFormat('dd/MM/yyyy', 'pt_PT').format(date);
+  }
+
+  String _formatTime(DateTime date) {
+    return DateFormat('HH:mm', 'pt_PT').format(date);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppBottomSheetShell(
+      title: 'Alterar horas',
+      subtitle: 'Escolhe o registo que queres corrigir',
+      child: SizedBox(
+        height: 460,
+        child: ListView.separated(
+          itemCount: sessions.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final session = sessions[index];
+            return InkWell(
+              onTap: () => Navigator.of(context).pop(session),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: primaryColor.withAlpha(40)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withAlpha(18),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.edit_calendar, color: primaryColor),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            session.cliente.nameCliente,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${_formatSessionDate(session.start)} • ${_formatTime(session.start)} - ${_formatTime(session.end)}',
+                            style: TextStyle(
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${session.durationHours.toStringAsFixed(1)} h',
+                      style: TextStyle(
+                        color: primaryColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.chevron_right_rounded, color: primaryColor),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

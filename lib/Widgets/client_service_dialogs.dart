@@ -205,11 +205,12 @@ class _ServicePriceSheetState extends State<ServicePriceSheet> {
             AppTextField(
               label: 'Preço (CHF)',
               controller: _priceController,
-              keyboard: TextInputType.number,
+              keyboard: TextInputType.numberWithOptions(decimal: true, signed: false),
               prefixIcon: Icons.payments_outlined,
               focusColor: widget.primaryColor,
               borderColor: widget.primaryColor.withValues(alpha: .25),
               fillColor: Colors.grey.shade100,
+
             ),
             if (_errorText != null) ...[
               const SizedBox(height: 8),

@@ -10,6 +10,7 @@ class MonthlyHoursOverviewCard extends StatefulWidget {
     required this.monthlyTotals,
     required this.primaryColor,
     this.workPercentage,
+    this.monthTargetBuilder,
     this.balanceAdjustmentHours = 0,
     this.title = 'Horas por mês',
     this.emptyMessage = 'Sem horas registadas.',
@@ -19,6 +20,7 @@ class MonthlyHoursOverviewCard extends StatefulWidget {
   final Map<DateTime, double> monthlyTotals;
   final Color primaryColor;
   final int? workPercentage;
+  final double Function(DateTime month)? monthTargetBuilder;
   final double balanceAdjustmentHours;
   final String title;
   final String emptyMessage;
@@ -68,12 +70,13 @@ class _MonthlyHoursOverviewCardState extends State<MonthlyHoursOverviewCard> {
   }
 
   double? _monthTarget(int year, int month) {
+    final monthKey = DateTime(year, month);
+    if (widget.monthTargetBuilder != null) {
+      return widget.monthTargetBuilder!(monthKey);
+    }
     final workPercentage = widget.workPercentage;
     if (workPercentage == null) return null;
-    return TeikerWorkload.monthlyHoursForPercentage(
-      workPercentage,
-      DateTime(year, month),
-    );
+    return TeikerWorkload.monthlyHoursForPercentage(workPercentage, monthKey);
   }
 
   double? _monthBalance(int year, int month) {

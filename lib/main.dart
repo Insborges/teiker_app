@@ -11,7 +11,7 @@ import 'package:teiker_app/theme/app_colors.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Formatos de data portuguesa (Rápido, pode manter o await)
+  // Formatos de data portuguesa
   await initializeDateFormatting('pt_PT', null);
   Intl.defaultLocale = 'pt_PT';
 

@@ -1,3 +1,5 @@
+import 'package:teiker_app/utils/swiss_holiday_calendar.dart';
+
 class TeikerWorkload {
   const TeikerWorkload._();
 
@@ -39,10 +41,30 @@ class TeikerWorkload {
     }
   }
 
+  static double monthlyHoursForWeeklyHours(double weeklyHours, DateTime month) {
+    // Calculate hours based on work-days (Mon-Fri) in the month,
+    // excluding official holidays. Daily hours = weeklyHours / 5.
+    final monthStart = DateTime(month.year, month.month, 1);
+    final monthEnd = DateTime(month.year, month.month + 1, 0);
+
+    var cursor = monthStart;
+    var businessDays = 0;
+    while (!cursor.isAfter(monthEnd)) {
+      final isWeekday =
+          cursor.weekday >= DateTime.monday &&
+          cursor.weekday <= DateTime.friday;
+      final isHoliday = SwissHolidayCalendar.isHoliday(cursor);
+      if (isWeekday && !isHoliday) businessDays += 1;
+      cursor = cursor.add(const Duration(days: 1));
+    }
+
+    final dailyHours = weeklyHours / 5.0;
+    return dailyHours * businessDays;
+  }
+
   static double monthlyHoursForPercentage(int percentage, DateTime month) {
     final weeklyTarget = weeklyHoursForPercentage(percentage);
-    final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
-    return weeklyTarget * (daysInMonth / 7.0);
+    return monthlyHoursForWeeklyHours(weeklyTarget, month);
   }
 
   static String labelForPercentage(int percentage) {

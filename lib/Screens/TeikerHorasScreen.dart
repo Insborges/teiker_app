@@ -513,6 +513,9 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
   }
 
   double _monthlyTargetForMonth(DateTime month) {
+    if (_currentTeiker != null) {
+      return _currentTeiker!.monthlyTargetHoursForMonth(month);
+    }
     return TeikerWorkload.monthlyHoursForPercentage(_workPercentage, month);
   }
 
@@ -537,8 +540,18 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
   }
 
   double _yearBalanceForYear(int year) {
-    final monthsInYear = _months.where((month) => month.year == year);
-    return monthsInYear.fold<double>(
+    if (_selectedMonth == null) return 0;
+
+    // Contar apenas meses até ao mês selecionado (inclusive)
+    final monthsUpToSelected = _months.where(
+      (month) =>
+          month.year == year &&
+          (month.year < _selectedMonth!.year ||
+              (month.year == _selectedMonth!.year &&
+                  month.month <= _selectedMonth!.month)),
+    );
+
+    return monthsUpToSelected.fold<double>(
           0,
           (total, month) =>
               total + _monthBalance(month, _totalsByMonth[month] ?? 0),

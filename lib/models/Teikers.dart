@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:teiker_app/models/teiker_workload.dart';
+import 'package:teiker_app/utils/ferias_day_count.dart';
 
 DateTime? _parseDate(dynamic value) {
   if (value == null) return null;
@@ -471,6 +472,19 @@ class Teiker {
     return monthlyBalanceAdjustments[DateTime(month.year, month.month)] ?? 0;
   }
 
+  double monthlyTargetHoursForMonth(DateTime month) {
+    final baseTarget = TeikerWorkload.monthlyHoursForWeeklyHours(horas, month);
+    final vacationDays = countFeriasBusinessDaysInMonth(
+      feriasPeriodos,
+      month,
+      legacyStart: feriasInicio,
+      legacyEnd: feriasFim,
+    );
+    final dailyHours = horas / 5.0;
+    final adjustedTarget = baseTarget - vacationDays * dailyHours;
+    return adjustedTarget.clamp(0, double.infinity);
+  }
+
   Map<DateTime, double> monthlyTotalsWithAdjustments(
     Map<DateTime, double> monthlyTotals,
   ) {
@@ -481,9 +495,7 @@ class Teiker {
     }
 
     for (final entry in monthlyBalanceAdjustments.entries) {
-      adjusted[entry.key] =
-          TeikerWorkload.monthlyHoursForPercentage(workPercentage, entry.key) +
-          entry.value;
+      adjusted[entry.key] = monthlyTargetHoursForMonth(entry.key) + entry.value;
     }
 
     return adjusted;

@@ -247,7 +247,7 @@ class InvoiceDocxService {
       lines.add(
         _InvoiceTableLine(
           description:
-              'Servicos ${_capitalizedMonth(invoice.invoiceDate)} Teiker',
+              'Services ${_capitalizedMonth(invoice.invoiceDate)} Teiker',
           unitsText: '${invoice.totalHours.toStringAsFixed(1)}h',
           unitPrice: invoice.hourlyRate,
           total: invoice.subtotal,
@@ -303,7 +303,7 @@ class InvoiceDocxService {
     }
 
     if (name.isEmpty) {
-      name = rawName.trim().isEmpty ? 'Servico adicional' : rawName.trim();
+      name = rawName.trim().isEmpty ? 'Additional Service' : rawName.trim();
     }
     if (quantity <= 0) quantity = 1;
 
@@ -370,7 +370,7 @@ class InvoiceDocxService {
   }
 
   String _capitalizedMonth(DateTime date) {
-    final month = DateFormat('MMMM', 'pt_PT').format(date).trim();
+    final month = DateFormat('MMMM', 'en_US').format(date).trim();
     if (month.isEmpty) return '';
     return '${month[0].toUpperCase()}${month.substring(1)}';
   }

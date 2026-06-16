@@ -163,6 +163,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
                       ),
                       primaryColor: primaryColor,
                       workPercentage: teiker.workPercentage,
+                      monthTargetBuilder: teiker.monthlyTargetHoursForMonth,
                       balanceAdjustmentHours: teiker.hoursBalanceAdjustment,
                       title: hoursSectionTitle,
                       showHeader: false,

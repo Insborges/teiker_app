@@ -119,10 +119,7 @@ class _AllTeikersHoursScreenState extends State<AllTeikersHoursScreen> {
   }
 
   double _monthlyTargetHours(Teiker teiker, DateTime month) {
-    return TeikerWorkload.monthlyHoursForPercentage(
-      teiker.workPercentage,
-      month,
-    );
+    return teiker.monthlyTargetHoursForMonth(month);
   }
 
   double _periodHours(_TeikerHoursSummary summary) {

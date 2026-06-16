@@ -221,45 +221,58 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
     return filtered;
   }
 
-  double _selectedYearTotalForVisible(List<_ClienteInvoiceSummary> visible) {
-    if (visible.isEmpty) return 0;
-
-    final visibleClientIds = visible.map((item) => item.cliente.uid).toSet();
-    final clientById = <String, Clientes>{
-      for (final cliente in _clientes) cliente.uid: cliente,
-    };
+  double _selectedYearTotalForVisible() {
     final yearStart = DateTime(_selectedYear, 1, 1);
     final nextYearStart = DateTime(_selectedYear + 1, 1, 1);
 
-    var hoursTotal = 0.0;
+    var hoursTotalWithVat = 0.0;
+    var servicesTotal = 0.0;
+
+    // 1. Calcular Horas de todos os clientes no ano + IVA 8.1%
     for (final session in _allSessions) {
-      if (!visibleClientIds.contains(session.clienteId)) continue;
       if (session.start.isBefore(yearStart) ||
           !session.start.isBefore(nextYearStart)) {
         continue;
       }
-      final cliente = clientById[session.clienteId];
-      if (cliente == null) continue;
-      hoursTotal += session.hours * cliente.orcamento;
+      // Procuramos o cliente para saber o orçamento dele
+      final cliente = _clientes.firstWhere(
+        (c) => c.uid == session.clienteId,
+        orElse: () => Clientes(
+          uid: '',
+          nameCliente: '',
+          moradaCliente: '',
+          cidadeCliente: '',
+          codigoPostal: '',
+          hourasCasa: 0,
+          telemovel: 0,
+          email: '',
+          orcamento: 0,
+          teikersIds: [],
+        ),
+      );
+
+      if (cliente.uid.isNotEmpty) {
+        // Valor da sessão + IVA
+        hoursTotalWithVat += (session.hours * cliente.orcamento) * 1.081;
+      }
     }
 
-    var servicesTotal = 0.0;
-    for (final summary in visible) {
-      final cliente = summary.cliente;
-      for (var month = 1; month <= 12; month++) {
-        final monthKey = _monthKey(DateTime(_selectedYear, month, 1));
+    // 2. Calcular Serviços Adicionais de todos os clientes no ano inteiro (sem IVA)
+    for (final cliente in _clientes) {
+      for (var m = 1; m <= 12; m++) {
+        final monthKey = _monthKey(DateTime(_selectedYear, m, 1));
         final monthlyServices = _monthlyServicesForCliente(
           cliente: cliente,
           monthKey: monthKey,
         );
         servicesTotal += monthlyServices.values.fold<double>(
           0,
-          (runningTotal, value) => runningTotal + value,
+          (prev, val) => prev + val,
         );
       }
     }
 
-    return hoursTotal + servicesTotal;
+    return hoursTotalWithVat + servicesTotal;
   }
 
   Map<String, double> _monthlyServicesForCliente({
@@ -864,11 +877,11 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
       'pt_PT',
     ).format(DateTime(_selectedYear, _selectedMonth)).toUpperCase();
     final visible = _visibleSummaries;
-    final globalTotal = visible.fold<double>(
+    final globalTotal = _summaries.fold<double>(
       0,
       (runningTotal, item) => runningTotal + item.totalValue,
     );
-    final yearTotal = _selectedYearTotalForVisible(visible);
+    final yearTotal = _selectedYearTotalForVisible();
 
     return Scaffold(
       appBar: buildAppBar(
@@ -1012,5 +1025,5 @@ class _ClienteInvoiceSummary {
   final Map<String, double> servicePrices;
   final double servicesTotal;
 
-  double get totalValue => hoursTotal + servicesTotal;
+  double get totalValue => (hoursTotal * 1.081) + servicesTotal;
 }

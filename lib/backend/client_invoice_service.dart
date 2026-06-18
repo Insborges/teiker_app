@@ -65,7 +65,49 @@ class ClientInvoiceService {
       throw Exception('Fatura invalida.');
     }
 
-    await _clientInvoicesCollection(safeClientId).doc(safeInvoiceId).delete();
+    final invoiceRef = _clientInvoicesCollection(
+      safeClientId,
+    ).doc(safeInvoiceId);
+
+    // 1. Vamos buscar a fatura primeiro para saber de que ano ela é antes de a apagar
+    final invoiceSnapshot = await invoiceRef.get();
+    if (!invoiceSnapshot.exists) {
+      return; // Se já não existir, não fazemos nada
+    }
+
+    final data = invoiceSnapshot.data()!;
+    // Lemos a data para saber a qual ano vamos subtrair o contador
+    final invoiceDate =
+        (data['invoiceDate'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final year = DateFormat('yyyy').format(invoiceDate);
+
+    final counterRef = _firestore.collection('_meta').doc('invoice_counter');
+
+    // 2. Fazemos a atualização e a eliminação juntas numa "Transaction" para ser 100% seguro
+    await _firestore.runTransaction((transaction) async {
+      final counterSnapshot = await transaction.get(counterRef);
+
+      if (counterSnapshot.exists) {
+        final countersByYear = Map<String, dynamic>.from(
+          (counterSnapshot.data()?['yearCounters'] as Map?) ??
+              const <String, dynamic>{},
+        );
+
+        final current = (countersByYear[year] as num?)?.toInt() ?? 0;
+
+        // Se o contador for maior que 0, recuamos 1 número
+        if (current > 0) {
+          countersByYear[year] = current - 1;
+          transaction.set(counterRef, {
+            'yearCounters': countersByYear,
+            'updatedAt': Timestamp.now(),
+          }, SetOptions(merge: true));
+        }
+      }
+
+      // 3. Por fim, apagamos a fatura definitivamente
+      transaction.delete(invoiceRef);
+    });
   }
 
   Future<IssuedClientInvoice> issueInvoice({

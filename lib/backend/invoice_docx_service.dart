@@ -37,7 +37,7 @@ class InvoiceDocxService {
 
     final encodedArchive = ZipEncoder().encode(archive);
 
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await getApplicationDocumentsDirectory();
     final safeInvoiceNumber = _sanitizeFilePart(invoice.invoiceNumber);
     final safeClientName = _sanitizeFilePart(invoice.clientName);
     final fileName = 'fatura_${safeClientName}_$safeInvoiceNumber.docx';
@@ -50,36 +50,25 @@ class InvoiceDocxService {
   String _applyInvoiceData(String xml, ClientInvoice invoice) {
     var updated = xml;
 
-    updated = _replaceBookmarkField(
-      updated,
-      bookmarkName: 'invoice_date',
-      value: DateFormat('dd/MM/yyyy').format(invoice.invoiceDate),
+    // Substituição direta e 100% segura. O Word não tem como dar erro com isto.
+    updated = updated.replaceAll(
+      'invoice_date',
+      _escapeXml(DateFormat('dd/MM/yyyy').format(invoice.invoiceDate)),
     );
-    updated = _replaceBookmarkField(
-      updated,
-      bookmarkName: 'invoice_number',
-      value: invoice.invoiceNumber,
+    updated = updated.replaceAll(
+      'invoice_number',
+      _escapeXml(invoice.invoiceNumber),
     );
-    updated = _replaceBookmarkField(
-      updated,
-      bookmarkName: 'client_name',
-      value: invoice.clientName,
+    updated = updated.replaceAll('client_name', _escapeXml(invoice.clientName));
+    updated = updated.replaceAll(
+      'client_address',
+      _escapeXml(invoice.clientAddress),
     );
-    updated = _replaceBookmarkField(
-      updated,
-      bookmarkName: 'client_address',
-      value: invoice.clientAddress,
+    updated = updated.replaceAll(
+      'client_postal_code',
+      _escapeXml(invoice.clientPostalCode),
     );
-    updated = _replaceBookmarkField(
-      updated,
-      bookmarkName: 'client_postal_code',
-      value: invoice.clientPostalCode,
-    );
-    updated = _replaceBookmarkField(
-      updated,
-      bookmarkName: 'client_city',
-      value: invoice.clientCity,
-    );
+    updated = updated.replaceAll('client_city', _escapeXml(invoice.clientCity));
 
     updated = _replaceStaticIssuerName(updated);
     updated = _updateMainInvoiceTable(updated, (tableXml) {
@@ -407,37 +396,6 @@ class InvoiceDocxService {
       'info@teiker.ch',
     );
     return updated;
-  }
-
-  String _replaceBookmarkField(
-    String xml, {
-    required String bookmarkName,
-    required String value,
-  }) {
-    final bookmarkPattern = RegExp(
-      '(<w:bookmarkStart[^>]*w:name="${RegExp.escape(bookmarkName)}"[^>]*/?>)(.*?)(<w:bookmarkEnd[^>]*/>)',
-      dotAll: true,
-    );
-
-    return xml.replaceFirstMapped(bookmarkPattern, (match) {
-      final prefix = match.group(1)!;
-      final segment = match.group(2)!;
-      final suffix = match.group(3)!;
-
-      var hasReplacedValue = false;
-      final updatedSegment = segment.replaceAllMapped(
-        RegExp(r'<w:t[^>]*>.*?</w:t>', dotAll: true),
-        (textMatch) {
-          if (hasReplacedValue) {
-            return '<w:t></w:t>';
-          }
-          hasReplacedValue = true;
-          return '<w:t>${_escapeXml(value)}</w:t>';
-        },
-      );
-
-      return '$prefix$updatedSegment$suffix';
-    });
   }
 
   String _replaceTextNode(

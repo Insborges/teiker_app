@@ -1,4 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:teiker_app/Screens/DetailsScreens.dart/ClientsDetails.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
@@ -914,6 +916,57 @@ class _ClientesScreenState extends State<ClientesScreen> {
       enabled: !working && !_hasAnyOpenSession,
       onPressed: () async {
         try {
+          // --- NOVA LÓGICA: VERIFICAR SE ESTAVA EM DESLOCAÇÃO ---
+          final prefs = await SharedPreferences.getInstance();
+          final transitKey = 'transit_start_$_currentUserId';
+          final transitIso = prefs.getString(transitKey);
+
+          if (transitIso != null) {
+            final transitStart = DateTime.parse(transitIso);
+            final now = DateTime.now();
+
+            if (mounted) {
+              final confirm = await AppConfirmDialog.show(
+                context: context,
+                title: 'Fim de Deslocação',
+                message:
+                    'Estiveste em deslocação desde as ${TimeOfDay.fromDateTime(transitStart).format(context)}. Queres adicionar este tempo de viagem às tuas horas?',
+                confirmLabel: 'Sim, adicionar',
+                confirmColor: AppColors.primaryGreen,
+              );
+
+              if (confirm) {
+                final durationHours =
+                    now.difference(transitStart).inMinutes / 60.0;
+
+                await FirebaseFirestore.instance.collection('workSessions').add({
+                  'clienteId':
+                      'DESLOCACAO',
+                  'teikerId': _currentUserId,
+                  'startTime': Timestamp.fromDate(transitStart),
+                  'endTime': Timestamp.fromDate(now),
+                  'durationHours': durationHours,
+                  'rawDurationHours': durationHours,
+                  'durationMultiplier': 1.0,
+                  'isFixedHolidayRateApplied': false,
+                });
+
+                if (mounted) {
+                  AppSnackBar.show(
+                    context,
+                    message:
+                        'Tempo de deslocação (${durationHours.toStringAsFixed(2)}h) adicionado!',
+                    icon: Icons.directions_car,
+                    background: Colors.blue.shade700,
+                  );
+                }
+              }
+            }
+            await prefs.remove(transitKey);
+          }
+          // --- FIM DA LÓGICA DE DESLOCAÇÃO ---
+
+          // Inicia a sessão normal na casa atual
           final session = await _workSessionService.startSession(
             clienteId: cliente.uid,
             clienteName: cliente.nameCliente,
@@ -923,12 +976,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
             _openSessions[cliente.uid] = session;
           });
 
-          AppSnackBar.show(
-            context,
-            message: 'Começaste às ${TimeOfDay.now().format(context)}!',
-            icon: Icons.play_arrow,
-            background: const Color.fromARGB(255, 4, 76, 32),
-          );
+          if (mounted) {
+            AppSnackBar.show(
+              context,
+              message: 'Começaste às ${TimeOfDay.now().format(context)}!',
+              icon: Icons.play_arrow,
+              background: const Color.fromARGB(255, 4, 76, 32),
+            );
+          }
         } catch (e) {
           AppSnackBar.show(
             context,
@@ -996,6 +1051,33 @@ class _ClientesScreenState extends State<ClientesScreen> {
           );
 
           await _ensureOpenSessions([cliente]);
+
+          if (!mounted) return;
+          final vaiParaOutra = await AppConfirmDialog.show(
+            context: context,
+            title: 'Em trânsito?',
+            message: 'Vais iniciar a deslocação para outra casa agora?',
+            confirmLabel: 'Sim',
+            confirmColor: AppColors.primaryGreen,
+          );
+
+          // Se responder "Sim", guardamos a hora exata no telemóvel
+          if (vaiParaOutra) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(
+              'transit_start_$_currentUserId',
+              DateTime.now().toIso8601String(),
+            );
+
+            if (mounted) {
+              AppSnackBar.show(
+                context,
+                message: 'Boa viagem! O tempo de deslocação está a contar.',
+                icon: Icons.directions_car,
+                background: Colors.blue.shade700,
+              );
+            }
+          }
         } catch (e) {
           AppSnackBar.show(
             context,

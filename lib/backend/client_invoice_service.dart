@@ -69,21 +69,28 @@ class ClientInvoiceService {
       safeClientId,
     ).doc(safeInvoiceId);
 
-    // 1. Vamos buscar a fatura primeiro para saber de que ano ela é antes de a apagar
+    // 1. Vamos ler a fatura antes de a apagar para saber quem ela é
     final invoiceSnapshot = await invoiceRef.get();
     if (!invoiceSnapshot.exists) {
-      return; // Se já não existir, não fazemos nada
+      return;
     }
 
     final data = invoiceSnapshot.data()!;
-    // Lemos a data para saber a qual ano vamos subtrair o contador
     final invoiceDate =
         (data['invoiceDate'] as Timestamp?)?.toDate() ?? DateTime.now();
     final year = DateFormat('yyyy').format(invoiceDate);
+    final invoiceNumberStr = (data['invoiceNumber'] as String?) ?? '';
+
+    // 2. Extrair o número sequencial da fatura (ex: de "2026-003" extrai apenas o 3)
+    int invoiceSequence = 0;
+    final parts = invoiceNumberStr.split('-');
+    if (parts.length == 2) {
+      invoiceSequence = int.tryParse(parts[1]) ?? 0;
+    }
 
     final counterRef = _firestore.collection('_meta').doc('invoice_counter');
 
-    // 2. Fazemos a atualização e a eliminação juntas numa "Transaction" para ser 100% seguro
+    // 3. Transação Segura
     await _firestore.runTransaction((transaction) async {
       final counterSnapshot = await transaction.get(counterRef);
 
@@ -93,11 +100,13 @@ class ClientInvoiceService {
               const <String, dynamic>{},
         );
 
-        final current = (countersByYear[year] as num?)?.toInt() ?? 0;
+        final currentCounter = (countersByYear[year] as num?)?.toInt() ?? 0;
 
-        // Se o contador for maior que 0, recuamos 1 número
-        if (current > 0) {
-          countersByYear[year] = current - 1;
+        // A BARREIRA DE SEGURANÇA:
+        // Só recua o contador SE a fatura apagada for exatamente igual ao último número gerado.
+        if (currentCounter > 0 && invoiceSequence == currentCounter) {
+          countersByYear[year] = currentCounter - 1;
+
           transaction.set(counterRef, {
             'yearCounters': countersByYear,
             'updatedAt': Timestamp.now(),
@@ -105,7 +114,7 @@ class ClientInvoiceService {
         }
       }
 
-      // 3. Por fim, apagamos a fatura definitivamente
+      // 4. Apaga a fatura da base de dados (quer tenha recuado o contador ou não)
       transaction.delete(invoiceRef);
     });
   }

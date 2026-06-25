@@ -16,6 +16,7 @@ import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import 'package:teiker_app/work_sessions/domain/work_session.dart';
+import 'package:teiker_app/work_sessions/domain/work_session_repository.dart';
 import '../models/Clientes.dart';
 
 enum _ClientesSort { az, hoursDesc }
@@ -1023,18 +1024,22 @@ class _ClientesScreenState extends State<ClientesScreen> {
             );
           }
 
-          final total = await _workSessionService.finishSessionById(
+          final MonthlyTotals total = await _workSessionService.finishSessionById(
             clienteId: cliente.uid,
             sessionId: session.id,
             startTime: session.startTime,
           );
 
-          final displayTotal = _isAdmin
-              ? total
-              : await _workSessionService.calculateMonthlyTotalForCurrentUser(
+          double displayTotal;
+          if (_isPrivileged) {
+            displayTotal = total.normal + total.extra;
+          } else {
+            displayTotal = await _workSessionService
+                .calculateMonthlyTotalForCurrentUser(
                   clienteId: cliente.uid,
                   referenceDate: session.startTime,
                 );
+          }
 
           setState(() {
             _openSessions[cliente.uid] = null;

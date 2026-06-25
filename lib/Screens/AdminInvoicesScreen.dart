@@ -244,6 +244,7 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
           cidadeCliente: '',
           codigoPostal: '',
           hourasCasa: 0,
+          horasExtraCasa: 0,
           telemovel: 0,
           email: '',
           orcamento: 0,
@@ -359,7 +360,7 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
         if (!mounted) return;
         AppSnackBar.show(
           context,
-          message: 'Fatura ${invoice.invoiceNumber} aberta no Word.',
+          message: 'Invoice ${invoice.invoiceNumber} aberta no Word.',
           icon: Icons.description_outlined,
           background: Colors.green.shade700,
         );
@@ -373,7 +374,7 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
       if (!mounted) return;
       AppSnackBar.show(
         context,
-        message: 'Fatura ${invoice.invoiceNumber} pronta para partilha.',
+        message: 'Invoice ${invoice.invoiceNumber} pronta para partilha.',
         icon: Icons.share_outlined,
         background: Colors.green.shade700,
       );
@@ -381,7 +382,7 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
       if (!mounted) return;
       AppSnackBar.show(
         context,
-        message: 'Erro ao partilhar/abrir fatura: $e',
+        message: 'Erro ao partilhar/abrir invoice: $e',
         icon: Icons.error_outline,
         background: Colors.red.shade700,
       );
@@ -424,7 +425,7 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Fatura ${invoice.invoiceNumber}',
+                          'Invoice ${invoice.invoiceNumber}',
                           style: const TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 16,
@@ -483,7 +484,7 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
       if (!mounted) return;
       AppSnackBar.show(
         context,
-        message: 'Fatura ${invoice.invoiceNumber} eliminada.',
+        message: 'Invoice ${invoice.invoiceNumber} eliminada.',
         icon: Icons.delete_outline_rounded,
         background: Colors.green.shade700,
       );
@@ -491,7 +492,7 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
       if (!mounted) return;
       AppSnackBar.show(
         context,
-        message: 'Erro ao eliminar fatura: $e',
+        message: 'Erro ao eliminar invoice: $e',
         icon: Icons.error_outline,
         background: Colors.red.shade700,
       );

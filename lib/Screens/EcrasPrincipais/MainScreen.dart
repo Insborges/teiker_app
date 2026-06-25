@@ -280,6 +280,7 @@ class _MainScreenState extends State<MainScreen> {
         email: data.email,
         orcamento: data.orcamento,
         hourasCasa: 0.0,
+        horasExtraCasa: 0.0,
         teikersIds: const [],
       );
 

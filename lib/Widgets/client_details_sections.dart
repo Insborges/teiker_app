@@ -519,23 +519,26 @@ class ClientOrcamentoSummaryCard extends StatelessWidget {
     super.key,
     required this.orcamento,
     required this.horas,
+    required this.horasExtra,
     required this.servicePrices,
     required this.monthLabel,
   });
 
   final double orcamento;
   final double horas;
+  final double horasExtra;
   final Map<String, double> servicePrices;
   final String monthLabel;
 
   @override
   Widget build(BuildContext context) {
     final totalHoras = horas * orcamento;
+    final totalHorasExtra = horasExtra * orcamento;
     final totalServicos = servicePrices.values.fold<double>(
       0,
       (total, item) => total + item,
     );
-    final totalFinal = totalHoras + totalServicos;
+    final totalFinal = totalHoras + totalHorasExtra + totalServicos;
     const primary = AppColors.primaryGreen;
 
     return Container(
@@ -604,8 +607,15 @@ class ClientOrcamentoSummaryCard extends StatelessWidget {
           const SizedBox(height: 12),
           _ClientFinancialRow(
             icon: Icons.timer_outlined,
-            label: 'Total Horas do mês (${horas.toStringAsFixed(1)}h)',
+            label: 'Horas realizadas pelas Teikers (${horas.toStringAsFixed(1)}h)',
             value: '${totalHoras.toStringAsFixed(2)} CHF',
+            primary: primary,
+          ),
+          const SizedBox(height: 8),
+          _ClientFinancialRow(
+            icon: Icons.add,
+            label: 'Horas Extra do mês (${horasExtra.toStringAsFixed(1)}h)',
+            value: '${totalHorasExtra.toStringAsFixed(2)} CHF',
             primary: primary,
           ),
           const SizedBox(height: 8),

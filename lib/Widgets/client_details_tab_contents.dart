@@ -13,8 +13,10 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
     required this.borderColor,
     required this.currentPricePerHour,
     required this.horasCasa,
+    required this.horasExtraCasa,
     required this.currentServicePrices,
     required this.onAddHoras,
+    required this.onAddHorasExtras,
     required this.canAddHoras,
     required this.issuingInvoice,
     required this.onEmitirFaturas,
@@ -42,8 +44,10 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
   final Color borderColor;
   final double currentPricePerHour;
   final double horasCasa;
+  final double horasExtraCasa;
   final Map<String, double> currentServicePrices;
   final VoidCallback onAddHoras;
+  final VoidCallback onAddHorasExtras;
   final bool canAddHoras;
   final bool issuingInvoice;
   final VoidCallback onEmitirFaturas;
@@ -87,18 +91,35 @@ class ClientDetailsAdminHoursTab extends StatelessWidget {
           ClientOrcamentoSummaryCard(
             orcamento: currentPricePerHour,
             horas: horasCasa,
+            horasExtra: horasExtraCasa,
             servicePrices: currentServicePrices,
             monthLabel: monthLabel,
           ),
           const SizedBox(height: 12),
           if (canAddHoras) ...[
-            AppButton(
-              text: 'Adicionar Horas',
-              icon: Icons.timer,
-              color: primaryColor,
-              onPressed: onAddHoras,
+            Row(
+              children: [
+                Expanded(
+                  child: AppButton(
+                    text: 'Adicionar Horas',
+                    icon: Icons.timer,
+                    color: primaryColor,
+                    onPressed: onAddHoras,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: AppButton(
+                    text: 'Horas Extras',
+                    outline: true,
+                    icon: Icons.timer_outlined,
+                    color: primaryColor,
+                    onPressed: onAddHorasExtras,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: 12),
           ],
           ClientIssuedInvoicesCard(
             primaryColor: primaryColor,

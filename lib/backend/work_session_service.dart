@@ -177,7 +177,7 @@ class WorkSessionService {
     return session;
   }
 
-  Future<double> finishSession({required String clienteId}) async {
+  Future<MonthlyTotals> finishSession({required String clienteId}) async {
     final teikerId = _requireUser();
 
     final open = await _repository.findOpenSession(
@@ -205,10 +205,11 @@ class WorkSessionService {
     return total;
   }
 
-  Future<double> addManualSession({
+  Future<MonthlyTotals> addManualSession({
     required String clienteId,
     required DateTime start,
     required DateTime end,
+    bool isExtra = false,
   }) async {
     if (clienteId.trim().isEmpty) {
       throw Exception('Cliente inválido.');
@@ -227,6 +228,7 @@ class WorkSessionService {
       teikerId: teikerId,
       start: start,
       end: end,
+      isExtra: isExtra,
     );
 
     return _repository.calculateMonthlyTotal(
@@ -474,7 +476,7 @@ class WorkSessionService {
     );
   }
 
-  Future<double> calculateMonthlyTotalForClient({
+  Future<MonthlyTotals> calculateMonthlyTotalForClient({
     required String clienteId,
     required DateTime referenceDate,
   }) async {
@@ -487,7 +489,7 @@ class WorkSessionService {
     );
   }
 
-  Future<double> closePendingSession({
+  Future<MonthlyTotals> closePendingSession({
     required String clienteId,
     required String sessionId,
     required DateTime end,
@@ -534,7 +536,7 @@ class WorkSessionService {
     );
   }
 
-  Future<double> finishSessionById({
+  Future<MonthlyTotals> finishSessionById({
     required String clienteId,
     required String sessionId,
     required DateTime startTime,

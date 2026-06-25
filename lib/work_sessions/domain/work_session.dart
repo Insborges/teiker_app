@@ -5,6 +5,7 @@ class WorkSession {
   final DateTime startTime;
   final DateTime? endTime;
   final double? durationHours;
+  final bool isExtra;
 
   WorkSession({
     required this.id,
@@ -13,6 +14,7 @@ class WorkSession {
     required this.startTime,
     this.endTime,
     this.durationHours,
+    this.isExtra = false,
   });
 
   bool get isOpen => endTime == null;

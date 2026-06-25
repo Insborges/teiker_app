@@ -7,6 +7,7 @@ class Clientes {
   String cidadeCliente;
   String codigoPostal;
   double hourasCasa;
+  double horasExtraCasa;
   int telemovel;
   String phoneCountryIso;
   Map<String, double> additionalServicePrices;
@@ -25,6 +26,7 @@ class Clientes {
     required this.cidadeCliente,
     required this.codigoPostal,
     required this.hourasCasa,
+    required this.horasExtraCasa,
     required this.telemovel,
     this.phoneCountryIso = 'PT',
     Map<String, double>? additionalServicePrices,
@@ -46,6 +48,7 @@ class Clientes {
       'cidadeCliente': cidadeCliente,
       'codigoPostal': codigoPostal,
       'hourasCasa': hourasCasa,
+      'horasExtraCasa': horasExtraCasa,
       'telemovel': telemovel,
       'phoneCountryIso': phoneCountryIso,
       'additionalServicePrices': additionalServicePrices,
@@ -125,6 +128,7 @@ class Clientes {
       cidadeCliente: _resolveCidadeCliente(map),
       codigoPostal: _resolveCodigoPostal(map),
       hourasCasa: (map['hourasCasa'] as num?)?.toDouble() ?? 0.0,
+      horasExtraCasa: (map['hourasExtraCasa'] as num?)?.toDouble() ?? 0.0,
       telemovel: telemovel,
       phoneCountryIso: (map['phoneCountryIso'] as String? ?? 'PT')
           .trim()

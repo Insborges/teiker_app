@@ -25,6 +25,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
           ? (data['endTime'] as Timestamp).toDate()
           : null,
       durationHours: (data['durationHours'] as num?)?.toDouble(),
+      isExtra: data['isExtra'] == true,
     );
   }
 
@@ -302,6 +303,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     required String teikerId,
     required DateTime start,
     required DateTime end,
+    bool isExtra = false,
     String? createdById,
     String? createdByRole,
   }) async {
@@ -315,6 +317,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       'teikerId': teikerId,
       'startTime': Timestamp.fromDate(start),
       'endTime': Timestamp.fromDate(end),
+      'isExtra': isExtra,
       ...durationPayload,
     };
     if (createdById != null && createdById.trim().isNotEmpty) {
@@ -442,8 +445,8 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     return false;
   }
 
-  @override
-  Future<double> calculateMonthlyTotal({
+ @override
+  Future<MonthlyTotals> calculateMonthlyTotal({
     required String clienteId,
     required DateTime referenceDate,
   }) async {
@@ -451,13 +454,28 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       clienteId: clienteId,
       referenceDate: referenceDate,
     );
-    final totalHours = _sumDurationHours(docs);
+
+    double normalTotal = 0.0;
+    double extraTotal = 0.0;
+
+    for (final doc in docs) {
+      final data = doc.data();
+      final duration = _resolveDurationHours(data) ?? 0.0;
+
+      if (data['isExtra'] == true) {
+        extraTotal += duration;
+      } else {
+        normalTotal += duration;
+      }
+    }
 
     await firestore.collection('clientes').doc(clienteId).update({
-      'hourasCasa': totalHours,
+      'hourasCasa': normalTotal, 
+      'horasExtraCasa': extraTotal,
     });
 
-    return totalHours;
+    // RETORNA O OBJETO COM OS DOIS VALORES
+    return MonthlyTotals(normal: normalTotal, extra: extraTotal);
   }
 
   @override

@@ -1,6 +1,13 @@
 import 'work_session.dart';
 
+class MonthlyTotals {
+  final double normal;
+  final double extra;
+  MonthlyTotals({required this.normal, required this.extra});
+}
+
 abstract class WorkSessionRepository {
+
   Future<WorkSession?> findOpenSession({
     required String clienteId,
     required String teikerId,
@@ -24,6 +31,7 @@ abstract class WorkSessionRepository {
     required String teikerId,
     required DateTime start,
     required DateTime end,
+    bool isExtra = false,
     String? createdById,
     String? createdByRole,
   });
@@ -47,7 +55,7 @@ abstract class WorkSessionRepository {
     String? excludingSessionId,
   });
 
-  Future<double> calculateMonthlyTotal({
+  Future<MonthlyTotals> calculateMonthlyTotal({
     required String clienteId,
     required DateTime referenceDate,
   });

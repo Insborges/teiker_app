@@ -5,7 +5,7 @@ class FinishWorkSessionUseCase {
 
   FinishWorkSessionUseCase(this.repository);
 
-  Future<double> execute({
+  Future<MonthlyTotals> execute({
     required String clienteId,
     required String teikerId,
   }) async {
@@ -15,11 +15,7 @@ class FinishWorkSessionUseCase {
     );
 
     if (session == null) {
-      return 0.0;
-      /*throw Exception(
-        'Não foi possível localizar uma sessão ativa. '
-        'Tenta novamente dentro de alguns segundos.',
-      );*/
+      return MonthlyTotals(normal: 0.0, extra: 0.0);
     }
 
     await repository.closeSession(sessionId: session.id, end: DateTime.now());

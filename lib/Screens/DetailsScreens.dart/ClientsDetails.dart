@@ -19,6 +19,7 @@ import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/client_invoice_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/models/client_invoice.dart';
+import 'package:teiker_app/work_sessions/domain/work_session_repository.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import '../../models/Clientes.dart';
 
@@ -67,6 +68,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   );
 
   late double _horasCasa;
+  late double _horasExtraCasa;
   late String _phoneCountryIso;
 
   AppUserRole? _role;
@@ -115,6 +117,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     );
 
     _horasCasa = widget.cliente.hourasCasa;
+    _horasExtraCasa = widget.cliente.horasExtraCasa;
     _loadAssociatedTeikerNames();
     _checkPendingSessionReminder();
     _loadHorasForSelectedMonth();
@@ -260,7 +263,6 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       return Map<String, double>.from(monthly);
     }
 
-    // Legacy fallback: migrate old unscoped services only for current month.
     if (_useLegacyCurrentMonthServicesOnly() && monthKey == _currentMonthKey) {
       return Map<String, double>.from(widget.cliente.additionalServicePrices);
     }
@@ -523,17 +525,27 @@ class _ClientsdetailsState extends State<Clientsdetails> {
 
   Future<void> _loadHorasForSelectedMonth() async {
     final referenceDate = _monthStart(_selectedReferenceMonth);
-    final total = _isPrivileged
-        ? await _workSessionService.calculateMonthlyTotalForClient(
-            clienteId: widget.cliente.uid,
-            referenceDate: referenceDate,
-          )
-        : await _workSessionService.calculateMonthlyTotalForCurrentUser(
+
+    if (_isPrivileged) {
+      final totals = await _workSessionService.calculateMonthlyTotalForClient(
+        clienteId: widget.cliente.uid,
+        referenceDate: referenceDate,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _horasCasa = totals.normal;
+        _horasExtraCasa = totals.extra;
+      });
+    } else {
+      final total = await _workSessionService
+          .calculateMonthlyTotalForCurrentUser(
             clienteId: widget.cliente.uid,
             referenceDate: referenceDate,
           );
-    if (!mounted) return;
-    setState(() => _horasCasa = total);
+      if (!mounted) return;
+      setState(() => _horasCasa = total);
+    }
   }
 
   Future<void> _shiftSelectedMonth(int delta) async {
@@ -586,10 +598,11 @@ class _ClientsdetailsState extends State<Clientsdetails> {
     });
   }
 
-  Future<double> _guardarHoras(
+  Future<MonthlyTotals> _guardarHoras(
     DateTime inicio,
     DateTime fim, {
     String? pendingSessionId,
+    bool isExtra = false,
   }) async {
     if (pendingSessionId != null) {
       return _workSessionService.closePendingSession(
@@ -604,15 +617,18 @@ class _ClientsdetailsState extends State<Clientsdetails> {
         clienteId: widget.cliente.uid,
         start: inicio,
         end: fim,
+        isExtra: isExtra,
       );
     }
 
-    return _workSessionService.addManualSessionForCurrentTeikerProfile(
-      clienteId: widget.cliente.uid,
-      clienteName: widget.cliente.nameCliente,
-      start: inicio,
-      end: fim,
-    );
+    final double valor = await _workSessionService
+        .addManualSessionForCurrentTeikerProfile(
+          clienteId: widget.cliente.uid,
+          clienteName: widget.cliente.nameCliente,
+          start: inicio,
+          end: fim,
+        );
+    return MonthlyTotals(normal: valor, extra: 0);
   }
 
   //Dialog "Adicionar Horas"
@@ -801,36 +817,270 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                     return;
                                   }
                                   try {
-                                    final total = await _guardarHoras(
+                                    // 1. Guardamos e recebemos os novos totais
+                                    final MonthlyTotals
+                                    totals = await _guardarHoras(
                                       startDate,
                                       endDate,
                                       pendingSessionId: pendingSessionId,
+                                      isExtra: false,
                                     );
-                                    final selectedMonthTotal = _isPrivileged
-                                        ? await _workSessionService
-                                              .calculateMonthlyTotalForClient(
-                                                clienteId: widget.cliente.uid,
-                                                referenceDate:
-                                                    _selectedReferenceMonth,
-                                              )
-                                        : await _workSessionService
-                                              .calculateMonthlyTotalForCurrentUser(
-                                                clienteId: widget.cliente.uid,
-                                                referenceDate:
-                                                    _selectedReferenceMonth,
-                                              );
+
                                     setState(() {
-                                      _horasCasa = selectedMonthTotal;
-                                      if (_isPrivileged) {
-                                        widget.cliente.hourasCasa = total;
-                                      }
+                                      _horasCasa = totals.normal;
+                                      _horasExtraCasa = totals.extra;
+
+                                      widget.cliente.hourasCasa = totals.normal;
+                                      widget.cliente.horasExtraCasa =
+                                          totals.extra;
                                     });
+
                                     widget.onSessionClosed?.call();
 
                                     AppSnackBar.show(
                                       context,
+                                      message: "Horas registadas com sucesso!",
+                                      icon: Icons.save,
+                                      background: Colors.green.shade700,
+                                    );
+
+                                    if (mounted) {
+                                      Navigator.pop(context, true);
+                                    }
+                                  } catch (e) {
+                                    AppSnackBar.show(
+                                      context,
+                                      message: "Erro a guardar horas: $e",
+                                      icon: Icons.error,
+                                      background: Colors.red.shade700,
+                                    );
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  //Dialog "Adicionar Horas Extras"
+  void _abrirDialogAdicionarHorasExtras({
+    String? pendingSessionId,
+    TimeOfDay? presentStart,
+    TimeOfDay? presentEnd,
+    DateTime? defaultDate,
+  }) {
+    TimeOfDay? startTime = presentStart;
+    TimeOfDay? endTime = presentEnd;
+    DateTime selectedDate = defaultDate ?? DateTime.now();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      builder: (context) {
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+            child: AnimatedPadding(
+              duration: const Duration(milliseconds: 250),
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                color: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 18,
+                ),
+                child: StatefulBuilder(
+                  builder: (context, setModalState) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              ' Adicionar Horas Extras',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        InkWell(
+                          onTap: () async {
+                            final picked =
+                                await SingleDatePickerBottomSheet.show(
+                                  context,
+                                  initialDate: selectedDate,
+                                  firstDate: DateTime(2020),
+                                  lastDate: DateTime.now(),
+                                  title: 'Dia das horas',
+                                  subtitle: 'Escolhe o dia trabalhado',
+                                  confirmLabel: 'Confirmar',
+                                );
+                            if (picked == null) return;
+                            setModalState(() {
+                              selectedDate = DateTime(
+                                picked.year,
+                                picked.month,
+                                picked.day,
+                              );
+                            });
+                          },
+                          child: _buildDateInput(
+                            "Dia",
+                            DateFormat(
+                              'dd/MM/yyyy',
+                              'pt_PT',
+                            ).format(selectedDate),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        InkWell(
+                          onTap: () async {
+                            final picked =
+                                await SingleTimePickerBottomSheet.show(
+                                  context,
+                                  initialTime: startTime ?? TimeOfDay.now(),
+                                  title: 'Hora de início',
+                                  subtitle: 'Escolhe a hora inicial',
+                                  confirmLabel: 'Confirmar',
+                                );
+                            if (picked == null) return;
+                            setModalState(() => startTime = picked);
+                          },
+                          child: _buildTimeInput("Hora de início", startTime),
+                        ),
+                        const SizedBox(height: 12),
+                        InkWell(
+                          onTap: () async {
+                            final picked =
+                                await SingleTimePickerBottomSheet.show(
+                                  context,
+                                  initialTime: endTime ?? TimeOfDay.now(),
+                                  title: 'Hora de fim',
+                                  subtitle: 'Escolhe a hora final',
+                                  confirmLabel: 'Confirmar',
+                                );
+                            if (picked == null) return;
+                            setModalState(() => endTime = picked);
+                          },
+                          child: _buildTimeInput("Hora de fim", endTime),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: AppButton(
+                                text: "Cancelar",
+                                outline: true,
+                                color: const Color.fromARGB(255, 4, 76, 32),
+                                onPressed: () {
+                                  FocusManager.instance.primaryFocus?.unfocus();
+                                  if (Navigator.canPop(context)) {
+                                    Navigator.of(context).pop();
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: AppButton(
+                                text: "Guardar",
+                                color: const Color.fromARGB(255, 4, 76, 32),
+                                onPressed: () async {
+                                  final startValue = startTime;
+                                  final endValue = endTime;
+
+                                  if (startValue == null || endValue == null) {
+                                    AppSnackBar.show(
+                                      context,
+                                      message: "Preenche as duas horas.",
+                                      icon: Icons.info,
+                                      background: Colors.orange.shade700,
+                                    );
+                                    return;
+                                  }
+
+                                  final baseDate = selectedDate;
+                                  final startDate = DateTime(
+                                    baseDate.year,
+                                    baseDate.month,
+                                    baseDate.day,
+                                    startValue.hour,
+                                    startValue.minute,
+                                  );
+                                  final endDate = DateTime(
+                                    baseDate.year,
+                                    baseDate.month,
+                                    baseDate.day,
+                                    endValue.hour,
+                                    endValue.minute,
+                                  );
+                                  final now = DateTime.now();
+
+                                  if (startDate.isAfter(now) ||
+                                      endDate.isAfter(now)) {
+                                    AppSnackBar.show(
+                                      context,
                                       message:
-                                          "Horas registadas. Total do mês: ${selectedMonthTotal.toStringAsFixed(2)}h",
+                                          "Não podes adicionar antes da hora",
+                                      icon: Icons.info_outline,
+                                      background: Colors.red.shade700,
+                                    );
+                                    return;
+                                  }
+
+                                  if (!endDate.isAfter(startDate)) {
+                                    AppSnackBar.show(
+                                      context,
+                                      message:
+                                          "A hora de fim deve ser posterior à hora de inicio. ",
+                                      icon: Icons.info,
+                                      background: Colors.orange.shade700,
+                                    );
+                                    return;
+                                  }
+                                  try {
+                                    final MonthlyTotals
+                                    totals = await _guardarHoras(
+                                      startDate,
+                                      endDate,
+                                      pendingSessionId: pendingSessionId,
+                                      isExtra: true,
+                                    );
+
+                                    setState(() {
+                                      _horasCasa = totals.normal;
+                                      _horasExtraCasa = totals.extra;
+
+                                      widget.cliente.hourasCasa = totals.normal;
+                                      widget.cliente.horasExtraCasa =
+                                          totals.extra;
+                                    });
+
+                                    widget.onSessionClosed?.call();
+
+                                    AppSnackBar.show(
+                                      context,
+                                      message: "Horas registadas com sucesso!",
                                       icon: Icons.save,
                                       background: Colors.green.shade700,
                                     );
@@ -918,6 +1168,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
       email: email,
       orcamento: double.tryParse(_orcamentoController.text) ?? 0,
       hourasCasa: _horasCasa,
+      horasExtraCasa: _horasExtraCasa,
       teikersIds: widget.cliente.teikersIds,
       isArchived: widget.cliente.isArchived,
       archivedBy: widget.cliente.archivedBy,
@@ -946,6 +1197,7 @@ class _ClientsdetailsState extends State<Clientsdetails> {
             double.tryParse(_orcamentoController.text.replaceAll(',', '.')) ??
             0;
         widget.cliente.hourasCasa = _horasCasa;
+        widget.cliente.horasExtraCasa = _horasExtraCasa;
         widget.cliente.teikersIds = List.from(widget.cliente.teikersIds);
         widget.cliente.additionalServicePrices = currentMonthServices;
         widget.cliente.additionalServicePricesByMonth =
@@ -1311,8 +1563,10 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                         borderColor: adminBorder,
                         currentPricePerHour: currentPricePerHour,
                         horasCasa: _horasCasa,
+                        horasExtraCasa: _horasExtraCasa,
                         currentServicePrices: currentServicePrices,
                         onAddHoras: _abrirDialogAdicionarHoras,
+                        onAddHorasExtras: _abrirDialogAdicionarHorasExtras,
                         canAddHoras: !_isHr,
                         issuingInvoice: _issuingInvoice,
                         onEmitirFaturas: emitirFaturas,

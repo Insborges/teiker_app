@@ -975,6 +975,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       cidadeCliente: '',
       codigoPostal: '',
       hourasCasa: 0,
+      horasExtraCasa: 0,
       telemovel: 0,
       email: '',
       orcamento: 0,

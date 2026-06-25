@@ -285,7 +285,7 @@ class WorkSessionService {
     );
   }
 
-  Future<double> addManualSessionForTeikerByAdmin({
+  Future<MonthlyTotals> addManualSessionForTeikerByAdmin({
     required String clienteId,
     required String teikerId,
     required DateTime start,
@@ -315,23 +315,24 @@ class WorkSessionService {
       teikerId: teikerId,
       start: start,
       end: end,
+      isExtra: true,
       createdById: adminId,
       createdByRole: role.name,
     );
 
-    await _repository.calculateMonthlyTotal(
+    return await _repository.calculateMonthlyTotal(
       clienteId: clienteId,
       referenceDate: start,
     );
 
-    return _repository.calculateMonthlyTotalForTeiker(
+    /*return _repository.calculateMonthlyTotalForTeiker(
       clienteId: clienteId,
       teikerId: teikerId,
       referenceDate: start,
-    );
+    );*/
   }
 
-  Future<double> updateManualSessionForTeikerByAdmin({
+  Future<MonthlyTotals> updateManualSessionForTeikerByAdmin({
     required String sessionId,
     required String clienteId,
     required String teikerId,
@@ -387,16 +388,16 @@ class WorkSessionService {
       clienteId: existing.clienteId,
       referenceDate: existing.startTime,
     );
-    await _repository.calculateMonthlyTotal(
+    return await _repository.calculateMonthlyTotal(
       clienteId: clienteId,
       referenceDate: start,
     );
 
-    return _repository.calculateMonthlyTotalForTeiker(
+    /*return _repository.calculateMonthlyTotalForTeiker(
       clienteId: clienteId,
       teikerId: teikerId,
       referenceDate: start,
-    );
+    );*/
   }
 
   Future<double> calculateMonthlyTotalForCurrentUser({
@@ -565,6 +566,25 @@ class WorkSessionService {
     return _repository.calculateMonthlyTotal(
       clienteId: clienteId,
       referenceDate: startTime,
+    );
+  }
+
+  Future<List<WorkSession>> getExtraSessions(
+    String clienteId,
+    DateTime referenceDate,
+  ) {
+    return _repository.getExtraSessionsForClient(clienteId, referenceDate);
+  }
+
+  Future<MonthlyTotals> deleteExtraSession(
+    String sessionId,
+    String clienteId,
+    DateTime refDate,
+  ) async {
+    await _repository.deleteSession(sessionId);
+    return _repository.calculateMonthlyTotal(
+      clienteId: clienteId,
+      referenceDate: refDate,
     );
   }
 }

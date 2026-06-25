@@ -445,7 +445,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     return false;
   }
 
- @override
+  @override
   Future<MonthlyTotals> calculateMonthlyTotal({
     required String clienteId,
     required DateTime referenceDate,
@@ -470,7 +470,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     }
 
     await firestore.collection('clientes').doc(clienteId).update({
-      'hourasCasa': normalTotal, 
+      'hourasCasa': normalTotal,
       'horasExtraCasa': extraTotal,
     });
 
@@ -490,5 +490,42 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       referenceDate: referenceDate,
     );
     return _sumDurationHours(docs);
+  }
+
+  @override
+  Future<void> deleteSession(String sessionId) async {
+    await firestore.collection('workSessions').doc(sessionId).delete();
+  }
+
+  @override
+  Future<List<WorkSession>> getExtraSessionsForClient(
+    String clienteId,
+    DateTime referenceDate,
+  ) async {
+    final monthStart = DateTime(referenceDate.year, referenceDate.month, 1);
+    final nextMonth = DateTime(referenceDate.year, referenceDate.month + 1, 1);
+
+    try {
+      final snapshot = await firestore
+          .collection('workSessions')
+          .where('clienteId', isEqualTo: clienteId)
+          .where(
+            'isExtra',
+            isEqualTo: true,
+          ) // Garante que o campo no Firebase se chama isExtra
+          .where(
+            'startTime',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(monthStart),
+          )
+          .where('startTime', isLessThan: Timestamp.fromDate(nextMonth))
+          .get();
+
+      return snapshot.docs
+          .map((doc) => _toWorkSession(doc, fallbackTeikerId: ''))
+          .toList();
+    } catch (e) {
+      print("ERRO NA CONSULTA FIREBASE: $e");
+      rethrow;
+    }
   }
 }

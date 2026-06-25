@@ -158,26 +158,39 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }
 
   Future<void> _updateClienteHours(Clientes cliente) async {
-    if (!_isPrivileged) {
-      final total = await _workSessionService
-          .calculateMonthlyTotalForCurrentUser(
-            clienteId: cliente.uid,
-            referenceDate: DateTime.now(),
-          );
-      if (!mounted) return;
-      setState(() {
-        cliente.hourasCasa = total;
-        _currentMonthHoursCache[cliente.uid] = total;
-      });
-      return;
-    }
+    final now = DateTime.now();
 
-    if (!mounted) return;
-    setState(() {
-      _hoursByClienteFuture.remove(cliente.uid);
-      _currentMonthHoursCache.remove(cliente.uid);
-    });
-    _preloadCurrentMonthHours([cliente]);
+    try {
+      if (_isPrivileged) {
+        
+        final totals = await _workSessionService.calculateMonthlyTotalForClient(
+          clienteId: cliente.uid,
+          referenceDate: now,
+        );
+
+        if (!mounted) return;
+        setState(() {
+          
+          final somaTotal = totals.normal + totals.extra;
+          cliente.hourasCasa = somaTotal;
+          _currentMonthHoursCache[cliente.uid] = somaTotal;
+        });
+      } else {
+        // Teiker: mantém a lógica individual
+        final total = await _workSessionService
+            .calculateMonthlyTotalForCurrentUser(
+              clienteId: cliente.uid,
+              referenceDate: now,
+            );
+        if (!mounted) return;
+        setState(() {
+          cliente.hourasCasa = total;
+          _currentMonthHoursCache[cliente.uid] = total;
+        });
+      }
+    } catch (e) {
+      debugPrint("Erro ao atualizar horas do card: $e");
+    }
   }
 
   Future<void> _refreshClientes() async {
@@ -665,14 +678,15 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                                   _openSessions[cliente.uid] =
                                                       null;
                                                 });
-                                                _updateClienteHours(cliente);
+                                                _updateClienteHours(
+                                                  cliente,
+                                                ); // Atualiza quando para o cronómetro
                                               },
                                             ),
                                           ),
-                                        ).then((updated) {
-                                          if (updated == true) {
-                                            _refreshClientes();
-                                          }
+                                        ).then((_) {
+                                        
+                                          _updateClienteHours(cliente);
                                         });
                                       },
                                       child: Row(

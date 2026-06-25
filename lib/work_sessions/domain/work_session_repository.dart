@@ -65,4 +65,10 @@ abstract class WorkSessionRepository {
     required String teikerId,
     required DateTime referenceDate,
   });
+
+  Future<void> deleteSession(String sessionId);
+  Future<List<WorkSession>> getExtraSessionsForClient(
+    String clienteId,
+    DateTime referenceDate,
+  );
 }

@@ -19,6 +19,7 @@ import 'package:teiker_app/backend/auth_service.dart';
 import 'package:teiker_app/backend/client_invoice_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/models/client_invoice.dart';
+import 'package:teiker_app/work_sessions/domain/work_session.dart';
 import 'package:teiker_app/work_sessions/domain/work_session_repository.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import '../../models/Clientes.dart';
@@ -818,13 +819,13 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                   }
                                   try {
                                     // 1. Guardamos e recebemos os novos totais
-                                    final MonthlyTotals
-                                    totals = await _guardarHoras(
-                                      startDate,
-                                      endDate,
-                                      pendingSessionId: pendingSessionId,
-                                      isExtra: false,
-                                    );
+                                    final MonthlyTotals totals =
+                                        await _guardarHoras(
+                                          startDate,
+                                          endDate,
+                                          pendingSessionId: pendingSessionId,
+                                          isExtra: false,
+                                        );
 
                                     setState(() {
                                       _horasCasa = totals.normal;
@@ -874,241 +875,375 @@ class _ClientsdetailsState extends State<Clientsdetails> {
   }
 
   //Dialog "Adicionar Horas Extras"
-  void _abrirDialogAdicionarHorasExtras({
-    String? pendingSessionId,
-    TimeOfDay? presentStart,
-    TimeOfDay? presentEnd,
-    DateTime? defaultDate,
-  }) {
-    TimeOfDay? startTime = presentStart;
-    TimeOfDay? endTime = presentEnd;
-    DateTime selectedDate = defaultDate ?? DateTime.now();
+  void _abrirDialogAdicionarHorasExtras() {
+    // Estado local para o formulário de adição/edição
+    TimeOfDay? startTime;
+    TimeOfDay? endTime;
+    DateTime selectedDate = DateTime.now();
+    String? editingSessionId; // Se estiver preenchido, estamos a editar
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: 0.35),
       builder: (context) {
-        return ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-            child: AnimatedPadding(
-              duration: const Duration(milliseconds: 250),
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return ClipRRect(
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
               ),
-              child: Container(
-                color: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 18,
-                ),
-                child: StatefulBuilder(
-                  builder: (context, setModalState) {
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              ' Adicionar Horas Extras',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
-                          ],
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                child: Container(
+                  color: Colors.white,
+                  height: MediaQuery.of(context).size.height * 0.85,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 18,
+                  ),
+                  child: Column(
+                    children: [
+                      // Título
+                      Text(
+                        editingSessionId == null
+                            ? 'Gerir Horas Extras'
+                            : 'Editar Hora Extra',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
                         ),
-                        const SizedBox(height: 16),
-                        InkWell(
-                          onTap: () async {
-                            final picked =
-                                await SingleDatePickerBottomSheet.show(
-                                  context,
-                                  initialDate: selectedDate,
-                                  firstDate: DateTime(2020),
-                                  lastDate: DateTime.now(),
-                                  title: 'Dia das horas',
-                                  subtitle: 'Escolhe o dia trabalhado',
-                                  confirmLabel: 'Confirmar',
+                      ),
+                      const SizedBox(height: 15),
+
+                      // LISTA DE HORAS EXISTENTES (Apenas se não estivermos a editar uma)
+                      if (editingSessionId == null)
+                        Expanded(
+                          child: FutureBuilder<List<WorkSession>>(
+                            future: _workSessionService.getExtraSessions(
+                              widget.cliente.uid,
+                              _selectedReferenceMonth,
+                            ),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasError) {
+                                return Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16.0),
+                                    child: Text(
+                                      "Erro: ${snapshot.error}",
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
                                 );
-                            if (picked == null) return;
-                            setModalState(() {
-                              selectedDate = DateTime(
-                                picked.year,
-                                picked.month,
-                                picked.day,
+                              }
+
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const Center(
+                                  child: CircularProgressIndicator(),
+                                );
+                              }
+
+                              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                                return const Center(
+                                  child: Text("Nenhuma hora extra este mês."),
+                                );
+                              }
+                              final extras = snapshot.data!;
+
+                              return ListView.builder(
+                                itemCount: extras.length,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                itemBuilder: (context, index) {
+                                  final sessao = extras[index];
+                                  final primaryColor = const Color.fromARGB(
+                                    255,
+                                    4,
+                                    76,
+                                    32,
+                                  ); // Cor verde da app
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 10),
+                                    child: Container(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        12,
+                                        10,
+                                        8,
+                                        10,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors
+                                            .grey
+                                            .shade50, // Fundo clarinho igual às faturas
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: primaryColor.withOpacity(
+                                            0.15,
+                                          ), // Borda suave
+                                          width: 1.2,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          // Informação da Esquerda
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Sessão Extra • ${DateFormat('dd/MM/yyyy').format(sessao.startTime)}',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w800,
+                                                    fontSize: 14,
+                                                    color: Colors.black87,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  '${DateFormat('HH:mm').format(sessao.startTime)} - ${DateFormat('HH:mm').format(sessao.endTime!)}',
+                                                  style: const TextStyle(
+                                                    fontSize: 12,
+                                                    color: Colors.black54,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  'Duração: ${sessao.durationHours?.toStringAsFixed(2)}h',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    color: primaryColor
+                                                        .withOpacity(0.85),
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+
+                                          // Botões de Ação da Direita
+                                          IconButton(
+                                            tooltip: 'Editar hora',
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () {
+                                              setModalState(() {
+                                                editingSessionId = sessao.id;
+                                                selectedDate = sessao.startTime;
+                                                startTime =
+                                                    TimeOfDay.fromDateTime(
+                                                      sessao.startTime,
+                                                    );
+                                                endTime =
+                                                    TimeOfDay.fromDateTime(
+                                                      sessao.endTime!,
+                                                    );
+                                              });
+                                            },
+                                            icon: const Icon(
+                                              Icons
+                                                  .edit_outlined, // Ícone mais fino/moderno
+                                              color: Color.fromARGB(
+                                                255,
+                                                4,
+                                                76,
+                                                32,
+                                              ),
+                                              size: 20,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          IconButton(
+                                            tooltip: 'Apagar hora',
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () async {
+                                              final totals =
+                                                  await _workSessionService
+                                                      .deleteExtraSession(
+                                                        sessao.id,
+                                                        widget.cliente.uid,
+                                                        _selectedReferenceMonth,
+                                                      );
+                                              setState(() {
+                                                _horasCasa = totals.normal;
+                                                _horasExtraCasa = totals.extra;
+                                              });
+                                              setModalState(() {});
+                                            },
+                                            icon: const Icon(
+                                              Icons.delete_outline_rounded,
+                                              color: Colors.redAccent,
+                                              size: 20,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
                               );
-                            });
-                          },
-                          child: _buildDateInput(
-                            "Dia",
-                            DateFormat(
-                              'dd/MM/yyyy',
-                              'pt_PT',
-                            ).format(selectedDate),
+                            },
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        InkWell(
-                          onTap: () async {
-                            final picked =
-                                await SingleTimePickerBottomSheet.show(
-                                  context,
-                                  initialTime: startTime ?? TimeOfDay.now(),
-                                  title: 'Hora de início',
-                                  subtitle: 'Escolhe a hora inicial',
-                                  confirmLabel: 'Confirmar',
-                                );
-                            if (picked == null) return;
-                            setModalState(() => startTime = picked);
-                          },
-                          child: _buildTimeInput("Hora de início", startTime),
+
+                      const Divider(),
+
+                      // FORMULÁRIO (Para Adicionar ou Editar)
+                      const Text(
+                        'Registo de Horas',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 10),
+                      InkWell(
+                        onTap: () async {
+                          final picked = await SingleDatePickerBottomSheet.show(
+                            context,
+                            initialDate: selectedDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                            title: 'Dia',
+                          );
+                          if (picked != null)
+                            setModalState(() => selectedDate = picked);
+                        },
+                        child: _buildDateInput(
+                          "Dia",
+                          DateFormat('dd/MM/yyyy').format(selectedDate),
                         ),
-                        const SizedBox(height: 12),
-                        InkWell(
-                          onTap: () async {
-                            final picked =
-                                await SingleTimePickerBottomSheet.show(
-                                  context,
-                                  initialTime: endTime ?? TimeOfDay.now(),
-                                  title: 'Hora de fim',
-                                  subtitle: 'Escolhe a hora final',
-                                  confirmLabel: 'Confirmar',
-                                );
-                            if (picked == null) return;
-                            setModalState(() => endTime = picked);
-                          },
-                          child: _buildTimeInput("Hora de fim", endTime),
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: InkWell(
+                              onTap: () async {
+                                final picked =
+                                    await SingleTimePickerBottomSheet.show(
+                                      context,
+                                      initialTime: startTime ?? TimeOfDay.now(),
+                                      title: 'Início',
+                                    );
+                                if (picked != null)
+                                  setModalState(() => startTime = picked);
+                              },
+                              child: _buildTimeInput("Início", startTime),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () async {
+                                final picked =
+                                    await SingleTimePickerBottomSheet.show(
+                                      context,
+                                      initialTime: endTime ?? TimeOfDay.now(),
+                                      title: 'Fim',
+                                    );
+                                if (picked != null)
+                                  setModalState(() => endTime = picked);
+                              },
+                              child: _buildTimeInput("Fim", endTime),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 15),
+
+                      // BOTÕES DE ACÇÃO
+                      Row(
+                        children: [
+                          if (editingSessionId != null)
                             Expanded(
                               child: AppButton(
-                                text: "Cancelar",
+                                text: "Cancelar Edição",
                                 outline: true,
-                                color: const Color.fromARGB(255, 4, 76, 32),
-                                onPressed: () {
-                                  FocusManager.instance.primaryFocus?.unfocus();
-                                  if (Navigator.canPop(context)) {
-                                    Navigator.of(context).pop();
-                                  }
-                                },
+                                onPressed: () => setModalState(
+                                  () => editingSessionId = null,
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: AppButton(
-                                text: "Guardar",
-                                color: const Color.fromARGB(255, 4, 76, 32),
-                                onPressed: () async {
-                                  final startValue = startTime;
-                                  final endValue = endTime;
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: AppButton(
+                              text: editingSessionId == null
+                                  ? "Adicionar Novo"
+                                  : "Guardar Alteração",
+                              color: const Color.fromARGB(255, 4, 76, 32),
+                              onPressed: () async {
+                                if (startTime == null || endTime == null)
+                                  return;
 
-                                  if (startValue == null || endValue == null) {
-                                    AppSnackBar.show(
-                                      context,
-                                      message: "Preenche as duas horas.",
-                                      icon: Icons.info,
-                                      background: Colors.orange.shade700,
-                                    );
-                                    return;
-                                  }
+                                final startDT = DateTime(
+                                  selectedDate.year,
+                                  selectedDate.month,
+                                  selectedDate.day,
+                                  startTime!.hour,
+                                  startTime!.minute,
+                                );
+                                final endDT = DateTime(
+                                  selectedDate.year,
+                                  selectedDate.month,
+                                  selectedDate.day,
+                                  endTime!.hour,
+                                  endTime!.minute,
+                                );
 
-                                  final baseDate = selectedDate;
-                                  final startDate = DateTime(
-                                    baseDate.year,
-                                    baseDate.month,
-                                    baseDate.day,
-                                    startValue.hour,
-                                    startValue.minute,
+                                if (editingSessionId != null) {
+                                  // Lógica de EDITAR
+                                  final totals = await _workSessionService
+                                      .updateManualSessionForTeikerByAdmin(
+                                        sessionId: editingSessionId!,
+                                        clienteId: widget.cliente.uid,
+                                        teikerId: widget
+                                            .cliente
+                                            .teikersIds
+                                            .first, // assume a primeira teiker
+                                        start: startDT,
+                                        end: endDT,
+                                      );
+                                  setState(() {
+                                    _horasCasa = totals.normal;
+                                    _horasExtraCasa = totals.extra;
+                                  });
+                                  setModalState(
+                                    () => editingSessionId = null,
+                                  ); // Volta para a lista
+                                } else {
+                                  // Lógica de ADICIONAR (igual à tua)
+                                  final totals = await _guardarHoras(
+                                    startDT,
+                                    endDT,
+                                    isExtra: true,
                                   );
-                                  final endDate = DateTime(
-                                    baseDate.year,
-                                    baseDate.month,
-                                    baseDate.day,
-                                    endValue.hour,
-                                    endValue.minute,
-                                  );
-                                  final now = DateTime.now();
-
-                                  if (startDate.isAfter(now) ||
-                                      endDate.isAfter(now)) {
-                                    AppSnackBar.show(
-                                      context,
-                                      message:
-                                          "Não podes adicionar antes da hora",
-                                      icon: Icons.info_outline,
-                                      background: Colors.red.shade700,
-                                    );
-                                    return;
-                                  }
-
-                                  if (!endDate.isAfter(startDate)) {
-                                    AppSnackBar.show(
-                                      context,
-                                      message:
-                                          "A hora de fim deve ser posterior à hora de inicio. ",
-                                      icon: Icons.info,
-                                      background: Colors.orange.shade700,
-                                    );
-                                    return;
-                                  }
-                                  try {
-                                    final MonthlyTotals
-                                    totals = await _guardarHoras(
-                                      startDate,
-                                      endDate,
-                                      pendingSessionId: pendingSessionId,
-                                      isExtra: true,
-                                    );
-
-                                    setState(() {
-                                      _horasCasa = totals.normal;
-                                      _horasExtraCasa = totals.extra;
-
-                                      widget.cliente.hourasCasa = totals.normal;
-                                      widget.cliente.horasExtraCasa =
-                                          totals.extra;
-                                    });
-
-                                    widget.onSessionClosed?.call();
-
-                                    AppSnackBar.show(
-                                      context,
-                                      message: "Horas registadas com sucesso!",
-                                      icon: Icons.save,
-                                      background: Colors.green.shade700,
-                                    );
-
-                                    if (mounted) {
-                                      Navigator.pop(context, true);
-                                    }
-                                  } catch (e) {
-                                    AppSnackBar.show(
-                                      context,
-                                      message: "Erro a guardar horas: $e",
-                                      icon: Icons.error,
-                                      background: Colors.red.shade700,
-                                    );
-                                  }
-                                },
-                              ),
+                                  setState(() {
+                                    _horasCasa = totals.normal;
+                                    _horasExtraCasa = totals.extra;
+                                  });
+                                  setModalState(
+                                    () {},
+                                  ); // Limpa e recarrega lista
+                                }
+                              },
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    );
-                  },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );

@@ -40,7 +40,7 @@ class InvoiceDocxService {
     final tempDir = await getApplicationDocumentsDirectory();
     final safeInvoiceNumber = _sanitizeFilePart(invoice.invoiceNumber);
     final safeClientName = _sanitizeFilePart(invoice.clientName);
-    final fileName = 'fatura_${safeClientName}_$safeInvoiceNumber.docx';
+    final fileName = 'Invoice_${safeClientName}_$safeInvoiceNumber.docx';
     final outputPath = p.join(tempDir.path, fileName);
     final outputFile = File(outputPath);
     await outputFile.writeAsBytes(encodedArchive, flush: true);
@@ -50,7 +50,6 @@ class InvoiceDocxService {
   String _applyInvoiceData(String xml, ClientInvoice invoice) {
     var updated = xml;
 
-    // Substituição direta e 100% segura. O Word não tem como dar erro com isto.
     updated = updated.replaceAll(
       'invoice_date',
       _escapeXml(DateFormat('dd/MM/yyyy').format(invoice.invoiceDate)),

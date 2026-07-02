@@ -9,14 +9,16 @@ class FixedHolidayHoursPolicy {
     return SwissHolidayCalendar.isHoliday(date);
   }
 
-  static double multiplierFor(DateTime date) {
+  static double multiplierFor(DateTime date, {bool isExtra = false}) {
+    if (isExtra) return 1.0;
     return isFixedHoliday(date) ? holidayMultiplier : 1.0;
   }
 
   static double applyToHours({
     required DateTime workDate,
     required double rawHours,
+    bool isExtra = false,
   }) {
-    return rawHours * multiplierFor(workDate);
+    return rawHours * multiplierFor(workDate, isExtra: isExtra);
   }
 }

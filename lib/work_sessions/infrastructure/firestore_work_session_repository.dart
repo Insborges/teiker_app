@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../domain/work_session.dart';
 import '../domain/fixed_holiday_hours_policy.dart';
 import '../domain/work_session_repository.dart';
@@ -36,16 +37,21 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
   Map<String, dynamic> _sessionDurationPayload({
     required DateTime start,
     required DateTime end,
+    bool isExtra = false,
   }) {
     final rawDuration = _rawDurationHours(start, end);
-    final durationMultiplier = FixedHolidayHoursPolicy.multiplierFor(start);
-    final duration = rawDuration * durationMultiplier;
+    final duration = FixedHolidayHoursPolicy.applyToHours(
+      workDate: start,
+      rawHours: rawDuration,
+      isExtra: isExtra,
+    );
+    final durationMultiplier = rawDuration > 0 ? duration / rawDuration : 1.0;
 
     return {
       'durationHours': duration,
       'rawDurationHours': rawDuration,
       'durationMultiplier': durationMultiplier,
-      'isFixedHolidayRateApplied': durationMultiplier > 1,
+      'isFixedHolidayRateApplied': !isExtra && durationMultiplier > 1,
     };
   }
 
@@ -192,6 +198,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     final start = (data['startTime'] as Timestamp?)?.toDate();
     if (rawStored != null) {
       final storedMultiplier = (data['durationMultiplier'] as num?)?.toDouble();
+      final isExtra = data['isExtra'] == true;
       if (storedMultiplier != null && storedMultiplier > 0) {
         return rawStored * storedMultiplier;
       }
@@ -199,6 +206,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
         return FixedHolidayHoursPolicy.applyToHours(
           workDate: start,
           rawHours: rawStored,
+          isExtra: isExtra,
         );
       }
       return rawStored;
@@ -310,7 +318,11 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
     if (!end.isAfter(start)) {
       throw Exception('A hora de fim deve ser posterior ao início.');
     }
-    final durationPayload = _sessionDurationPayload(start: start, end: end);
+    final durationPayload = _sessionDurationPayload(
+      start: start,
+      end: end,
+      isExtra: isExtra,
+    );
 
     final payload = <String, dynamic>{
       'clienteId': clienteId,
@@ -368,12 +380,19 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       throw Exception('A hora de fim deve ser posterior ao início.');
     }
 
-    final durationPayload = _sessionDurationPayload(start: start, end: end);
+    final existingSession = await findSessionById(sessionId: sessionId);
+    final isExtra = existingSession?.isExtra == true;
+    final durationPayload = _sessionDurationPayload(
+      start: start,
+      end: end,
+      isExtra: isExtra,
+    );
     final payload = <String, dynamic>{
       'clienteId': clienteId,
       'teikerId': teikerId,
       'startTime': Timestamp.fromDate(start),
       'endTime': Timestamp.fromDate(end),
+      'isExtra': isExtra,
       ...durationPayload,
       'updatedAt': FieldValue.serverTimestamp(),
     };
@@ -524,7 +543,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
           .map((doc) => _toWorkSession(doc, fallbackTeikerId: ''))
           .toList();
     } catch (e) {
-      print("ERRO NA CONSULTA FIREBASE: $e");
+      debugPrint("ERRO NA CONSULTA FIREBASE: $e");
       rethrow;
     }
   }

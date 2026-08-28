@@ -1,6 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:teiker_app/Screens/DetailsScreens.dart/ClientsDetails.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
@@ -12,11 +11,11 @@ import 'package:teiker_app/Widgets/app_confirm_dialog.dart';
 import 'package:teiker_app/Widgets/app_search_bar.dart';
 import 'package:teiker_app/auth/app_user_role.dart';
 import 'package:teiker_app/backend/auth_service.dart';
+import 'package:teiker_app/backend/offline_work_session_service.dart';
 import 'package:teiker_app/backend/work_session_service.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 import 'package:teiker_app/work_sessions/application/monthly_hours_overview_service.dart';
 import 'package:teiker_app/work_sessions/domain/work_session.dart';
-import 'package:teiker_app/work_sessions/domain/work_session_repository.dart';
 import '../models/Clientes.dart';
 
 enum _ClientesSort { az, hoursDesc }
@@ -36,6 +35,8 @@ class _ClientesScreenState extends State<ClientesScreen> {
   final Map<String, double> _currentMonthHoursCache = {};
   String _openSessionsKey = '';
   final WorkSessionService _workSessionService = WorkSessionService();
+  final OfflineWorkSessionService _offlineWorkSessionService =
+      OfflineWorkSessionService.instance;
   final MonthlyHoursOverviewService _monthlyHoursOverviewService =
       MonthlyHoursOverviewService();
   final AuthService _authService = AuthService();
@@ -136,6 +137,13 @@ class _ClientesScreenState extends State<ClientesScreen> {
   }
 
   Future<void> _ensureOpenSessions(List<Clientes> clientes) async {
+    final localOpenSession = await _offlineWorkSessionService
+        .findAnyOpenSession();
+    if (localOpenSession != null && mounted) {
+      setState(() {
+        _openSessions[localOpenSession.clienteId] = localOpenSession;
+      });
+    }
     final missing = clientes
         .where((cliente) => !_openSessions.containsKey(cliente.uid))
         .toList();
@@ -162,7 +170,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
     try {
       if (_isPrivileged) {
-        
         final totals = await _workSessionService.calculateMonthlyTotalForClient(
           clienteId: cliente.uid,
           referenceDate: now,
@@ -170,7 +177,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
         if (!mounted) return;
         setState(() {
-          
           final somaTotal = totals.normal + totals.extra;
           cliente.hourasCasa = somaTotal;
           _currentMonthHoursCache[cliente.uid] = somaTotal;
@@ -685,7 +691,6 @@ class _ClientesScreenState extends State<ClientesScreen> {
                                             ),
                                           ),
                                         ).then((_) {
-                                        
                                           _updateClienteHours(cliente);
                                         });
                                       },
@@ -938,53 +943,55 @@ class _ClientesScreenState extends State<ClientesScreen> {
 
           if (transitIso != null) {
             final transitStart = DateTime.parse(transitIso);
+            if (!mounted) return;
+            final confirm = await AppConfirmDialog.show(
+              context: context,
+              title: 'Já chegaste ao local?',
+              message:
+                  'A deslocação começou às ${TimeOfDay.fromDateTime(transitStart).format(context)}. Confirma quando chegares para terminar a contagem e iniciar o serviço.',
+              confirmLabel: 'Sim, cheguei',
+              confirmColor: AppColors.primaryGreen,
+            );
+
+            if (!confirm) {
+              if (mounted) {
+                AppSnackBar.show(
+                  context,
+                  message: 'A deslocação continua em contagem.',
+                  icon: Icons.directions_car,
+                  background: Colors.blue.shade700,
+                );
+              }
+              return;
+            }
+
             final now = DateTime.now();
+            final durationHours = now.difference(transitStart).inMinutes / 60.0;
+            await _offlineWorkSessionService.saveTransitSession(
+              teikerId: _currentUserId!,
+              startTime: transitStart,
+              endTime: now,
+            );
+            // Só apagamos a hora local depois de a deslocação ficar guardada
+            // na fila offline. Se ocorrer um erro, a contagem mantém-se.
+            await prefs.remove(transitKey);
 
             if (mounted) {
-              final confirm = await AppConfirmDialog.show(
-                context: context,
-                title: 'Fim de Deslocação',
+              AppSnackBar.show(
+                context,
                 message:
-                    'Estiveste em deslocação desde as ${TimeOfDay.fromDateTime(transitStart).format(context)}. Queres adicionar este tempo de viagem às tuas horas?',
-                confirmLabel: 'Sim, adicionar',
-                confirmColor: AppColors.primaryGreen,
+                    'Tempo de deslocação (${durationHours.toStringAsFixed(2)}h) adicionado!',
+                icon: Icons.directions_car,
+                background: Colors.blue.shade700,
               );
-
-              if (confirm) {
-                final durationHours =
-                    now.difference(transitStart).inMinutes / 60.0;
-
-                await FirebaseFirestore.instance.collection('workSessions').add({
-                  'clienteId':
-                      'DESLOCACAO',
-                  'teikerId': _currentUserId,
-                  'startTime': Timestamp.fromDate(transitStart),
-                  'endTime': Timestamp.fromDate(now),
-                  'durationHours': durationHours,
-                  'rawDurationHours': durationHours,
-                  'durationMultiplier': 1.0,
-                  'isFixedHolidayRateApplied': false,
-                });
-
-                if (mounted) {
-                  AppSnackBar.show(
-                    context,
-                    message:
-                        'Tempo de deslocação (${durationHours.toStringAsFixed(2)}h) adicionado!',
-                    icon: Icons.directions_car,
-                    background: Colors.blue.shade700,
-                  );
-                }
-              }
             }
-            await prefs.remove(transitKey);
           }
           // --- FIM DA LÓGICA DE DESLOCAÇÃO ---
 
           // Inicia a sessão normal na casa atual
-          final session = await _workSessionService.startSession(
+          final session = await _offlineWorkSessionService.startSession(
             clienteId: cliente.uid,
-            clienteName: cliente.nameCliente,
+            teikerId: _currentUserId!,
           );
 
           setState(() {
@@ -1024,8 +1031,14 @@ class _ClientesScreenState extends State<ClientesScreen> {
         try {
           var session = _openSessions[cliente.uid];
 
-          if (session == null) {
-            session = await _workSessionService.findOpenSession(cliente.uid);
+          // Primeiro recuperamos a cópia local. Assim, a teiker consegue
+          // terminar mesmo quando o Firestore ainda não tem rede/cache.
+          session ??= await _offlineWorkSessionService.findOpenSession(
+            cliente.uid,
+          );
+
+          session ??= await _workSessionService.findOpenSession(cliente.uid);
+          if (session != null) {
             if (!mounted) return;
             setState(() {
               _openSessions[cliente.uid] = session;
@@ -1038,22 +1051,12 @@ class _ClientesScreenState extends State<ClientesScreen> {
             );
           }
 
-          final MonthlyTotals total = await _workSessionService.finishSessionById(
-            clienteId: cliente.uid,
-            sessionId: session.id,
-            startTime: session.startTime,
-          );
-
-          double displayTotal;
-          if (_isPrivileged) {
-            displayTotal = total.normal + total.extra;
-          } else {
-            displayTotal = await _workSessionService
-                .calculateMonthlyTotalForCurrentUser(
-                  clienteId: cliente.uid,
-                  referenceDate: session.startTime,
-                );
-          }
+          final finishedSession = await _offlineWorkSessionService
+              .finishSession(session);
+          final sessionHours = finishedSession.durationHours ?? 0;
+          final displayTotal =
+              (_currentMonthHoursCache[cliente.uid] ?? cliente.hourasCasa) +
+              sessionHours;
 
           setState(() {
             _openSessions[cliente.uid] = null;

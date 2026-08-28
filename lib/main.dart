@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:teiker_app/backend/auth_gate.dart';
 import 'package:teiker_app/backend/firebase_service.dart';
 import 'package:teiker_app/backend/notification_service.dart';
+import 'package:teiker_app/backend/offline_work_session_service.dart';
 import 'package:teiker_app/theme/app_colors.dart';
 
 void main() async {
@@ -21,6 +22,7 @@ void main() async {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
     NotificationService().init();
+    OfflineWorkSessionService.instance.start();
   } catch (e) {
     debugPrint("Erro ao inicializar serviços: $e");
   }

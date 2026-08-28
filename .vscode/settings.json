@@ -1,3 +1,13 @@
 {
-  "cmake.sourceDirectory": "/Users/inesborges/FlutterProjects/teiker_app/linux"
+  "cmake.sourceDirectory": "/Users/inesborges/FlutterProjects/teiker_app/linux",
+  "chat.tools.terminal.autoApprove": {
+    "/^cd /Users/inesborges/FlutterProjects/teiker_app && python3 - <<'PY'\nimport zipfile, re\nxml = zipfile\\.ZipFile\\('Invoice\\(Fatura\\)_Teiker\\.docx'\\)\\.read\\('word/document\\.xml'\\)\\.decode\\('utf-8','ignore'\\)\nfor m in re\\.finditer\\(r'<w:t\\[\\^>\\]\\*>\\(\\[\\^<\\]\\*\\)</w:t>', xml\\):\n    txt = m\\.group\\(1\\)\\.strip\\(\\)\n    if txt and any\\(k in txt for k in \\['Rua','CH-','CH ','Switzerland','Pereira','TEIKER','Teiker','PT','Portugal','Sonia','Rio','str','casa'\\]\\):\n        print\\(repr\\(txt\\)\\)\nPY$/": {
+      "approve": true,
+      "matchCommandLine": true
+    },
+    "/^cd /Users/inesborges/FlutterProjects/teiker_app && python3 - <<'PY'\nimport urllib\\.request, re\ntext=urllib\\.request\\.urlopen\\('https://raw\\.githubusercontent\\.com/kevmoo/qr\\.dart/master/lib/src/payload\\.dart', timeout=30\\)\\.read\\(\\)\\.decode\\('utf-8'\\)\nfor i,line in enumerate\\(text\\.splitlines\\(\\),1\\):\n    if i>=1 and i<=80:\n        print\\(f'\\{i\\}: \\{line\\}'\\)\nPY$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
 }

@@ -10,8 +10,10 @@ class FixedHolidayHoursPolicy {
   }
 
   static double multiplierFor(DateTime date, {bool isExtra = false}) {
-    if (isExtra) return 1.0;
-    return isFixedHoliday(date) ? holidayMultiplier : 1.0;
+    // Sábados, domingos e feriados contam a dobrar, incluindo horas extra.
+    final isWeekend =
+        date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+    return isWeekend || isFixedHoliday(date) ? holidayMultiplier : 1.0;
   }
 
   static double applyToHours({

@@ -992,6 +992,7 @@ class _ClientesScreenState extends State<ClientesScreen> {
           final session = await _offlineWorkSessionService.startSession(
             clienteId: cliente.uid,
             teikerId: _currentUserId!,
+            clienteName: cliente.nameCliente,
           );
 
           setState(() {

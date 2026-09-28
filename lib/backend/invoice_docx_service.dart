@@ -93,54 +93,48 @@ class InvoiceDocxService {
       final updatedTable = updateTable(tableXml);
       return xml.replaceRange(tableMatch.start, tableMatch.end, updatedTable);
     }
-    return xml;
+    throw const FormatException('Template de fatura: tabela em falta.');
   }
 
+  static final RegExp _cellPattern = RegExp(r'<w:tc\b[^>]*>[\s\S]*?</w:tc>');
+  static final RegExp _textPattern = RegExp(r'<w:t\b[^>]*>([\s\S]*?)</w:t>');
+
+  // Word may split the same visible text across any number of formatted runs.
+  String _visibleText(String xml) => _textPattern
+      .allMatches(xml)
+      .map((match) => match.group(1)!)
+      .join()
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  List<String> _cellTexts(String row) => _cellPattern
+      .allMatches(row)
+      .map((match) => _visibleText(match.group(0)!))
+      .toList();
+
   bool _isInvoiceTable(String tableXml) {
-    return tableXml.contains('<w:t>Description</w:t>') &&
-        tableXml.contains('<w:t>Unit</w:t>') &&
-        tableXml.contains('Price Per') &&
-        tableXml.contains('<w:t>Hour</w:t>') &&
-        tableXml.contains('TVA 8.1%');
+    final header = _rowPattern.firstMatch(tableXml);
+    if (header == null) return false;
+    final cells = _cellTexts(header.group(0)!);
+    return cells.length == 4 &&
+        cells[0] == 'Description' &&
+        cells[1] == 'Unit' &&
+        cells[2] == 'Price Per Hour' &&
+        cells[3] == 'Total';
   }
 
   String _replaceServiceRowsInTable(String tableXml, ClientInvoice invoice) {
-    final rowMatches = _rowPattern.allMatches(tableXml).toList();
-    if (rowMatches.isEmpty) {
-      return tableXml;
+    final rows = _rowPattern.allMatches(tableXml).toList();
+    final vatIndex = rows.indexWhere((row) => _isVatRow(row.group(0)!));
+    if (vatIndex < 2 || _cellTexts(rows[1].group(0)!).length != 4) {
+      throw const FormatException(
+        'Template de fatura: linha de servico em falta.',
+      );
     }
-
-    var serviceRowIndex = -1;
-    for (var index = 0; index < rowMatches.length; index++) {
-      if (_isServiceTemplateRow(rowMatches[index].group(0)!)) {
-        serviceRowIndex = index;
-        break;
-      }
-    }
-    if (serviceRowIndex < 0) {
-      return tableXml;
-    }
-
-    var vatRowIndex = -1;
-    for (var index = serviceRowIndex + 1; index < rowMatches.length; index++) {
-      if (_isVatRow(rowMatches[index].group(0)!)) {
-        vatRowIndex = index;
-        break;
-      }
-    }
-    if (vatRowIndex < 0) {
-      return tableXml;
-    }
-
-    final serviceRowMatch = rowMatches[serviceRowIndex];
-    final vatRowMatch = rowMatches[vatRowIndex];
-    final templateRow = serviceRowMatch.group(0)!;
-    final rows = _buildInvoiceLineRows(templateRow, invoice);
-
     return tableXml.replaceRange(
-      serviceRowMatch.start,
-      vatRowMatch.start,
-      rows,
+      rows[1].start,
+      rows[vatIndex].start,
+      _buildInvoiceLineRows(rows[1].group(0)!, invoice),
     );
   }
 
@@ -148,84 +142,53 @@ class InvoiceDocxService {
     String tableXml,
     ClientInvoice invoice,
   ) {
-    var updated = tableXml;
-
-    final vatRows = _rowPattern.allMatches(updated).toList();
-    var vatRowIndex = -1;
-    for (var index = 0; index < vatRows.length; index++) {
-      if (_isVatRow(vatRows[index].group(0)!)) {
-        vatRowIndex = index;
-        break;
+    var foundVat = false;
+    var foundTotal = false;
+    final updated = tableXml.replaceAllMapped(_rowPattern, (match) {
+      final row = match.group(0)!;
+      if (_isVatRow(row)) {
+        foundVat = true;
+        return _replaceCells(row, [
+          'TVA ${(invoice.vatRate * 100).toStringAsFixed(1)}%',
+          _formatMoney(invoice.vatAmount),
+        ]);
       }
-    }
-    if (vatRowIndex >= 0) {
-      final vatMatch = vatRows[vatRowIndex];
-      var vatRow = vatMatch.group(0)!;
-      vatRow = _replaceTextNode(
-        vatRow,
-        oldValue: 'TVA 8.1%',
-        newValue: 'TVA ${(invoice.vatRate * 100).toStringAsFixed(1)}%',
-      );
-      vatRow = _replaceTextNode(
-        vatRow,
-        oldValue: 'CHF',
-        newValue: _formatMoney(invoice.vatAmount),
-      );
-      updated = updated.replaceRange(vatMatch.start, vatMatch.end, vatRow);
-    }
-
-    final totalRows = _rowPattern.allMatches(updated).toList();
-    var totalRowIndex = -1;
-    if (vatRowIndex >= 0) {
-      for (var index = vatRowIndex + 1; index < totalRows.length; index++) {
-        if (_isGrandTotalRow(totalRows[index].group(0)!)) {
-          totalRowIndex = index;
-          break;
-        }
+      final cells = _cellTexts(row);
+      if (cells.length == 2 && cells.first == 'Total') {
+        foundTotal = true;
+        return _replaceCells(row, ['Total', _formatMoney(invoice.total)]);
       }
-    } else {
-      for (var index = 0; index < totalRows.length; index++) {
-        if (_isGrandTotalRow(totalRows[index].group(0)!)) {
-          totalRowIndex = index;
-          break;
-        }
-      }
+      return row;
+    });
+    if (!foundVat || !foundTotal) {
+      throw const FormatException('Template de fatura: IVA ou total em falta.');
     }
-
-    if (totalRowIndex >= 0) {
-      final totalMatch = totalRows[totalRowIndex];
-      var totalRow = totalMatch.group(0)!;
-      totalRow = _replaceTextNode(
-        totalRow,
-        oldValue: 'CHF',
-        newValue: _formatMoney(invoice.total),
-      );
-      updated = updated.replaceRange(
-        totalMatch.start,
-        totalMatch.end,
-        totalRow,
-      );
-    }
-
     return updated;
   }
 
-  bool _isServiceTemplateRow(String rowXml) {
-    return rowXml.contains('<w:t>Cleaning</w:t>') &&
-        rowXml.contains('<w:t>Service</w:t>') &&
-        rowXml.contains('<w:t>August</w:t>') &&
-        rowXml.contains('<w:t>Hours</w:t>') &&
-        rowXml.contains('<w:t>49 CHF</w:t>');
+  bool _isVatRow(String row) {
+    final cells = _cellTexts(row);
+    return cells.length == 2 && cells.first.startsWith('TVA ');
   }
 
-  bool _isVatRow(String rowXml) {
-    return rowXml.contains('TVA ');
-  }
-
-  bool _isGrandTotalRow(String rowXml) {
-    return rowXml.contains('<w:t>Total</w:t>') &&
-        rowXml.contains('<w:t>CHF</w:t>') &&
-        !rowXml.contains('<w:t>Description</w:t>');
+  String _replaceCells(String row, List<String> values) {
+    if (_cellPattern.allMatches(row).length != values.length) {
+      throw const FormatException('Template de fatura: colunas invalidas.');
+    }
+    var index = 0;
+    return row.replaceAllMapped(_cellPattern, (match) {
+      final value = _escapeXml(values[index++]);
+      var written = false;
+      final cell = match.group(0)!.replaceAllMapped(_textPattern, (text) {
+        if (written) return '<w:t></w:t>';
+        written = true;
+        return '<w:t xml:space="preserve">$value</w:t>';
+      });
+      if (!written) {
+        throw const FormatException('Template de fatura: celula sem texto.');
+      }
+      return cell;
+    });
   }
 
   String _buildInvoiceLineRows(String templateRow, ClientInvoice invoice) {
@@ -235,7 +198,7 @@ class InvoiceDocxService {
       lines.add(
         _InvoiceTableLine(
           description:
-              'Services ${_capitalizedMonth(invoice.invoiceDate)} Teiker',
+              'Services ${_capitalizedMonth(DateTime.tryParse('${invoice.periodMonthKey}-01') ?? invoice.invoiceDate)} Teiker',
           unitsText: '${invoice.totalHours.toStringAsFixed(1)}h',
           unitPrice: invoice.hourlyRate,
           total: invoice.subtotal,
@@ -307,54 +270,12 @@ class InvoiceDocxService {
   }
 
   String _buildRowFromTemplate(String templateRow, _InvoiceTableLine line) {
-    var row = templateRow;
-    final descriptionParts = _splitDescription(line.description);
-
-    row = _replaceTextNode(
-      row,
-      oldValue: 'Cleaning',
-      newValue: descriptionParts.$1,
-    );
-    row = _replaceTextNode(
-      row,
-      oldValue: 'Service',
-      newValue: descriptionParts.$2,
-    );
-    row = _replaceTextNode(
-      row,
-      oldValue: 'August',
-      newValue: descriptionParts.$3,
-    );
-    row = _replaceTextNode(
-      row,
-      oldValue: 'Hours',
-      newValue: line.hideUnitAndRate ? '' : line.unitsText,
-    );
-    row = _replaceTextNode(
-      row,
-      oldValue: '49 CHF',
-      newValue: line.hideUnitAndRate ? '' : _formatMoney(line.unitPrice),
-    );
-    row = _replaceTextNode(
-      row,
-      oldValue: 'CHF',
-      newValue: _formatMoney(line.total),
-    );
-
-    return row;
-  }
-
-  (String, String, String) _splitDescription(String description) {
-    final words = description
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((word) => word.trim().isNotEmpty)
-        .toList();
-
-    if (words.isEmpty) return ('', '', '');
-    if (words.length == 1) return (words.first, '', '');
-    if (words.length == 2) return (words[0], words[1], '');
-    return (words[0], words[1], words.sublist(2).join(' '));
+    return _replaceCells(templateRow, [
+      line.description,
+      line.hideUnitAndRate ? '' : line.unitsText,
+      line.hideUnitAndRate ? '' : _formatMoney(line.unitPrice),
+      _formatMoney(line.total),
+    ]);
   }
 
   String _capitalizedMonth(DateTime date) {
@@ -395,29 +316,6 @@ class InvoiceDocxService {
       'info@teiker.ch',
     );
     return updated;
-  }
-
-  String _replaceTextNode(
-    String xml, {
-    required String oldValue,
-    required String newValue,
-    int occurrence = 1,
-  }) {
-    var currentOccurrence = 0;
-    final pattern = RegExp(
-      '<w:t([^>]*)>${RegExp.escape(oldValue)}</w:t>',
-      dotAll: true,
-    );
-
-    return xml.replaceAllMapped(pattern, (match) {
-      currentOccurrence += 1;
-      if (currentOccurrence != occurrence) {
-        return match.group(0)!;
-      }
-
-      final attrs = match.group(1) ?? '';
-      return '<w:t$attrs>${_escapeXml(newValue)}</w:t>';
-    });
   }
 
   String _formatMoney(double value) => '${value.toStringAsFixed(2)} CHF';

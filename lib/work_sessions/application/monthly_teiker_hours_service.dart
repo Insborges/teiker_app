@@ -1,5 +1,5 @@
+import 'package:teiker_app/work_sessions/infrastructure/work_session_hours.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:teiker_app/work_sessions/domain/fixed_holiday_hours_policy.dart';
 
 class MonthlyTeikerHoursService {
   MonthlyTeikerHoursService({FirebaseFirestore? firestore})
@@ -65,28 +65,6 @@ class MonthlyTeikerHoursService {
   }
 
   double? _resolveDurationHours(Map<String, dynamic> data) {
-    var duration = (data['durationHours'] as num?)?.toDouble();
-    if (duration != null) return duration;
-
-    final rawStored = (data['rawDurationHours'] as num?)?.toDouble();
-    final start = (data['startTime'] as Timestamp?)?.toDate();
-    if (rawStored != null && start != null) {
-      final storedMultiplier = (data['durationMultiplier'] as num?)?.toDouble();
-      if (storedMultiplier != null && storedMultiplier > 0) {
-        return rawStored * storedMultiplier;
-      }
-      return FixedHolidayHoursPolicy.applyToHours(
-        workDate: start,
-        rawHours: rawStored,
-      );
-    }
-
-    final end = (data['endTime'] as Timestamp?)?.toDate();
-    if (start == null || end == null) return null;
-
-    return FixedHolidayHoursPolicy.applyToHours(
-      workDate: start,
-      rawHours: end.difference(start).inMinutes / 60.0,
-    );
+    return WorkSessionHours.resolve(data);
   }
 }

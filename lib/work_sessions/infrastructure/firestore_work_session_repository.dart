@@ -1,3 +1,4 @@
+import 'package:teiker_app/work_sessions/infrastructure/work_session_hours.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../domain/work_session.dart';
@@ -25,7 +26,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       endTime: data['endTime'] != null
           ? (data['endTime'] as Timestamp).toDate()
           : null,
-      durationHours: (data['durationHours'] as num?)?.toDouble(),
+      durationHours: WorkSessionHours.resolve(data),
       isExtra: data['isExtra'] == true,
     );
   }
@@ -51,7 +52,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
       'durationHours': duration,
       'rawDurationHours': rawDuration,
       'durationMultiplier': durationMultiplier,
-      'isFixedHolidayRateApplied': !isExtra && durationMultiplier > 1,
+      'isFixedHolidayRateApplied': durationMultiplier > 1,
     };
   }
 
@@ -191,35 +192,7 @@ class FirestoreWorkSessionRepository implements WorkSessionRepository {
   }
 
   double? _resolveDurationHours(Map<String, dynamic> data) {
-    var duration = (data['durationHours'] as num?)?.toDouble();
-    if (duration != null) return duration;
-
-    final rawStored = (data['rawDurationHours'] as num?)?.toDouble();
-    final start = (data['startTime'] as Timestamp?)?.toDate();
-    if (rawStored != null) {
-      final storedMultiplier = (data['durationMultiplier'] as num?)?.toDouble();
-      final isExtra = data['isExtra'] == true;
-      if (storedMultiplier != null && storedMultiplier > 0) {
-        return rawStored * storedMultiplier;
-      }
-      if (start != null) {
-        return FixedHolidayHoursPolicy.applyToHours(
-          workDate: start,
-          rawHours: rawStored,
-          isExtra: isExtra,
-        );
-      }
-      return rawStored;
-    }
-
-    final end = (data['endTime'] as Timestamp?)?.toDate();
-    if (start == null || end == null) return null;
-
-    final rawHours = end.difference(start).inMinutes / 60.0;
-    return FixedHolidayHoursPolicy.applyToHours(
-      workDate: start,
-      rawHours: rawHours,
-    );
+    return WorkSessionHours.resolve(data);
   }
 
   @override

@@ -1,6 +1,8 @@
+import 'package:teiker_app/work_sessions/infrastructure/work_session_hours.dart';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:teiker_app/backend/transit_session_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -970,7 +972,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   Clientes _placeholderCliente(String clienteId) {
     return Clientes(
       uid: clienteId,
-      nameCliente: clienteId.isEmpty ? 'Cliente' : clienteId,
+      nameCliente: clienteId == 'DESLOCACAO'
+          ? 'Deslocação'
+          : (clienteId.isEmpty ? 'Cliente' : clienteId),
       moradaCliente: '',
       cidadeCliente: '',
       codigoPostal: '',
@@ -984,19 +988,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
   }
 
   double _durationForSessionData(Map<String, dynamic> data) {
-    final stored = (data['durationHours'] as num?)?.toDouble();
-    if (stored != null) return stored;
-
-    final raw = (data['rawDurationHours'] as num?)?.toDouble();
-    if (raw != null) {
-      final multiplier = (data['durationMultiplier'] as num?)?.toDouble();
-      return multiplier != null && multiplier > 0 ? raw * multiplier : raw;
-    }
-
-    final start = (data['startTime'] as Timestamp?)?.toDate();
-    final end = (data['endTime'] as Timestamp?)?.toDate();
-    if (start == null || end == null || !end.isAfter(start)) return 0;
-    return end.difference(start).inMinutes / 60.0;
+    return WorkSessionHours.resolve(data) ?? 0;
   }
 
   Future<List<_EditableWorkSession>> _loadEditableHourSessions(
@@ -1032,7 +1024,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     return sessions;
   }
 
-  Future<void> _openEditManualHoursSheet() async {
+  Future<void> _openEditManualHoursSheet({bool transitOnly = false}) async {
     if (!_canAddTeikerHoursByAdmin) {
       AppSnackBar.show(
         context,
@@ -1046,8 +1038,14 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     List<Clientes> clientes;
     List<_EditableWorkSession> sessions;
     try {
-      clientes = await _loadManualHoursClientes(includeArchived: true);
-      sessions = await _loadEditableHourSessions(clientes);
+      clientes = transitOnly
+          ? <Clientes>[]
+          : await _loadManualHoursClientes(includeArchived: true);
+      sessions = (await _loadEditableHourSessions(clientes))
+          .where(
+            (session) => (session.cliente.uid == 'DESLOCACAO') == transitOnly,
+          )
+          .toList();
     } catch (e) {
       if (!mounted) return;
       AppSnackBar.show(
@@ -1063,7 +1061,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
     if (sessions.isEmpty) {
       AppSnackBar.show(
         context,
-        message: 'Ainda não há horas para alterar nesta teiker.',
+        message: transitOnly
+            ? 'Ainda não há deslocações registadas nesta teiker.'
+            : 'Ainda não há horas para alterar nesta teiker.',
         icon: Icons.info_outline,
         background: Colors.orange.shade700,
       );
@@ -1087,6 +1087,7 @@ class _TeikersDetailsState extends State<TeikersDetails> {
         primaryColor: _primaryColor,
         teikerName: widget.teiker.nameTeiker,
         sessions: sessions,
+        transitOnly: transitOnly,
       ),
     );
     if (selectedSession == null || !mounted) return;
@@ -1103,20 +1104,38 @@ class _TeikersDetailsState extends State<TeikersDetails> {
         initialCliente: selectedSession.cliente,
         initialStart: selectedSession.start,
         initialEnd: selectedSession.end,
-        title: 'Alterar horas',
+        title: transitOnly ? 'Editar deslocação' : 'Alterar horas',
         submitLabel: 'Atualizar',
+        isTransit: transitOnly,
       ),
     );
     if (result == null) return;
 
     try {
-      await _workSessionService.updateManualSessionForTeikerByAdmin(
-        sessionId: selectedSession.id,
-        clienteId: result.cliente.uid,
-        teikerId: widget.teiker.uid,
-        start: result.start,
-        end: result.end,
-      );
+      if (transitOnly) {
+        final service = TransitSessionService();
+        if (result.delete) {
+          await service.delete(
+            sessionId: selectedSession.id,
+            teikerId: widget.teiker.uid,
+          );
+        } else {
+          await service.update(
+            sessionId: selectedSession.id,
+            teikerId: widget.teiker.uid,
+            start: result.start,
+            end: result.end,
+          );
+        }
+      } else {
+        await _workSessionService.updateManualSessionForTeikerByAdmin(
+          sessionId: selectedSession.id,
+          clienteId: result.cliente.uid,
+          teikerId: widget.teiker.uid,
+          start: result.start,
+          end: result.end,
+        );
+      }
 
       if (!mounted) return;
       setState(() {
@@ -1126,7 +1145,11 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       });
       AppSnackBar.show(
         context,
-        message: 'Registo de horas atualizado.',
+        message: transitOnly
+            ? (result.delete
+                  ? 'Deslocação eliminada.'
+                  : 'Deslocação atualizada.')
+            : 'Registo de horas atualizado.',
         icon: Icons.edit_calendar_rounded,
         background: Colors.green.shade700,
       );
@@ -1134,7 +1157,9 @@ class _TeikersDetailsState extends State<TeikersDetails> {
       if (!mounted) return;
       AppSnackBar.show(
         context,
-        message: 'Erro a atualizar horas: $e',
+        message: transitOnly
+            ? 'Erro ao guardar a deslocação: $e'
+            : 'Erro a atualizar horas: $e',
         icon: Icons.error_outline,
         background: Colors.red.shade700,
       );
@@ -1383,6 +1408,8 @@ class _TeikersDetailsState extends State<TeikersDetails> {
                       hoursFuture: _hoursFuture,
                       onAddManualHours: _openAddManualHoursSheet,
                       onEditManualHours: _openEditManualHoursSheet,
+                      onManageTransit: () =>
+                          _openEditManualHoursSheet(transitOnly: true),
                       manualHoursEntriesStream: _watchManualHoursEntries(),
                       highlightedManualHoursEntryId:
                           widget.initialManualHoursEntryId,
@@ -1442,8 +1469,10 @@ class _AdminManualHoursInput {
     required this.cliente,
     required this.start,
     required this.end,
+    this.delete = false,
   });
 
+  final bool delete;
   final Clientes cliente;
   final DateTime start;
   final DateTime end;
@@ -1475,6 +1504,7 @@ class _AdminManualHoursSheet extends StatefulWidget {
     this.initialEnd,
     this.title = 'Adicionar horas',
     this.submitLabel = 'Guardar',
+    this.isTransit = false,
   });
 
   final Color primaryColor;
@@ -1485,6 +1515,7 @@ class _AdminManualHoursSheet extends StatefulWidget {
   final DateTime? initialEnd;
   final String title;
   final String submitLabel;
+  final bool isTransit;
 
   @override
   State<_AdminManualHoursSheet> createState() => _AdminManualHoursSheetState();
@@ -1493,6 +1524,7 @@ class _AdminManualHoursSheet extends StatefulWidget {
 class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
   late Clientes _selectedCliente;
   DateTime _selectedDate = DateTime.now();
+  DateTime? _selectedEndDate;
   TimeOfDay? _startTime;
   TimeOfDay? _endTime;
 
@@ -1512,6 +1544,11 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
     }
     if (initialEnd != null) {
       _endTime = TimeOfDay.fromDateTime(initialEnd);
+      _selectedEndDate = DateTime(
+        initialEnd.year,
+        initialEnd.month,
+        initialEnd.day,
+      );
     }
   }
 
@@ -1536,13 +1573,30 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
       initialDate: _selectedDate,
       firstDate: DateTime(2020),
       lastDate: DateTime.now(),
-      title: 'Dia das horas',
-      subtitle: 'Escolhe o dia trabalhado',
+      title: widget.isTransit ? 'Dia da deslocação' : 'Dia das horas',
+      subtitle: widget.isTransit
+          ? 'Escolhe o dia da deslocação'
+          : 'Escolhe o dia trabalhado',
       confirmLabel: 'Usar dia',
     );
     if (picked == null) return;
     setState(() {
+      final endDate = _selectedEndDate ?? _selectedDate;
+      final dayOffset = DateTime.utc(endDate.year, endDate.month, endDate.day)
+          .difference(
+            DateTime.utc(
+              _selectedDate.year,
+              _selectedDate.month,
+              _selectedDate.day,
+            ),
+          )
+          .inDays;
       _selectedDate = DateTime(picked.year, picked.month, picked.day);
+      _selectedEndDate = DateTime(
+        picked.year,
+        picked.month,
+        picked.day + dayOffset,
+      );
     });
   }
 
@@ -1622,7 +1676,10 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
     }
 
     final start = _combine(_selectedDate, startTime);
-    final end = _combine(_selectedDate, endTime);
+    final end = _combine(
+      widget.isTransit ? (_selectedEndDate ?? _selectedDate) : _selectedDate,
+      endTime,
+    );
     final now = DateTime.now();
     if (start.isAfter(now) || end.isAfter(now)) {
       AppSnackBar.show(
@@ -1652,18 +1709,21 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
   Widget build(BuildContext context) {
     return AppBottomSheetShell(
       title: widget.title,
-      subtitle: 'Registar horas para ${widget.teikerName}',
+      subtitle: widget.isTransit
+          ? 'Deslocação de ${widget.teikerName}'
+          : 'Registar horas para ${widget.teikerName}',
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _ManualHoursSelectorField(
-            label: 'Cliente',
-            value: _selectedCliente.nameCliente,
-            icon: Icons.people_outline,
-            primaryColor: widget.primaryColor,
-            onTap: _pickCliente,
-          ),
+          if (!widget.isTransit)
+            _ManualHoursSelectorField(
+              label: 'Cliente',
+              value: _selectedCliente.nameCliente,
+              icon: Icons.people_outline,
+              primaryColor: widget.primaryColor,
+              onTap: _pickCliente,
+            ),
           const SizedBox(height: 12),
           _ManualHoursPickerTile(
             label: 'Dia',
@@ -1672,6 +1732,28 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
             primaryColor: widget.primaryColor,
             onTap: _pickDate,
           ),
+          if (widget.isTransit) ...[
+            const SizedBox(height: 10),
+            _ManualHoursPickerTile(
+              label: 'Dia de fim',
+              value: _formatDate(_selectedEndDate ?? _selectedDate),
+              icon: Icons.calendar_month_outlined,
+              primaryColor: widget.primaryColor,
+              onTap: () async {
+                final picked = await SingleDatePickerBottomSheet.show(
+                  context,
+                  initialDate: _selectedEndDate ?? _selectedDate,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now(),
+                  title: 'Dia de fim da deslocação',
+                  subtitle: 'Escolhe o dia de chegada',
+                  confirmLabel: 'Usar dia',
+                );
+                if (!mounted || picked == null) return;
+                setState(() => _selectedEndDate = picked);
+              },
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -1696,6 +1778,35 @@ class _AdminManualHoursSheetState extends State<_AdminManualHoursSheet> {
               ),
             ],
           ),
+          if (widget.isTransit) ...[
+            const SizedBox(height: 12),
+            TextButton.icon(
+              icon: const Icon(Icons.delete_outline, color: Colors.red),
+              label: const Text(
+                'Eliminar deslocação',
+                style: TextStyle(color: Colors.red),
+              ),
+              onPressed: () async {
+                final confirmed = await AppConfirmDialog.show(
+                  context: context,
+                  title: 'Eliminar deslocação',
+                  message:
+                      'Queres eliminar a deslocação de ${_formatDate(widget.initialStart!)}? O tempo será retirado do total da teiker.',
+                  confirmLabel: 'Eliminar',
+                  confirmColor: Colors.red.shade700,
+                );
+                if (!context.mounted || !confirmed) return;
+                Navigator.of(context).pop(
+                  _AdminManualHoursInput(
+                    cliente: _selectedCliente,
+                    start: widget.initialStart!,
+                    end: widget.initialEnd!,
+                    delete: true,
+                  ),
+                );
+              },
+            ),
+          ],
           const SizedBox(height: 18),
           Row(
             children: [
@@ -1729,11 +1840,13 @@ class _EditableHoursPickerSheet extends StatelessWidget {
     required this.primaryColor,
     required this.teikerName,
     required this.sessions,
+    this.transitOnly = false,
   });
 
   final Color primaryColor;
   final String teikerName;
   final List<_EditableWorkSession> sessions;
+  final bool transitOnly;
 
   String _formatSessionDate(DateTime date) {
     return DateFormat('dd/MM/yyyy', 'pt_PT').format(date);
@@ -1746,7 +1859,7 @@ class _EditableHoursPickerSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppBottomSheetShell(
-      title: 'Alterar horas',
+      title: transitOnly ? 'Deslocações' : 'Alterar horas',
       subtitle: 'Escolhe o registo de $teikerName que queres corrigir',
       child: SizedBox(
         height: 460,
@@ -1779,7 +1892,12 @@ class _EditableHoursPickerSheet extends StatelessWidget {
                         color: primaryColor.withValues(alpha: .1),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(Icons.edit_calendar, color: primaryColor),
+                      child: Icon(
+                        transitOnly
+                            ? Icons.directions_car_outlined
+                            : Icons.edit_calendar,
+                        color: primaryColor,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(

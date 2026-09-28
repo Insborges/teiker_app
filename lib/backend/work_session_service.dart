@@ -10,14 +10,18 @@ import 'notification_service.dart';
 
 class WorkSessionService {
   final FirebaseFirestore _firestore;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseAuth _auth;
   late final WorkSessionRepository _repository;
   late final FinishWorkSessionUseCase _finishUseCase;
-  final NotificationService _notificationService = NotificationService();
+  late final NotificationService _notificationService = NotificationService();
 
-  WorkSessionService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance {
-    _repository = FirestoreWorkSessionRepository(_firestore);
+  WorkSessionService({
+    FirebaseFirestore? firestore,
+    FirebaseAuth? auth,
+    WorkSessionRepository? repository,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _auth = auth ?? FirebaseAuth.instance {
+    _repository = repository ?? FirestoreWorkSessionRepository(_firestore);
     _finishUseCase = FinishWorkSessionUseCase(_repository);
   }
 
@@ -221,7 +225,13 @@ class WorkSessionService {
     _ensureNotFuture(end);
 
     final teikerId = _requireUser();
-    await _ensureNoOverlap(teikerId: teikerId, start: start, end: end);
+    final role = AppUserRoleResolver.fromEmail(_auth.currentUser?.email);
+    // Client-level administrative entries are not the actor's work schedule.
+    // Keep overlap checks for actual teiker sessions, including admin edits
+    // made through addManualSessionForTeikerByAdmin.
+    if (!role.isPrivileged) {
+      await _ensureNoOverlap(teikerId: teikerId, start: start, end: end);
+    }
 
     await _repository.addManualSession(
       clienteId: clienteId,
@@ -229,6 +239,8 @@ class WorkSessionService {
       start: start,
       end: end,
       isExtra: isExtra,
+      createdById: teikerId,
+      createdByRole: role.name,
     );
 
     return _repository.calculateMonthlyTotal(

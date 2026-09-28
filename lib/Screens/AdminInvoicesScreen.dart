@@ -1,3 +1,4 @@
+import 'package:teiker_app/work_sessions/infrastructure/work_session_hours.dart';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -12,7 +13,6 @@ import 'package:teiker_app/backend/client_invoice_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/client_invoice.dart';
 import 'package:teiker_app/theme/app_colors.dart';
-import 'package:teiker_app/work_sessions/domain/fixed_holiday_hours_policy.dart';
 
 enum _DesktopInvoiceAction { share, openWord }
 
@@ -122,28 +122,8 @@ class _AdminInvoicesScreenState extends State<AdminInvoicesScreen> {
     final start = (data['startTime'] as Timestamp?)?.toDate();
     if (start == null) return null;
 
-    double? duration = (data['durationHours'] as num?)?.toDouble();
-    if (duration == null) {
-      final rawStored = (data['rawDurationHours'] as num?)?.toDouble();
-      if (rawStored != null) {
-        final storedMultiplier = (data['durationMultiplier'] as num?)
-            ?.toDouble();
-        duration = storedMultiplier != null && storedMultiplier > 0
-            ? rawStored * storedMultiplier
-            : FixedHolidayHoursPolicy.applyToHours(
-                workDate: start,
-                rawHours: rawStored,
-              );
-      }
-    }
-    if (duration == null) {
-      final end = (data['endTime'] as Timestamp?)?.toDate();
-      if (end == null || !end.isAfter(start)) return null;
-      duration = FixedHolidayHoursPolicy.applyToHours(
-        workDate: start,
-        rawHours: end.difference(start).inMinutes / 60.0,
-      );
-    }
+    final duration = WorkSessionHours.resolve(data);
+    if (duration == null) return null;
 
     return _WorkSessionEntry(
       clienteId: clienteId,

@@ -31,6 +31,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
     required this.hoursFuture,
     required this.onAddManualHours,
     required this.onEditManualHours,
+    required this.onManageTransit,
     required this.manualHoursEntriesStream,
     this.highlightedManualHoursEntryId,
     required this.showDocumentsCard,
@@ -60,6 +61,7 @@ class TeikerDetailsInfoTab extends StatelessWidget {
   final Future<Map<DateTime, double>> hoursFuture;
   final Future<void> Function() onAddManualHours;
   final Future<void> Function() onEditManualHours;
+  final Future<void> Function() onManageTransit;
   final Stream<List<TeikerManualHoursEntry>> manualHoursEntriesStream;
   final String? highlightedManualHoursEntryId;
   final bool showDocumentsCard;
@@ -197,6 +199,16 @@ class TeikerDetailsInfoTab extends StatelessWidget {
                           ),
                         ),
                     ],
+                  ),
+                ],
+                if (canEditManualHours) ...[
+                  const SizedBox(height: 10),
+                  AppButton(
+                    text: 'Deslocações',
+                    icon: Icons.directions_car_outlined,
+                    color: primaryColor,
+                    outline: true,
+                    onPressed: () => onManageTransit(),
                   ),
                 ],
               ],

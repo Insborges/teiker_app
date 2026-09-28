@@ -1,3 +1,4 @@
+import 'package:teiker_app/work_sessions/infrastructure/work_session_hours.dart';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,7 +9,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:teiker_app/backend/invoice_docx_service.dart';
 import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/client_invoice.dart';
-import 'package:teiker_app/work_sessions/domain/fixed_holiday_hours_policy.dart';
 
 enum InvoiceContentFilter { both, hoursOnly, servicesOnly }
 
@@ -352,30 +352,7 @@ class ClientInvoiceService {
   }
 
   double? _resolveDurationHours(Map<String, dynamic> data) {
-    final storedDuration = (data['durationHours'] as num?)?.toDouble();
-    if (storedDuration != null) return storedDuration;
-
-    final rawStored = (data['rawDurationHours'] as num?)?.toDouble();
-    final start = (data['startTime'] as Timestamp?)?.toDate();
-    if (rawStored != null && start != null) {
-      final storedMultiplier = (data['durationMultiplier'] as num?)?.toDouble();
-      if (storedMultiplier != null && storedMultiplier > 0) {
-        return rawStored * storedMultiplier;
-      }
-      return FixedHolidayHoursPolicy.applyToHours(
-        workDate: start,
-        rawHours: rawStored,
-      );
-    }
-
-    final end = (data['endTime'] as Timestamp?)?.toDate();
-    if (start == null || end == null) return null;
-
-    final rawHours = end.difference(start).inMinutes / 60.0;
-    return FixedHolidayHoursPolicy.applyToHours(
-      workDate: start,
-      rawHours: rawHours,
-    );
+    return WorkSessionHours.resolve(data);
   }
 
   Map<String, double> _sanitizeAdditionalServices(Map<String, double> raw) {

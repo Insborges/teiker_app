@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:teiker_app/Widgets/AppBar.dart';
 import 'package:teiker_app/Widgets/AppButton.dart';
@@ -1065,9 +1066,22 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                             signed: false,
                             decimal: true,
                           ),
+                          inputFormatters: [
+                            TextInputFormatter.withFunction((
+                              oldValue,
+                              newValue,
+                            ) {
+                              // Aceita inteiros, X.X e X,X. Um único separador
+                              // decimal evita valores ambíguos como "8,3.2".
+                              final isValid = RegExp(
+                                r'^\d*[.,]?\d*$',
+                              ).hasMatch(newValue.text);
+                              return isValid ? newValue : oldValue;
+                            }),
+                          ],
                           decoration: InputDecoration(
                             labelText: 'Horas Extras',
-                            hintText: 'Ex: 5.00',
+                            hintText: 'Ex: 8.3 ou 8,3',
                             filled: true,
                             fillColor: Colors.grey.shade100,
                             border: OutlineInputBorder(
@@ -1117,23 +1131,34 @@ class _ClientsdetailsState extends State<Clientsdetails> {
                                     Duration(minutes: (hours * 60).round()),
                                   );
 
-                                  final totals = await _guardarHoras(
-                                    startDT,
-                                    endDT,
-                                    isExtra: true,
-                                  );
-                                  setState(() {
-                                    _horasCasa = totals.normal;
-                                    _horasExtraCasa = totals.extra;
-                                  });
-                                  extraSessionsFuture = _workSessionService
-                                      .getExtraSessions(
-                                        widget.cliente.uid,
-                                        _selectedReferenceMonth,
-                                      );
-                                  setModalState(() {
-                                    hoursController.clear();
-                                  });
+                                  try {
+                                    final totals = await _guardarHoras(
+                                      startDT,
+                                      endDT,
+                                      isExtra: true,
+                                    );
+                                    setState(() {
+                                      _horasCasa = totals.normal;
+                                      _horasExtraCasa = totals.extra;
+                                    });
+                                    extraSessionsFuture = _workSessionService
+                                        .getExtraSessions(
+                                          widget.cliente.uid,
+                                          _selectedReferenceMonth,
+                                        );
+                                    setModalState(() {
+                                      hoursController.clear();
+                                    });
+                                  } catch (e) {
+                                    if (!context.mounted) return;
+                                    AppSnackBar.show(
+                                      context,
+                                      message:
+                                          'Erro a guardar horas extras: $e',
+                                      icon: Icons.error,
+                                      background: Colors.red.shade700,
+                                    );
+                                  }
                                 },
                               ),
                             ),

@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:teiker_app/work_sessions/domain/fixed_holiday_hours_policy.dart';
 
 void main() {
-  test('weekend hours count double, including extra hours', () {
+  test('only Sunday hours count double on a non-holiday weekend', () {
     final saturday = DateTime(2026, 9, 5);
     final sunday = DateTime(2026, 9, 6);
 
@@ -12,7 +12,7 @@ void main() {
         rawHours: 3,
         isExtra: true,
       ),
-      6,
+      3,
     );
     expect(
       FixedHolidayHoursPolicy.applyToHours(workDate: sunday, rawHours: 2),

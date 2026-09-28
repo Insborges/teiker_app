@@ -1,3 +1,4 @@
+import 'package:teiker_app/work_sessions/infrastructure/work_session_hours.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -14,7 +15,6 @@ import 'package:teiker_app/models/Clientes.dart';
 import 'package:teiker_app/models/Teikers.dart';
 import 'package:teiker_app/models/teiker_workload.dart';
 import 'package:teiker_app/theme/app_colors.dart';
-import 'package:teiker_app/work_sessions/domain/fixed_holiday_hours_policy.dart';
 
 class TeikerHorasScreen extends StatefulWidget {
   const TeikerHorasScreen({super.key});
@@ -233,19 +233,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
     DateTime start,
     DateTime end,
   ) {
-    final stored = (data['durationHours'] as num?)?.toDouble();
-    if (stored != null) return stored;
-
-    final raw = (data['rawDurationHours'] as num?)?.toDouble();
-    if (raw != null) {
-      final multiplier = (data['durationMultiplier'] as num?)?.toDouble();
-      return multiplier != null && multiplier > 0 ? raw * multiplier : raw;
-    }
-
-    return FixedHolidayHoursPolicy.applyToHours(
-      workDate: start,
-      rawHours: end.difference(start).inMinutes / 60.0,
-    );
+    return WorkSessionHours.resolve(data) ?? 0;
   }
 
   Clientes _placeholderCliente(String clienteId) {
@@ -278,25 +266,7 @@ class _TeikerHorasScreenState extends State<TeikerHorasScreen> {
       final data = doc.data();
       final clienteId = data['clienteId'] as String?;
       final start = (data['startTime'] as Timestamp?)?.toDate();
-      final end = (data['endTime'] as Timestamp?)?.toDate();
-      double? duration = (data['durationHours'] as num?)?.toDouble();
-      final rawStored = (data['rawDurationHours'] as num?)?.toDouble();
-      if (duration == null && rawStored != null && start != null) {
-        final storedMultiplier = (data['durationMultiplier'] as num?)
-            ?.toDouble();
-        duration = storedMultiplier != null && storedMultiplier > 0
-            ? rawStored * storedMultiplier
-            : FixedHolidayHoursPolicy.applyToHours(
-                workDate: start,
-                rawHours: rawStored,
-              );
-      }
-      duration ??= (start != null && end != null)
-          ? FixedHolidayHoursPolicy.applyToHours(
-              workDate: start,
-              rawHours: end.difference(start).inMinutes / 60.0,
-            )
-          : null;
+      final duration = WorkSessionHours.resolve(data);
 
       if (duration == null || start == null) continue;
       final dur = duration;
